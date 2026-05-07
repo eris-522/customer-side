@@ -2,8 +2,10 @@ import { motion, AnimatePresence } from "motion/react";
 import { Menu as MenuIcon, X } from "lucide-react";
 import { useState, useEffect } from "react";
 import { Link, useLocation } from "react-router-dom";
+import { supabase } from "../utils/supabase";
 
 export const navLinks = [
+
   { name: "Home", href: "/" },
   { name: "Menu", href: "/menu" },
   { name: "Packages", href: "/packages" },
@@ -15,7 +17,9 @@ export const navLinks = [
 export default function Navbar() {
   const [isScrolled, setIsScrolled] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [user, setUser] = useState<any>(null);
   const location = useLocation();
+
 
   useEffect(() => {
     const handleScroll = () => {
@@ -25,6 +29,43 @@ export default function Navbar() {
     return () => window.removeEventListener("scroll", handleScroll);
   }, []);
 
+  useEffect(() => {
+    let isMounted = true;
+
+    const initAuth = async () => {
+      const { data } = await supabase.auth.getUser();
+      if (!isMounted) return;
+      setUser(data.user ?? null);
+    };
+
+    initAuth();
+
+    const { data: subscription } = supabase.auth.onAuthStateChange(
+      (_event, session) => {
+        setUser(session?.user ?? null);
+      },
+    );
+
+    return () => {
+      isMounted = false;
+      subscription.subscription?.unsubscribe();
+    };
+  }, []);
+
+
+  const handleLogout = async () => {
+    const confirmed = window.confirm(
+      user?.email
+        ? `Log out ${user.email}? This will end your session.`
+        : "Are you sure you want to log out? This will end your session.",
+    );
+    if (!confirmed) return;
+
+    await supabase.auth.signOut();
+  };
+
+
+
   return (
     <>
       <nav 
@@ -33,6 +74,7 @@ export default function Navbar() {
         }`}
       >
         <div className="max-w-7xl mx-auto w-full px-10 flex justify-between items-center">
+
           <motion.div 
             initial={{ opacity: 0, x: -20 }}
             animate={{ opacity: 1, x: 0 }}
@@ -65,13 +107,28 @@ export default function Navbar() {
               initial={{ opacity: 0, scale: 0.9 }}
               animate={{ opacity: 1, scale: 1 }}
             >
-              <Link
-                to="/auth"
-                className="ml-4 px-5 py-2 border border-gold-400 text-gold-400 text-[10px] uppercase tracking-[0.2em] font-bold hover:bg-gold-400 hover:text-black transition-all inline-block"
-              >
-                Sign Up
-              </Link>
+              {user ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={handleLogout}
+                    className="ml-4 px-5 py-2 border border-white/10 text-white/70 text-[10px] uppercase tracking-[0.2em] font-bold hover:border-gold-400 hover:text-gold-400 transition-all inline-block"
+                  >
+                    Logout
+                  </button>
+                </>
+              ) : (
+
+                <Link
+                  to={location.pathname === "/auth" ? "/auth?mode=login" : "/auth?mode=signup"}
+                  className="ml-4 px-5 py-2 border border-gold-400 text-gold-400 text-[10px] uppercase tracking-[0.2em] font-bold hover:bg-gold-400 hover:text-black transition-all inline-block"
+                >
+                  {location.pathname === "/auth" ? "Login" : "Sign Up"}
+                </Link>
+              )}
+
             </motion.div>
+
           </div>
 
           <button 
@@ -107,7 +164,30 @@ export default function Navbar() {
                   {link.name}
                 </Link>
               ))}
+
+              {user ? (
+                <Link
+                  to="/booking"
+                  className="text-4xl font-serif text-gold-400 italic"
+                  onClick={() => setIsMobileMenuOpen(false)}
+                >
+                  Booking
+                </Link>
+              ) : (
+                <Link
+                  to={
+                    location.pathname === "/auth"
+                      ? "/auth?mode=login"
+                      : "/auth?mode=signup"
+                  }
+                  className="text-4xl font-serif text-gold-400 italic"
+                  onClick={() => setIsMobileMenuOpen(false)}
+                >
+                  {location.pathname === "/auth" ? "Login" : "Sign Up"}
+                </Link>
+              )}
             </div>
+
           </motion.div>
         )}
       </AnimatePresence>

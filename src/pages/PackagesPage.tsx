@@ -145,6 +145,7 @@ export default function PackagesPage() {
                         </span>
                       </div>
 
+
                       {/* Feature: Displays the event type and pax limitations clearly to the customer */}
                       <div className="flex items-center gap-4 mb-6 pb-6 border-b border-white/10">
                         <span className="text-[10px] text-white/60 uppercase tracking-widest">

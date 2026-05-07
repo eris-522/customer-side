@@ -1,12 +1,20 @@
 import { motion, AnimatePresence } from "motion/react";
-import { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { useState, useEffect } from "react";
+import {
+  Link,
+  useNavigate,
+  useLocation,
+  useSearchParams,
+} from "react-router-dom";
 import { Mail, Lock, User, ArrowRight, ChevronLeft } from "lucide-react";
 import { supabase } from "../utils/supabase";
 
 export default function AuthPage() {
   const navigate = useNavigate();
+  const location = useLocation();
+  const [searchParams] = useSearchParams();
   const [isLogin, setIsLogin] = useState(true);
+
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -14,50 +22,71 @@ export default function AuthPage() {
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
 
+  useEffect(() => {
+    const init = async () => {
+      // If already signed in, skip auth page
+      const { data } = await supabase.auth.getUser();
+      if (data.user) {
+        navigate("/booking");
+        return;
+      }
+
+      // Support query param mode=login|signup for the toggle button
+      const mode = searchParams.get("mode");
+      setIsLogin(mode !== "signup");
+    };
+
+    init();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setError("");
     setMessage("");
 
-    if (isLogin) {
-      const { error } = await supabase.auth.signInWithPassword({
-        email: email,
-        password: password,
-      });
+    try {
+      if (isLogin) {
+        const { error } = await supabase.auth.signInWithPassword({
+          email: email,
+          password: password,
+        });
 
-      if (error) {
-        setError(error.message);
+        if (error) {
+          setError(error.message);
+        } else {
+          setMessage("Login successful.");
+          setEmail("");
+          setPassword("");
+          navigate("/booking");
+        }
       } else {
-        setMessage("Login successful.");
-        setEmail("");
-        setPassword("");
-        navigate("/booking");
-      }
-    } else {
-      const { error } = await supabase.auth.signUp({
-        email: email,
-        password: password,
-        options: {
-          data: {
-            full_name: fullName,
+        const { error } = await supabase.auth.signUp({
+          email: email,
+          password: password,
+          options: {
+            data: {
+              full_name: fullName,
+            },
           },
-        },
-      });
+        });
 
-      if (error) {
-        setError(error.message);
-      } else {
-        setMessage(
-          "Registration successful! You can now log in to book your event.",
-        );
-        setIsLogin(true);
-        setPassword("");
+        if (error) {
+          setError(error.message);
+        } else {
+          setMessage(
+            "Registration successful! You can now log in to book your event.",
+          );
+          setIsLogin(true);
+          setPassword("");
+        }
       }
+    } finally {
+      setLoading(false);
     }
-
-    setLoading(false);
   };
+
 
   return (
     <div className="min-h-screen bg-rich-black flex items-center justify-center p-6 pt-24 font-sans text-white relative overflow-hidden">

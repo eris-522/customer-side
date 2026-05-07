@@ -1,6 +1,6 @@
 import { motion, AnimatePresence } from "motion/react";
 import { useState, useEffect } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import {
   ChevronRight,
   ChevronLeft,
@@ -37,6 +37,15 @@ const steps = [
 ];
 
 export default function BookingPage() {
+  // Feature: Minimum selectable date (tomorrow only)
+  const minSelectableDate = (() => {
+    const d = new Date();
+    d.setDate(d.getDate() + 1);
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, "0");
+    const dd = String(d.getDate()).padStart(2, "0");
+    return `${yyyy}-${mm}-${dd}`;
+  })();
   const navigate = useNavigate();
   // Feature: State for tracking the current view in the multi-step form
   const [currentStep, setCurrentStep] = useState(1);
@@ -110,7 +119,11 @@ export default function BookingPage() {
         setStepError("Please select a catering package to continue.");
         return;
       }
-    } else if (currentStep === 2) {
+    } else if (currentStep === 2) { 
+      if (formData.date && formData.date < minSelectableDate) {
+        setStepError(`Event Date must be ${minSelectableDate} or later.`);
+        return;
+      }
       // Enforce that all text inputs, dates, and numbers are filled out
       if (
         !formData.eventType.trim() ||
@@ -200,8 +213,8 @@ export default function BookingPage() {
   };
 
   // Feature: Groups the flat menu item data by their respective categories for organized UI rendering
-  const groupedMenu = menuOptions.reduce(
-    (acc, item) => {
+  const groupedMenu = (menuOptions as Array<any>).reduce(
+    (acc: Record<string, string[]>, item: any) => {
       if (!acc[item.category]) acc[item.category] = [];
       acc[item.category].push(item.name);
       return acc;
@@ -295,7 +308,7 @@ export default function BookingPage() {
                 <button
                   key={pkg.id}
                   onClick={() => handlePackageSelect(pkg.id)}
-                  className={`p-8 glass-card border transition-all text-left group flex flex-col justify-between h-48 ${
+                  className={`p-8 glass-card border transition-all text-left group flex flex-col justify-between h-48 relative ${
                     formData.packageId === pkg.id
                       ? "border-gold-400 bg-gold-400/5"
                       : "border-white/10 hover:border-gold-400/50"
@@ -309,6 +322,32 @@ export default function BookingPage() {
                       {pkg.price}
                     </span>
                   </div>
+
+                  {/* Hover details panel */}
+                  <div
+                    className="absolute left-0 right-0 bottom-0 p-4 border-t border-white/10 bg-rich-black/95 opacity-0 translate-y-2 transition-all duration-300 pointer-events-none group-hover:opacity-100 group-hover:translate-y-0 group-focus-within:opacity-100 group-focus-within:translate-y-0"
+                    aria-hidden="true"
+                  >
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="min-w-0">
+                        <p className="text-[10px] uppercase tracking-widest text-white/40 font-bold mb-1">
+                          {pkg.type} Event · {pkg.pax} Guests
+                        </p>
+                        <div className="text-[10px] text-white/70 uppercase tracking-widest font-semibold space-y-1">
+                          {(Array.isArray(pkg.inclusions) && pkg.inclusions.length
+                            ? (pkg.inclusions as unknown as string[])
+                            : ["Details available upon request"]
+                          ).map((feature: string, idx: number) => (
+                            <div key={idx} className="flex items-start gap-2">
+                              <span className="w-1.5 h-1.5 bg-gold-400 mt-2" />
+                              <span className="leading-relaxed">{feature}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
                   <div className="flex justify-end">
                     <div
                       className={`p-2 border transition-all ${
@@ -367,6 +406,7 @@ export default function BookingPage() {
                   </label>
                   <input
                     type="date"
+                    min={minSelectableDate}
                     className="w-full bg-white/5 border border-white/10 px-6 py-4 text-sm focus:outline-none focus:border-gold-400/50 transition-all font-medium [color-scheme:dark]"
                     value={formData.date}
                     onChange={(e) => {
@@ -785,7 +825,7 @@ export default function BookingPage() {
                 onClick={handleNextStep}
                 className="gold-gradient text-black px-12 py-4 font-bold tracking-[0.3em] uppercase text-[10px] hover:brightness-110 transition-all flex items-center gap-3"
               >
-                Continue to Next <ChevronRight size={14} />
+                {currentStep === 4 ? "Skip" : "Continue to Next"} <ChevronRight size={14} />
               </button>
             )}
           </div>
