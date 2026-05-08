@@ -18,7 +18,6 @@ import { supabase } from "../utils/supabase";
 
 interface FormData {
   packageId: string;
-  eventType: string;
   date: string;
   time: string;
   guestCount: string;
@@ -64,7 +63,6 @@ export default function BookingPage() {
   // Feature: Main form data object holding all user selections
   const [formData, setFormData] = useState<FormData>({
     packageId: "",
-    eventType: "",
     date: "",
     time: "",
     guestCount: "",
@@ -126,7 +124,6 @@ export default function BookingPage() {
       }
       // Enforce that all text inputs, dates, and numbers are filled out
       if (
-        !formData.eventType.trim() ||
         !formData.date ||
         !formData.time ||
         !formData.guestCount ||
@@ -308,7 +305,7 @@ export default function BookingPage() {
                 <button
                   key={pkg.id}
                   onClick={() => handlePackageSelect(pkg.id)}
-                  className={`p-8 glass-card border transition-all text-left group flex flex-col relative ${
+                  className={`p-8 glass-card border transition-all duration-300 text-left group flex flex-col relative hover:-translate-y-2 hover:shadow-2xl hover:shadow-gold-400/20 ${
                     formData.packageId === pkg.id
                       ? "border-gold-400 bg-gold-400/5"
                       : "border-white/10 hover:border-gold-400/50"
@@ -331,10 +328,6 @@ export default function BookingPage() {
 
                     <div className="flex items-center gap-4 mb-6 pb-6 border-b border-white/10">
                       <span className="text-sm text-white/80 font-bold">
-                        {pkg.type} Event
-                      </span>
-                      <span className="w-1 h-1 rounded-full bg-white/20"></span>
-                      <span className="text-sm text-white/80 font-bold">
                         {pkg.pax} Guests
                       </span>
                     </div>
@@ -354,17 +347,6 @@ export default function BookingPage() {
                           </span>
                         </div>
                       ))}
-                    </div>
-                    <div className="mt-auto flex justify-end">
-                      <div
-                        className={`p-2 border transition-all ${
-                          formData.packageId === pkg.id
-                            ? "bg-gold-400 text-black border-gold-400"
-                            : "text-gold-400 border-gold-400/20 group-hover:bg-gold-400 group-hover:text-black"
-                        }`}
-                      >
-                        <ChevronRight size={16} />
-                      </div>
                     </div>
                   </div>
                 </button>
@@ -394,21 +376,6 @@ export default function BookingPage() {
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
-                <div className="space-y-2">
-                  <label className="text-base text-white/80 font-bold">
-                    Event Type <span className="text-red-400">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="e.g. Wedding, Gala, Birthday"
-                    className="w-full bg-white/5 border border-white/10 px-6 py-4 text-lg focus:outline-none focus:border-gold-400/50 transition-all font-medium"
-                    value={formData.eventType}
-                    onChange={(e) => {
-                      setStepError("");
-                      setFormData({ ...formData, eventType: e.target.value });
-                    }}
-                  />
-                </div>
                 <div className="space-y-2 text-white">
                   <label className="text-base text-white/80 font-bold">
                     Event Date <span className="text-red-400">*</span>
@@ -647,17 +614,6 @@ export default function BookingPage() {
                         </div>
                       </div>
                       <div className="flex gap-4">
-                        <Info className="text-gold-400 shrink-0" size={18} />
-                        <div>
-                          <p className="text-sm tracking-wide text-white/70 font-bold mb-1">
-                            Event Type
-                          </p>
-                          <p className="text-lg font-serif tracking-wider">
-                            {formData.eventType || "Not Specified"}
-                          </p>
-                        </div>
-                      </div>
-                      <div className="flex gap-4">
                         <Calendar className="text-gold-400 shrink-0" size={18} />
                         <div>
                           <p className="text-sm tracking-wide text-white/70 font-bold mb-1">
@@ -828,7 +784,7 @@ export default function BookingPage() {
               <div />
             )}{" "}
             {/* Empty div to keep Next button aligned right via justify-between */}
-            {currentStep < 5 && (
+            {currentStep > 1 && currentStep < 5 && (
               <button
                 onClick={handleNextStep}
                 className="gold-gradient text-black px-12 py-4 font-bold tracking-wide text-lg hover:brightness-110 transition-all flex items-center gap-3"

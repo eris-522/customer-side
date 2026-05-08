@@ -9,7 +9,6 @@ export interface CateringPackage {
   id: string;
   name: string;
   price: string;
-  type: string;
   pax: string;
   tag?: string;
   inclusions: string[];
@@ -146,12 +145,8 @@ export default function PackagesPage() {
                       </div>
 
 
-                      {/* Feature: Displays the event type and pax limitations clearly to the customer */}
+                      {/* Feature: Displays pax limitations clearly to the customer */}
                       <div className="flex items-center gap-4 mb-6 pb-6 border-b border-white/10">
-                        <span className="text-[10px] text-white/60 uppercase tracking-widest">
-                          {pkg.type} Event
-                        </span>
-                        <span className="w-1 h-1 rounded-full bg-white/20"></span>
                         <span className="text-[10px] text-white/60 uppercase tracking-widest">
                           {pkg.pax} Guests
                         </span>
