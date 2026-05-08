@@ -119,7 +119,7 @@ export default function BookingPage() {
         setStepError("Please select a catering package to continue.");
         return;
       }
-    } else if (currentStep === 2) { 
+    } else if (currentStep === 2) {
       if (formData.date && formData.date < minSelectableDate) {
         setStepError(`Event Date must be ${minSelectableDate} or later.`);
         return;
@@ -239,7 +239,7 @@ export default function BookingPage() {
         <motion.span
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
-          className="text-gold-400 text-[10px] tracking-[0.4em] font-bold uppercase mb-4 block italic"
+          className="text-gold-400 text-base tracking-wide font-bold mb-4 block italic"
         >
           Event Reservation
         </motion.span>
@@ -273,8 +273,8 @@ export default function BookingPage() {
                 <step.icon size={16} strokeWidth={2.5} />
               </div>
               <span
-                className={`text-[8px] uppercase tracking-widest mt-3 font-bold ${
-                  currentStep >= step.id ? "text-gold-400" : "text-white/20"
+                className={`text-sm tracking-wide mt-3 font-bold ${
+                  currentStep >= step.id ? "text-gold-400" : "text-white/60"
                 }`}
               >
                 {step.title}
@@ -300,7 +300,7 @@ export default function BookingPage() {
                   Select Your Collection{" "}
                   <span className="text-red-400 text-lg">*</span>
                 </h2>
-                <p className="text-[10px] text-white/40 uppercase tracking-widest font-semibold">
+                <p className="text-base text-white/80 font-semibold">
                   Choose the base package that fits your event scale.
                 </p>
               </div>
@@ -308,55 +308,63 @@ export default function BookingPage() {
                 <button
                   key={pkg.id}
                   onClick={() => handlePackageSelect(pkg.id)}
-                  className={`p-8 glass-card border transition-all text-left group flex flex-col justify-between h-48 relative ${
+                  className={`p-8 glass-card border transition-all text-left group flex flex-col relative ${
                     formData.packageId === pkg.id
                       ? "border-gold-400 bg-gold-400/5"
                       : "border-white/10 hover:border-gold-400/50"
                   }`}
                 >
-                  <div>
-                    <h3 className="text-xl font-serif text-white mb-2 uppercase tracking-wider">
-                      {pkg.name}
-                    </h3>
-                    <span className="text-gold-400 font-serif text-lg">
-                      {pkg.price}
-                    </span>
-                  </div>
-
-                  {/* Hover details panel */}
-                  <div
-                    className="absolute left-0 right-0 bottom-0 p-4 border-t border-white/10 bg-rich-black/95 opacity-0 translate-y-2 transition-all duration-300 pointer-events-none group-hover:opacity-100 group-hover:translate-y-0 group-focus-within:opacity-100 group-focus-within:translate-y-0"
-                    aria-hidden="true"
-                  >
-                    <div className="flex items-start justify-between gap-4">
-                      <div className="min-w-0">
-                        <p className="text-[10px] uppercase tracking-widest text-white/40 font-bold mb-1">
-                          {pkg.type} Event · {pkg.pax} Guests
-                        </p>
-                        <div className="text-[10px] text-white/70 uppercase tracking-widest font-semibold space-y-1">
-                          {(Array.isArray(pkg.inclusions) && pkg.inclusions.length
-                            ? (pkg.inclusions as unknown as string[])
-                            : ["Details available upon request"]
-                          ).map((feature: string, idx: number) => (
-                            <div key={idx} className="flex items-start gap-2">
-                              <span className="w-1.5 h-1.5 bg-gold-400 mt-2" />
-                              <span className="leading-relaxed">{feature}</span>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
+                  {pkg.tag && (
+                    <div className="absolute top-4 left-4 z-10 bg-gold-400 text-black px-3 py-1 text-[9px] font-bold uppercase tracking-widest rounded-sm">
+                      {pkg.tag}
                     </div>
-                  </div>
+                  )}
+                  <div className="flex-grow flex flex-col w-full">
+                    <div className="flex justify-between items-start mb-4 gap-4 mt-2">
+                      <h3 className="text-xl font-serif text-white uppercase tracking-wider">
+                        {pkg.name}
+                      </h3>
+                      <span className="text-gold-400 font-serif text-lg shrink-0">
+                        {pkg.price}
+                      </span>
+                    </div>
 
-                  <div className="flex justify-end">
-                    <div
-                      className={`p-2 border transition-all ${
-                        formData.packageId === pkg.id
-                          ? "bg-gold-400 text-black border-gold-400"
-                          : "text-gold-400 border-gold-400/20 group-hover:bg-gold-400 group-hover:text-black"
-                      }`}
-                    >
-                      <ChevronRight size={16} />
+                    <div className="flex items-center gap-4 mb-6 pb-6 border-b border-white/10">
+                      <span className="text-sm text-white/80 font-bold">
+                        {pkg.type} Event
+                      </span>
+                      <span className="w-1 h-1 rounded-full bg-white/20"></span>
+                      <span className="text-sm text-white/80 font-bold">
+                        {pkg.pax} Guests
+                      </span>
+                    </div>
+
+                    <div className="space-y-3 mb-10">
+                      {(Array.isArray(pkg.inclusions) && pkg.inclusions.length
+                        ? (pkg.inclusions as unknown as string[])
+                        : ["Details available upon request"]
+                      ).map((feature: string, idx: number) => (
+                        <div key={idx} className="flex items-start gap-3">
+                          <Check
+                            size={12}
+                            className="text-gold-400 shrink-0 mt-1.5"
+                          />
+                          <span className="text-sm text-white/80 font-semibold leading-relaxed">
+                            {feature}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="mt-auto flex justify-end">
+                      <div
+                        className={`p-2 border transition-all ${
+                          formData.packageId === pkg.id
+                            ? "bg-gold-400 text-black border-gold-400"
+                            : "text-gold-400 border-gold-400/20 group-hover:bg-gold-400 group-hover:text-black"
+                        }`}
+                      >
+                        <ChevronRight size={16} />
+                      </div>
                     </div>
                   </div>
                 </button>
@@ -380,19 +388,20 @@ export default function BookingPage() {
                     Specifications
                   </span>
                 </h2>
-                <p className="text-[10px] text-white/40 uppercase tracking-widest font-bold">
+                <p className="text-base text-white/80 font-bold">
                   All fields are required to secure your date.
                 </p>
               </div>
+
               <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
                 <div className="space-y-2">
-                  <label className="text-[9px] uppercase tracking-[0.3em] text-white/40 font-bold">
+                  <label className="text-base text-white/80 font-bold">
                     Event Type <span className="text-red-400">*</span>
                   </label>
                   <input
                     type="text"
                     placeholder="e.g. Wedding, Gala, Birthday"
-                    className="w-full bg-white/5 border border-white/10 px-6 py-4 text-sm focus:outline-none focus:border-gold-400/50 transition-all font-medium"
+                    className="w-full bg-white/5 border border-white/10 px-6 py-4 text-lg focus:outline-none focus:border-gold-400/50 transition-all font-medium"
                     value={formData.eventType}
                     onChange={(e) => {
                       setStepError("");
@@ -401,13 +410,13 @@ export default function BookingPage() {
                   />
                 </div>
                 <div className="space-y-2 text-white">
-                  <label className="text-[9px] uppercase tracking-[0.3em] text-white/40 font-bold">
+                  <label className="text-base text-white/80 font-bold">
                     Event Date <span className="text-red-400">*</span>
                   </label>
                   <input
                     type="date"
                     min={minSelectableDate}
-                    className="w-full bg-white/5 border border-white/10 px-6 py-4 text-sm focus:outline-none focus:border-gold-400/50 transition-all font-medium [color-scheme:dark]"
+                    className="w-full bg-white/5 border border-white/10 px-6 py-4 text-lg focus:outline-none focus:border-gold-400/50 transition-all font-medium [color-scheme:dark]"
                     value={formData.date}
                     onChange={(e) => {
                       setStepError("");
@@ -416,13 +425,13 @@ export default function BookingPage() {
                   />
                 </div>
                 <div className="space-y-2">
-                  <label className="text-[9px] uppercase tracking-[0.3em] text-white/40 font-bold">
+                  <label className="text-base text-white/80 font-bold">
                     Guest Count <span className="text-red-400">*</span>
                   </label>
                   <input
                     type="number"
                     placeholder="0"
-                    className="w-full bg-white/5 border border-white/10 px-6 py-4 text-sm focus:outline-none focus:border-gold-400/50 transition-all font-medium"
+                    className="w-full bg-white/5 border border-white/10 px-6 py-4 text-lg focus:outline-none focus:border-gold-400/50 transition-all font-medium"
                     value={formData.guestCount}
                     onChange={(e) => {
                       setStepError("");
@@ -431,12 +440,12 @@ export default function BookingPage() {
                   />
                 </div>
                 <div className="space-y-2">
-                  <label className="text-[9px] uppercase tracking-[0.3em] text-white/40 font-bold">
+                  <label className="text-base text-white/80 font-bold">
                     Preferred Time <span className="text-red-400">*</span>
                   </label>
                   <input
                     type="time"
-                    className="w-full bg-white/5 border border-white/10 px-6 py-4 text-sm focus:outline-none focus:border-gold-400/50 transition-all font-medium [color-scheme:dark]"
+                    className="w-full bg-white/5 border border-white/10 px-6 py-4 text-lg focus:outline-none focus:border-gold-400/50 transition-all font-medium [color-scheme:dark]"
                     value={formData.time}
                     onChange={(e) => {
                       setStepError("");
@@ -445,13 +454,13 @@ export default function BookingPage() {
                   />
                 </div>
                 <div className="col-span-full space-y-2">
-                  <label className="text-[9px] uppercase tracking-[0.3em] text-white/40 font-bold">
+                  <label className="text-base text-white/80 font-bold">
                     Venue Name <span className="text-red-400">*</span>
                   </label>
                   <input
                     type="text"
                     placeholder="Grand Ballroom, Private Residence..."
-                    className="w-full bg-white/5 border border-white/10 px-6 py-4 text-sm focus:outline-none focus:border-gold-400/50 transition-all font-medium"
+                    className="w-full bg-white/5 border border-white/10 px-6 py-4 text-lg focus:outline-none focus:border-gold-400/50 transition-all font-medium"
                     value={formData.venueName}
                     onChange={(e) => {
                       setStepError("");
@@ -460,13 +469,13 @@ export default function BookingPage() {
                   />
                 </div>
                 <div className="col-span-full space-y-2">
-                  <label className="text-[9px] uppercase tracking-[0.3em] text-white/40 font-bold">
+                  <label className="text-base text-white/80 font-bold">
                     Venue Address <span className="text-red-400">*</span>
                   </label>
                   <textarea
                     placeholder="Full street address..."
                     rows={3}
-                    className="w-full bg-white/5 border border-white/10 px-6 py-4 text-sm focus:outline-none focus:border-gold-400/50 transition-all font-medium resize-none"
+                    className="w-full bg-white/5 border border-white/10 px-6 py-4 text-lg focus:outline-none focus:border-gold-400/50 transition-all font-medium resize-none"
                     value={formData.venueAddress}
                     onChange={(e) => {
                       setStepError("");
@@ -495,47 +504,49 @@ export default function BookingPage() {
                   Menu{" "}
                   <span className="italic gold-text-gradient">Curation</span>
                 </h2>
-                <p className="text-[10px] text-white/40 uppercase tracking-widest font-bold">
+                <p className="text-base text-white/80 font-bold">
                   Select your preferred dishes from our active catalog.{" "}
                   <span className="text-red-400">(At least 1 required)</span>
                 </p>
               </div>
 
-              {Object.entries(groupedMenu).map(([category, items]) => (
-                <div key={category} className="space-y-6">
-                  <h3 className="text-[12px] uppercase tracking-[0.4em] text-gold-400 font-bold border-b border-gold-400/20 pb-4 italic">
-                    {category}
-                  </h3>
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {items.map((item) => (
-                      <button
-                        key={item}
-                        onClick={() => handleMenuToggle(item)}
-                        className={`p-5 glass-card border flex items-center justify-between transition-all group ${
-                          formData.menuSelections.includes(item)
-                            ? "border-gold-400 bg-gold-400/5"
-                            : "border-white/10 hover:border-white/30"
-                        }`}
-                      >
-                        <span className="text-[10px] uppercase tracking-widest font-bold text-left">
-                          {item}
-                        </span>
-                        <div
-                          className={`w-5 h-5 border flex items-center justify-center shrink-0 transition-all ${
+              {(Object.entries(groupedMenu) as Array<[string, string[]]>).map(
+                ([category, items]) => (
+                  <div key={category} className="space-y-6">
+                    <h3 className="text-xl tracking-wide text-gold-400 font-bold border-b border-gold-400/20 pb-4 italic">
+                      {category}
+                    </h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                      {items.map((item) => (
+                        <button
+                          key={item}
+                          onClick={() => handleMenuToggle(item)}
+                          className={`p-5 glass-card border flex items-center justify-between transition-all group ${
                             formData.menuSelections.includes(item)
-                              ? "bg-gold-400 border-gold-400 text-black"
-                              : "border-white/20 group-hover:border-gold-400"
+                              ? "border-gold-400 bg-gold-400/5"
+                              : "border-white/10 hover:border-white/30"
                           }`}
                         >
-                          {formData.menuSelections.includes(item) && (
-                            <Check size={12} strokeWidth={4} />
-                          )}
-                        </div>
-                      </button>
-                    ))}
+                          <span className="text-base tracking-wide font-bold text-left">
+                            {item}
+                          </span>
+                          <div
+                            className={`w-5 h-5 border flex items-center justify-center shrink-0 transition-all ${
+                              formData.menuSelections.includes(item)
+                                ? "bg-gold-400 border-gold-400 text-black"
+                                : "border-white/20 group-hover:border-gold-400"
+                            }`}
+                          >
+                            {formData.menuSelections.includes(item) && (
+                              <Check size={12} strokeWidth={4} />
+                            )}
+                          </div>
+                        </button>
+                      ))}
+                    </div>
                   </div>
-                </div>
-              ))}
+                ),
+              )}
             </motion.div>
           )}
 
@@ -553,7 +564,7 @@ export default function BookingPage() {
                   <h2 className="text-3xl font-serif mb-2 uppercase tracking-wide italic gold-text-gradient">
                     Additional Services
                   </h2>
-                  <p className="text-[10px] text-white/40 uppercase tracking-widest font-bold">
+                  <p className="text-base text-white/80 font-bold">
                     Enhance your event experience (Optional).
                   </p>
                 </div>
@@ -569,10 +580,10 @@ export default function BookingPage() {
                       }`}
                     >
                       <div>
-                        <span className="text-[11px] uppercase tracking-[0.2em] font-bold block text-left">
+                        <span className="text-lg tracking-wide font-bold block text-left">
                           {service.name}
                         </span>
-                        <span className="text-[9px] text-gold-400 block text-left mt-1">
+                        <span className="text-base text-gold-400 block text-left mt-1">
                           ₱{service.price}
                         </span>
                       </div>
@@ -608,7 +619,7 @@ export default function BookingPage() {
                   Review Your{" "}
                   <span className="italic gold-text-gradient">Request</span>
                 </h2>
-                <p className="text-[11px] text-white/40 uppercase tracking-[0.3em] font-bold">
+                <p className="text-lg text-white/80 tracking-wide font-bold">
                   Double check everything before submitting.
                 </p>
               </div>
@@ -618,17 +629,17 @@ export default function BookingPage() {
                 <div className="lg:col-span-2 space-y-8">
                   <div className="p-10 glass-card border border-white/10 relative overflow-hidden">
                     <div className="absolute top-0 right-0 w-32 h-32 bg-gold-400/5 rotate-45 translate-x-16 -translate-y-16" />
-                    <h3 className="text-[12px] uppercase tracking-[0.4em] text-gold-400 font-bold mb-10 italic">
+                    <h3 className="text-xl tracking-wide text-gold-400 font-bold mb-10 italic">
                       1. Event Overview
                     </h3>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-y-8 gap-x-12">
                       <div className="flex gap-4">
                         <Package className="text-gold-400 shrink-0" size={18} />
                         <div>
-                          <p className="text-[8px] uppercase tracking-widest text-white/30 font-bold mb-1">
+                          <p className="text-sm tracking-wide text-white/70 font-bold mb-1">
                             Catering Package
                           </p>
-                          <p className="text-sm font-serif uppercase tracking-wider">
+                          <p className="text-lg font-serif tracking-wider">
                             {availablePackages.find(
                               (p) => p.id === formData.packageId,
                             )?.name || "Not Selected"}
@@ -638,24 +649,21 @@ export default function BookingPage() {
                       <div className="flex gap-4">
                         <Info className="text-gold-400 shrink-0" size={18} />
                         <div>
-                          <p className="text-[8px] uppercase tracking-widest text-white/30 font-bold mb-1">
+                          <p className="text-sm tracking-wide text-white/70 font-bold mb-1">
                             Event Type
                           </p>
-                          <p className="text-sm font-serif uppercase tracking-wider">
+                          <p className="text-lg font-serif tracking-wider">
                             {formData.eventType || "Not Specified"}
                           </p>
                         </div>
                       </div>
                       <div className="flex gap-4">
-                        <Calendar
-                          className="text-gold-400 shrink-0"
-                          size={18}
-                        />
+                        <Calendar className="text-gold-400 shrink-0" size={18} />
                         <div>
-                          <p className="text-[8px] uppercase tracking-widest text-white/30 font-bold mb-1">
+                          <p className="text-sm tracking-wide text-white/70 font-bold mb-1">
                             Date & Time
                           </p>
-                          <p className="text-sm font-serif uppercase tracking-wider">
+                          <p className="text-lg font-serif tracking-wider">
                             {formData.date || "Not Set"} at{" "}
                             {formData.time || "No Time"}
                           </p>
@@ -664,10 +672,10 @@ export default function BookingPage() {
                       <div className="flex gap-4">
                         <Users className="text-gold-400 shrink-0" size={18} />
                         <div>
-                          <p className="text-[8px] uppercase tracking-widest text-white/30 font-bold mb-1">
+                          <p className="text-sm tracking-wide text-white/70 font-bold mb-1">
                             Guest Count
                           </p>
-                          <p className="text-sm font-serif uppercase tracking-wider">
+                          <p className="text-lg font-serif tracking-wider">
                             {formData.guestCount || "0"} People
                           </p>
                         </div>
@@ -675,13 +683,13 @@ export default function BookingPage() {
                       <div className="col-span-full flex gap-4 border-t border-white/5 pt-8">
                         <MapPin className="text-gold-400 shrink-0" size={18} />
                         <div>
-                          <p className="text-[8px] uppercase tracking-widest text-white/30 font-bold mb-1">
+                          <p className="text-sm tracking-wide text-white/70 font-bold mb-1">
                             Venue Details
                           </p>
-                          <p className="text-sm font-serif uppercase tracking-wider mb-1">
+                          <p className="text-lg font-serif tracking-wider mb-1">
                             {formData.venueName || "Private Venue"}
                           </p>
-                          <p className="text-[9px] text-white/40 uppercase tracking-widest leading-relaxed">
+                          <p className="text-base text-white/80 tracking-wide leading-relaxed">
                             {formData.venueAddress || "Address not provided"}
                           </p>
                         </div>
@@ -692,7 +700,7 @@ export default function BookingPage() {
                   {/* Menu & Services */}
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                     <div className="p-8 glass-card border border-white/10">
-                      <h3 className="text-[10px] uppercase tracking-[0.3em] text-gold-400 font-bold mb-8 italic">
+                      <h3 className="text-base tracking-wide text-gold-400 font-bold mb-8 italic">
                         Menu Selection
                       </h3>
                       <div className="space-y-6">
@@ -700,7 +708,7 @@ export default function BookingPage() {
                           {formData.menuSelections.map((item) => (
                             <span
                               key={item}
-                              className="text-[9px] px-3 py-1 bg-white/5 border border-white/10 uppercase tracking-widest text-white/60 font-semibold"
+                              className="text-base px-3 py-1 bg-white/5 border border-white/10 tracking-wide text-white/90 font-semibold"
                             >
                               {item}
                             </span>
@@ -709,7 +717,7 @@ export default function BookingPage() {
                       </div>
                     </div>
                     <div className="p-8 glass-card border border-white/10">
-                      <h3 className="text-[10px] uppercase tracking-[0.3em] text-gold-400 font-bold mb-8 italic">
+                      <h3 className="text-base tracking-wide text-gold-400 font-bold mb-8 italic">
                         Add-on Services
                       </h3>
                       <div className="space-y-4">
@@ -720,13 +728,13 @@ export default function BookingPage() {
                               className="flex items-center gap-3"
                             >
                               <div className="w-1.5 h-1.5 bg-gold-400 rotate-45" />
-                              <span className="text-[10px] uppercase tracking-widest text-white/80 font-bold">
+                              <span className="text-base tracking-wide text-white/90 font-bold">
                                 {service}
                               </span>
                             </div>
                           ))
                         ) : (
-                          <p className="text-[10px] text-white/20 uppercase tracking-widest font-bold">
+                          <p className="text-base text-white/60 tracking-wide font-bold">
                             No extra services selected.
                           </p>
                         )}
@@ -738,37 +746,37 @@ export default function BookingPage() {
                 {/* Client Profile Card */}
                 <div className="space-y-8">
                   <div className="p-10 bg-gold-400 text-black border border-gold-400 shadow-[0_0_50px_rgba(197,160,89,0.15)] relative h-full">
-                    <h3 className="text-[11px] uppercase tracking-[0.4em] font-bold mb-10 border-b border-black/10 pb-4 italic">
+                    <h3 className="text-lg tracking-wide font-bold mb-10 border-b border-black/10 pb-4 italic">
                       Client Details
                     </h3>
                     <div className="space-y-10">
                       <div>
-                        <p className="text-[8px] uppercase tracking-widest font-bold mb-1 opacity-60">
+                        <p className="text-sm tracking-wide font-bold mb-1 opacity-60">
                           Full Name
                         </p>
-                        <p className="text-xl font-serif uppercase tracking-wider">
+                        <p className="text-xl font-serif tracking-wider">
                           {userProfile?.name || "Client Name"}
                         </p>
                       </div>
                       <div>
-                        <p className="text-[8px] uppercase tracking-widest font-bold mb-1 opacity-60">
+                        <p className="text-sm tracking-wide font-bold mb-1 opacity-60">
                           Email Address
                         </p>
-                        <p className="text-sm font-serif uppercase tracking-wider break-all">
+                        <p className="text-lg font-serif tracking-wider break-all">
                           {userProfile?.email || "Client Email"}
                         </p>
                       </div>
                       <div>
-                        <p className="text-[8px] uppercase tracking-widest font-bold mb-1 opacity-60">
+                        <p className="text-sm tracking-wide font-bold mb-1 opacity-60">
                           Account Status
                         </p>
-                        <p className="text-lg font-serif tracking-widest">
+                        <p className="text-xl font-serif tracking-widest">
                           {userProfile?.status || "Active"}
                         </p>
                       </div>
                     </div>
                     <div className="mt-16 space-y-4 pt-10 border-t border-black/10">
-                      <p className="text-[9px] uppercase tracking-[0.2em] leading-relaxed font-bold opacity-70">
+                      <p className="text-base tracking-wide leading-relaxed font-bold opacity-70">
                         By submitting this request, you agree to our terms of
                         service and refined catering standards.
                       </p>
@@ -779,14 +787,14 @@ export default function BookingPage() {
 
               <div className="flex flex-col items-center pt-20">
                 {submitError && (
-                  <p className="text-red-400 mb-4 text-xs tracking-widest uppercase">
+                  <p className="text-red-400 mb-4 text-base tracking-wide font-medium">
                     {submitError}
                   </p>
                 )}
                 <button
                   onClick={handleSubmit}
                   disabled={isSubmitting || !formData.packageId}
-                  className="gold-gradient text-black px-12 md:px-20 py-6 font-bold tracking-[0.4em] uppercase text-xs hover:brightness-110 transition-all shadow-[0_0_40px_rgba(197,160,89,0.2)] disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="gold-gradient text-black px-12 md:px-20 py-6 font-bold tracking-wide text-lg hover:brightness-110 transition-all shadow-[0_0_40px_rgba(197,160,89,0.2)] disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {isSubmitting ? "Processing..." : "Confirm & Submit Inquiry"}
                 </button>
@@ -802,7 +810,7 @@ export default function BookingPage() {
             <motion.p
               initial={{ opacity: 0, y: -10 }}
               animate={{ opacity: 1, y: 0 }}
-              className="text-red-400 text-[10px] uppercase tracking-widest font-bold bg-red-400/10 px-4 py-2 border border-red-400/20"
+              className="text-red-400 text-base tracking-wide font-bold bg-red-400/10 px-4 py-2 border border-red-400/20"
             >
               {stepError}
             </motion.p>
@@ -812,7 +820,7 @@ export default function BookingPage() {
             {currentStep > 1 ? (
               <button
                 onClick={prevStep}
-                className="flex items-center gap-3 text-[11px] uppercase tracking-[0.4em] font-bold text-white/40 hover:text-gold-400 transition-colors"
+                className="flex items-center gap-3 text-lg tracking-wide font-bold text-white/80 hover:text-gold-400 transition-colors"
               >
                 <ChevronLeft size={16} /> Back to Previous
               </button>
@@ -823,9 +831,10 @@ export default function BookingPage() {
             {currentStep < 5 && (
               <button
                 onClick={handleNextStep}
-                className="gold-gradient text-black px-12 py-4 font-bold tracking-[0.3em] uppercase text-[10px] hover:brightness-110 transition-all flex items-center gap-3"
+                className="gold-gradient text-black px-12 py-4 font-bold tracking-wide text-lg hover:brightness-110 transition-all flex items-center gap-3"
               >
-                {currentStep === 4 ? "Skip" : "Continue to Next"} <ChevronRight size={14} />
+                {currentStep === 4 ? "Skip" : "Continue to Next"}{" "}
+                <ChevronRight size={14} />
               </button>
             )}
           </div>

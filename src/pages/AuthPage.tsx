@@ -6,18 +6,29 @@ import {
   useLocation,
   useSearchParams,
 } from "react-router-dom";
-import { Mail, Lock, User, ArrowRight, ChevronLeft } from "lucide-react";
+import { Mail, Lock, User, ArrowRight, ChevronLeft, ShieldQuestion } from "lucide-react";
 import { supabase } from "../utils/supabase";
 
 export default function AuthPage() {
   const navigate = useNavigate();
   const location = useLocation();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [isLogin, setIsLogin] = useState(true);
 
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+
+  // Security question fields
+  const [securityAnswer, setSecurityAnswer] = useState("");
+
+  // Forgot password flow
+  const [forgotPasswordStep, setForgotPasswordStep] = useState<'none' | 'email' | 'question' | 'reset'>('none');
+  const [recoveryEmail, setRecoveryEmail] = useState("");
+  const [recoveryAnswer, setRecoveryAnswer] = useState("");
+  const [fetchedAnswer, setFetchedAnswer] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
@@ -30,15 +41,66 @@ export default function AuthPage() {
         navigate("/booking");
         return;
       }
-
-      // Support query param mode=login|signup for the toggle button
-      const mode = searchParams.get("mode");
-      setIsLogin(mode !== "signup");
     };
 
     init();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    }, [navigate]);
+
+    useEffect(() => {
+      // Update display mode whenever the URL parameters change
+      const mode = searchParams.get("mode");
+      setIsLogin(mode !== "signup");
+      setForgotPasswordStep('none');
+    }, [searchParams]);
+
+  const handleForgotSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    setError("");
+    setMessage("");
+
+    try {
+      if (forgotPasswordStep === 'email') {
+        const { data, error } = await supabase
+          .from('profiles')
+          .select('security_answer')
+          .eq('email', recoveryEmail)
+          .single();
+
+        if (error || !data) {
+          setError("Account not found.");
+        } else if (!data.security_answer) {
+          setError("No security question set up for this account.");
+        } else {
+          setFetchedAnswer(data.security_answer);
+          setForgotPasswordStep('question');
+        }
+      } else if (forgotPasswordStep === 'question') {
+        if (recoveryAnswer.toLowerCase().trim() === fetchedAnswer) {
+          setForgotPasswordStep('reset');
+        } else {
+          setError("Incorrect answer.");
+        }
+      } else if (forgotPasswordStep === 'reset') {
+        // Note: Supabase requires an active session or admin API to update a password natively.
+        // We attempt an update here for dummy accounts, but catch and display the error if Supabase blocks it.
+        const { error } = await supabase.auth.updateUser({ password: newPassword });
+        if (error) {
+           setError(`Supabase Error: ${error.message}. (Note: Resetting password without being logged in requires Supabase Edge Functions/Admin API)`);
+        } else {
+           setMessage("Password reset successful. You can now log in.");
+           setForgotPasswordStep('none');
+           setIsLogin(true);
+           setSearchParams({ mode: 'login' });
+           setRecoveryEmail("");
+           setRecoveryAnswer("");
+           setNewPassword("");
+        }
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -47,6 +109,26 @@ export default function AuthPage() {
     setMessage("");
 
     try {
+      // Check for a complete email address before proceeding
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[a-zA-Z]{2,}$/;
+      if (!emailRegex.test(email)) {
+        setError("Please enter a complete and valid email address.");
+        return;
+      }
+
+      // Check for common email domain typos
+      const domain = email.split("@")[1]?.toLowerCase();
+      const commonTypos = [
+        "gmal.com", "gmial.com", "gamil.com", "gmai.com", "gmaill.com", "gmail.co", "gmail.con", "gmail.cm",
+        "yaho.com", "yahoo.co", "yahoo.con", "yahoo.cm",
+        "hotmal.com", "hotmail.co", "hotmail.con", "hotmail.cm", "homtail.com",
+        "outlok.com", "outlook.co", "outlook.con", "outlook.cm", "outloo.com"
+      ];
+      if (domain && commonTypos.includes(domain)) {
+        setError("Please check your email domain for typos (e.g., gmail.com).");
+        return;
+      }
+
       if (isLogin) {
         const { error } = await supabase.auth.signInWithPassword({
           email: email,
@@ -62,23 +144,55 @@ export default function AuthPage() {
           navigate("/booking");
         }
       } else {
-        const { error } = await supabase.auth.signUp({
+        if (!fullName.trim()) {
+          setError("Full name is required.");
+          return;
+        }
+
+        if (!/^[a-zA-Z\s]+$/.test(fullName)) {
+          setError("Full name must not contain special characters or numbers.");
+          return;
+        }
+
+        // Security answer validation: must contain at least one number and one special character
+        const hasNumber = /[0-9]/.test(securityAnswer);
+        const hasSpecialChar = /[^a-zA-Z0-9\s]/.test(securityAnswer);
+        if (!hasNumber || !hasSpecialChar) {
+          setError("Security answer must contain at least one number and one special character.");
+          return;
+        }
+
+        const { data: authData, error: authError } = await supabase.auth.signUp({
           email: email,
           password: password,
-          options: {
-            data: {
-              full_name: fullName,
-            },
-          },
         });
 
-        if (error) {
-          setError(error.message);
-        } else {
+        if (authError) {
+          setError(authError.message);
+        } else if (authData.user) {
+          // Sync display name to profiles table (BookingPage reads `profiles.name`)
+          const { error: profileError } = await supabase
+            .from("profiles")
+            .upsert(
+              {
+                id: authData.user.id,
+                name: fullName,
+                email: email,
+                security_answer: securityAnswer.toLowerCase().trim(),
+              },
+              { onConflict: "id" },
+            );
+
+          if (profileError) {
+            setError(`Error saving profile: ${profileError.message}`);
+            return;
+          }
+
           setMessage(
             "Registration successful! You can now log in to book your event.",
           );
           setIsLogin(true);
+          setSearchParams({ mode: 'login' });
           setPassword("");
         }
       }
@@ -99,7 +213,7 @@ export default function AuthPage() {
       <div className="w-full max-w-md relative z-10">
         <Link
           to="/"
-          className="inline-flex items-center gap-2 text-[10px] uppercase tracking-[0.3em] text-white/40 hover:text-gold-400 transition-colors mb-12 font-bold"
+          className="inline-flex items-center gap-2 text-base tracking-wide text-white/80 hover:text-gold-400 transition-colors mb-12 font-bold"
         >
           <ChevronLeft size={14} /> Back to Home
         </Link>
@@ -109,136 +223,272 @@ export default function AuthPage() {
 
           <div className="mb-10">
             <h1 className="text-4xl font-serif mb-2">
-              {isLogin ? "Welcome" : "Create"}{" "}
+              {forgotPasswordStep !== 'none' ? "Reset" : isLogin ? "Welcome" : "Create"}{" "}
               <span className="italic gold-text-gradient">
-                {isLogin ? "Back" : "Account"}
+                {forgotPasswordStep !== 'none' ? "Password" : isLogin ? "Back" : "Account"}
               </span>
             </h1>
-            <p className="text-[10px] text-white/40 uppercase tracking-[0.2em] font-semibold">
-              {isLogin
-                ? "Sign in to manage your bookings."
-                : "Join us for exquisite event planning."}
+          <p className="text-base text-white/80 font-semibold">
+              {forgotPasswordStep !== 'none' 
+                ? "Recover your account access securely." 
+                : isLogin
+                  ? "Sign in to manage your bookings."
+                  : "Join us for exquisite event planning."}
             </p>
           </div>
 
           <AnimatePresence mode="wait">
-            <motion.form
-              key={isLogin ? "login" : "signup"}
-              initial={{ opacity: 0, x: 20 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: -20 }}
-              transition={{ duration: 0.3 }}
-              className="space-y-6"
-              onSubmit={handleSubmit}
-            >
-              {!isLogin && (
+            {forgotPasswordStep === 'none' ? (
+              <motion.form
+                key={isLogin ? "login" : "signup"}
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -20 }}
+                transition={{ duration: 0.3 }}
+                className="space-y-6"
+                onSubmit={handleSubmit}
+              >
+                {!isLogin && (
+                  <>
+                    <div className="space-y-2">
+                    <label className="text-base text-white/80 font-bold ml-1">
+                        Full Name
+                      </label>
+                      <div className="relative group">
+                        <User
+                          className="absolute left-4 top-1/2 -translate-y-1/2 text-white/20 group-focus-within:text-gold-400 transition-colors"
+                          size={16}
+                        />
+                        <input
+                          type="text"
+                          placeholder="Your Name"
+                          value={fullName}
+                          onChange={(e) => setFullName(e.target.value)}
+                          required={!isLogin}
+                          className="w-full bg-white/5 border border-white/10 px-12 py-4 text-lg focus:outline-none focus:border-gold-400/50 transition-all placeholder:text-white/40"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="space-y-2">
+                    <label className="text-base text-white/80 font-bold ml-1 flex flex-col gap-1">
+                        <span>Security Question: What is your favorite color?</span>
+                      <span className="text-sm text-gold-400/90 normal-case tracking-normal">Must include at least one number and one special character for uniqueness.</span>
+                      </label>
+                      <div className="relative group">
+                        <ShieldQuestion
+                          className="absolute left-4 top-1/2 -translate-y-1/2 text-white/20 group-focus-within:text-gold-400 transition-colors"
+                          size={16}
+                        />
+                        <input
+                          type="text"
+                          placeholder="Your Answer"
+                          value={securityAnswer}
+                          onChange={(e) => setSecurityAnswer(e.target.value)}
+                          required={!isLogin}
+                          className="w-full bg-white/5 border border-white/10 px-12 py-4 text-lg focus:outline-none focus:border-gold-400/50 transition-all placeholder:text-white/40"
+                        />
+                      </div>
+                    </div>
+                  </>
+                )}
+
                 <div className="space-y-2">
-                  <label className="text-[9px] uppercase tracking-[0.2em] text-white/40 font-bold ml-1">
-                    Full Name
+                <label className="text-base text-white/80 font-bold ml-1">
+                    Email Address
                   </label>
                   <div className="relative group">
-                    <User
+                    <Mail
                       className="absolute left-4 top-1/2 -translate-y-1/2 text-white/20 group-focus-within:text-gold-400 transition-colors"
                       size={16}
                     />
                     <input
-                      type="text"
-                      placeholder="Your Name"
-                      value={fullName}
-                      onChange={(e) => setFullName(e.target.value)}
-                      required={!isLogin}
-                      className="w-full bg-white/5 border border-white/10 px-12 py-4 text-sm focus:outline-none focus:border-gold-400/50 transition-all placeholder:text-white/10"
+                      type="email"
+                      placeholder="you@email.com"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      required
+                      className="w-full bg-white/5 border border-white/10 px-12 py-4 text-lg focus:outline-none focus:border-gold-400/50 transition-all placeholder:text-white/40"
                     />
                   </div>
                 </div>
-              )}
 
-              <div className="space-y-2">
-                <label className="text-[9px] uppercase tracking-[0.2em] text-white/40 font-bold ml-1">
-                  Email Address
-                </label>
-                <div className="relative group">
-                  <Mail
-                    className="absolute left-4 top-1/2 -translate-y-1/2 text-white/20 group-focus-within:text-gold-400 transition-colors"
-                    size={16}
-                  />
-                  <input
-                    type="email"
-                    placeholder="you@email.com"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    required
-                    className="w-full bg-white/5 border border-white/10 px-12 py-4 text-sm focus:outline-none focus:border-gold-400/50 transition-all placeholder:text-white/10"
-                  />
+                <div className="space-y-2">
+                  <div className="flex justify-between items-center px-1">
+                  <label className="text-base text-white/80 font-bold">
+                      Password
+                    </label>
+                    {isLogin && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setForgotPasswordStep('email');
+                          setError("");
+                          setMessage("");
+                        }}
+                      className="text-sm tracking-wide text-gold-400/80 hover:text-gold-400 font-bold transition-colors"
+                      >
+                        Forgot?
+                      </button>
+                    )}
+                  </div>
+                  <div className="relative group">
+                    <Lock
+                      className="absolute left-4 top-1/2 -translate-y-1/2 text-white/20 group-focus-within:text-gold-400 transition-colors"
+                      size={16}
+                    />
+                    <input
+                      type="password"
+                      placeholder="••••••••"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      required
+                      className="w-full bg-white/5 border border-white/10 px-12 py-4 text-lg focus:outline-none focus:border-gold-400/50 transition-all placeholder:text-white/40"
+                    />
+                  </div>
                 </div>
-              </div>
 
-              <div className="space-y-2">
-                <div className="flex justify-between items-center px-1">
-                  <label className="text-[9px] uppercase tracking-[0.2em] text-white/40 font-bold">
-                    Password
-                  </label>
-                  {isLogin && (
-                    <button
-                      type="button"
-                      className="text-[8px] uppercase tracking-[0.2em] text-gold-400/60 hover:text-gold-400 font-bold transition-colors"
-                    >
-                      Forgot?
-                    </button>
-                  )}
-                </div>
-                <div className="relative group">
-                  <Lock
-                    className="absolute left-4 top-1/2 -translate-y-1/2 text-white/20 group-focus-within:text-gold-400 transition-colors"
-                    size={16}
-                  />
-                  <input
-                    type="password"
-                    placeholder="••••••••"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    required
-                    className="w-full bg-white/5 border border-white/10 px-12 py-4 text-sm focus:outline-none focus:border-gold-400/50 transition-all placeholder:text-white/10"
-                  />
-                </div>
-              </div>
+                {error && (
+                <div className="p-3 bg-red-500/10 border border-red-500/20 text-red-400 text-base text-center font-medium">
+                    {error}
+                  </div>
+                )}
+                {message && (
+                <div className="p-3 bg-green-500/10 border border-green-500/20 text-green-400 text-base text-center font-medium">
+                    {message}
+                  </div>
+                )}
 
-              {error && (
-                <div className="p-3 bg-red-500/10 border border-red-500/20 text-red-400 text-xs text-center">
-                  {error}
-                </div>
-              )}
-              {message && (
-                <div className="p-3 bg-green-500/10 border border-green-500/20 text-green-400 text-xs text-center">
-                  {message}
-                </div>
-              )}
-
-              <button
-                type="submit"
-                disabled={loading}
-                className="w-full gold-gradient text-black py-4 font-bold tracking-[0.3em] uppercase text-[10px] hover:brightness-110 transition-all flex items-center justify-center gap-2 mt-8 disabled:opacity-50 disabled:cursor-not-allowed"
+                <button
+                  type="submit"
+                  disabled={loading}
+                className="w-full gold-gradient text-black py-4 font-bold tracking-wide text-lg hover:brightness-110 transition-all flex items-center justify-center gap-2 mt-8 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {loading ? "Processing..." : isLogin ? "Sign In" : "Register"}{" "}
+                  <ArrowRight size={14} />
+                </button>
+              </motion.form>
+            ) : (
+              <motion.form
+                key="forgot"
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -20 }}
+                transition={{ duration: 0.3 }}
+                className="space-y-6"
+                onSubmit={handleForgotSubmit}
               >
-                {loading ? "Processing..." : isLogin ? "Sign In" : "Register"}{" "}
-                <ArrowRight size={14} />
-              </button>
-            </motion.form>
+                {forgotPasswordStep === 'email' && (
+                  <div className="space-y-2">
+                  <label className="text-base text-white/80 font-bold ml-1">
+                      Account Email
+                    </label>
+                    <div className="relative group">
+                      <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-white/20 group-focus-within:text-gold-400 transition-colors" size={16} />
+                      <input
+                        type="email"
+                        placeholder="Enter your email"
+                        value={recoveryEmail}
+                        onChange={(e) => setRecoveryEmail(e.target.value)}
+                        required
+                        className="w-full bg-white/5 border border-white/10 px-12 py-4 text-lg focus:outline-none focus:border-gold-400/50 transition-all placeholder:text-white/40"
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {forgotPasswordStep === 'question' && (
+                  <div className="space-y-2">
+                  <label className="text-base text-white/80 font-bold ml-1 flex flex-col gap-1">
+                      <span>Security Question: What is your favorite color?</span>
+                    <span className="text-sm text-gold-400/90 normal-case tracking-normal">Hint: Your answer includes a number and special character.</span>
+                    </label>
+                    <div className="relative group">
+                      <ShieldQuestion className="absolute left-4 top-1/2 -translate-y-1/2 text-white/20 group-focus-within:text-gold-400 transition-colors" size={16} />
+                      <input
+                        type="text"
+                        placeholder="Your Answer"
+                        value={recoveryAnswer}
+                        onChange={(e) => setRecoveryAnswer(e.target.value)}
+                        required
+                        className="w-full bg-white/5 border border-white/10 px-12 py-4 text-lg focus:outline-none focus:border-gold-400/50 transition-all placeholder:text-white/40"
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {forgotPasswordStep === 'reset' && (
+                  <div className="space-y-2">
+                  <label className="text-base text-white/80 font-bold ml-1">
+                      New Password
+                    </label>
+                    <div className="relative group">
+                      <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-white/20 group-focus-within:text-gold-400 transition-colors" size={16} />
+                      <input
+                        type="password"
+                        placeholder="Enter new password"
+                        value={newPassword}
+                        onChange={(e) => setNewPassword(e.target.value)}
+                        required
+                        className="w-full bg-white/5 border border-white/10 px-12 py-4 text-lg focus:outline-none focus:border-gold-400/50 transition-all placeholder:text-white/40"
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {error && (
+                <div className="p-3 bg-red-500/10 border border-red-500/20 text-red-400 text-base text-center font-medium">
+                    {error}
+                  </div>
+                )}
+                {message && (
+                <div className="p-3 bg-green-500/10 border border-green-500/20 text-green-400 text-base text-center font-medium">
+                    {message}
+                  </div>
+                )}
+
+                <button
+                  type="submit"
+                  disabled={loading}
+                className="w-full gold-gradient text-black py-4 font-bold tracking-wide text-lg hover:brightness-110 transition-all flex items-center justify-center gap-2 mt-8 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {loading ? "Processing..." : forgotPasswordStep === 'reset' ? "Update Password" : "Next"} <ArrowRight size={14} />
+                </button>
+              </motion.form>
+            )}
           </AnimatePresence>
 
           <div className="mt-10 pt-10 border-t border-white/5 text-center">
-            <p className="text-[10px] uppercase tracking-[0.2em] text-white/30 font-semibold mb-2">
-              {isLogin ? "Don't have an account?" : "Already a member?"}
-            </p>
-            <button
-              onClick={() => {
-                setIsLogin(!isLogin);
-                setError("");
-                setMessage("");
-              }}
-              className="text-[11px] uppercase tracking-[0.3em] text-gold-400 font-bold hover:text-white transition-colors"
-            >
-              {isLogin ? "Create Account" : "Back to Sign In"}
-            </button>
+            {forgotPasswordStep !== 'none' ? (
+              <button
+                onClick={() => {
+                  setForgotPasswordStep('none');
+                  setSearchParams({ mode: 'login' });
+                  setError("");
+                  setMessage("");
+                }}
+                className="text-lg tracking-wide text-gold-400 font-bold hover:text-white transition-colors"
+              >
+                Back to Sign In
+              </button>
+            ) : (
+              <>
+                <p className="text-base text-white/80 font-semibold mb-2">
+                  {isLogin ? "Don't have an account?" : "Already a member?"}
+                </p>
+                <button
+                  onClick={() => {
+                    setIsLogin(!isLogin);
+                    setSearchParams({ mode: isLogin ? 'signup' : 'login' });
+                    setError("");
+                    setMessage("");
+                  }}
+                  className="text-lg tracking-wide text-gold-400 font-bold hover:text-white transition-colors"
+                >
+                  {isLogin ? "Create Account" : "Back to Sign In"}
+                </button>
+              </>
+            )}
           </div>
         </div>
       </div>

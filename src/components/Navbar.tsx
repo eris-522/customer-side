@@ -1,7 +1,7 @@
 import { motion, AnimatePresence } from "motion/react";
 import { Menu as MenuIcon, X } from "lucide-react";
 import { useState, useEffect } from "react";
-import { Link, useLocation } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { supabase } from "../utils/supabase";
 
 export const navLinks = [
@@ -19,6 +19,16 @@ export default function Navbar() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [user, setUser] = useState<any>(null);
   const location = useLocation();
+  const navigate = useNavigate();
+
+  const isAuthPage = location.pathname === "/auth";
+  const mode = new URLSearchParams(location.search).get("mode");
+
+  // Determine which button should have the "active" (gold) style.
+  // On the auth page, the active button matches the current mode (login vs signup).
+  // On other pages, "Sign Up" is the default primary call-to-action.
+  const isLoginActive = isAuthPage && mode !== "signup";
+  const isSignupActive = !isAuthPage || (isAuthPage && mode === "signup");
 
 
   useEffect(() => {
@@ -62,6 +72,7 @@ export default function Navbar() {
     if (!confirmed) return;
 
     await supabase.auth.signOut();
+    navigate("/");
   };
 
 
@@ -81,7 +92,7 @@ export default function Navbar() {
           >
             <Link to="/" className="flex flex-col">
               <span className="text-xl font-serif tracking-[0.2em] text-gold-400 font-bold uppercase">ROXAN POLICARPIO</span>
-              <span className="text-[9px] tracking-[0.4em] uppercase text-gold-300/60 -mt-1 font-semibold">Events & Catering</span>
+            <span className="text-sm tracking-wide text-gold-300/90 -mt-1 font-semibold">Events & Catering</span>
             </Link>
           </motion.div>
 
@@ -95,7 +106,7 @@ export default function Navbar() {
               >
                 <Link
                   to={link.href}
-                  className={`text-[10px] uppercase tracking-[0.2em] font-semibold transition-colors ${
+                className={`text-base tracking-wide font-semibold transition-colors ${
                     location.pathname === link.href ? "text-gold-400" : "text-white/70 hover:text-gold-400"
                   }`}
                 >
@@ -112,21 +123,35 @@ export default function Navbar() {
                   <button
                     type="button"
                     onClick={handleLogout}
-                    className="ml-4 px-5 py-2 border border-white/10 text-white/70 text-[10px] uppercase tracking-[0.2em] font-bold hover:border-gold-400 hover:text-gold-400 transition-all inline-block"
+                  className="ml-4 px-5 py-2 border border-white/10 text-white/90 text-base tracking-wide font-bold hover:border-gold-400 hover:text-gold-400 transition-all inline-block"
                   >
                     Logout
                   </button>
                 </>
               ) : (
-
-                <Link
-                  to={location.pathname === "/auth" ? "/auth?mode=login" : "/auth?mode=signup"}
-                  className="ml-4 px-5 py-2 border border-gold-400 text-gold-400 text-[10px] uppercase tracking-[0.2em] font-bold hover:bg-gold-400 hover:text-black transition-all inline-block"
-                >
-                  {location.pathname === "/auth" ? "Login" : "Sign Up"}
-                </Link>
+                <>
+                  <Link
+                    to="/auth?mode=login"
+                  className={`ml-4 px-5 py-2 border text-base tracking-wide font-bold transition-all inline-block ${
+                      isLoginActive
+                        ? "border-gold-400 text-gold-400 hover:bg-gold-400 hover:text-black"
+                      : "border-white/10 text-white/90 hover:border-gold-400 hover:text-gold-400"
+                    }`}
+                  >
+                    Login
+                  </Link>
+                  <Link
+                    to="/auth?mode=signup"
+                  className={`ml-4 px-5 py-2 border text-base tracking-wide font-bold transition-all inline-block ${
+                      isSignupActive
+                        ? "border-gold-400 text-gold-400 hover:bg-gold-400 hover:text-black"
+                      : "border-white/10 text-white/90 hover:border-gold-400 hover:text-gold-400"
+                    }`}
+                  >
+                    Sign Up
+                  </Link>
+                </>
               )}
-
             </motion.div>
 
           </div>
@@ -174,17 +199,30 @@ export default function Navbar() {
                   Booking
                 </Link>
               ) : (
-                <Link
-                  to={
-                    location.pathname === "/auth"
-                      ? "/auth?mode=login"
-                      : "/auth?mode=signup"
-                  }
-                  className="text-4xl font-serif text-gold-400 italic"
-                  onClick={() => setIsMobileMenuOpen(false)}
-                >
-                  {location.pathname === "/auth" ? "Login" : "Sign Up"}
-                </Link>
+                <>
+                  <Link
+                    to="/auth?mode=login"
+                    className={`text-4xl font-serif italic transition-colors ${
+                      isLoginActive
+                        ? "text-gold-400"
+                        : "text-white/70 hover:text-gold-400"
+                    }`}
+                    onClick={() => setIsMobileMenuOpen(false)}
+                  >
+                    Login
+                  </Link>
+                  <Link
+                    to="/auth?mode=signup"
+                    className={`text-4xl font-serif italic transition-colors ${
+                      isSignupActive
+                        ? "text-gold-400"
+                        : "text-white/70 hover:text-gold-400"
+                    }`}
+                    onClick={() => setIsMobileMenuOpen(false)}
+                  >
+                    Sign Up
+                  </Link>
+                </>
               )}
             </div>
 
