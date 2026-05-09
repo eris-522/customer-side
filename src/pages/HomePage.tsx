@@ -1,50 +1,61 @@
 import { motion } from "motion/react";
 import { ChevronRight, Quote } from "lucide-react";
 import { Link } from "react-router-dom";
+import { useState, useEffect } from "react";
+import { supabase } from "../utils/supabase";
 
-const packages = [
-  {
-    name: "Package 1",
-    price: "Starting at 100000",
-    description: "Lorem ipsum",
-    features: ["5-Course Gourmet Meal", "Full Bar Service", "Elegant Floral Design", "Personalized Menus"],
-    image: "https://images.unsplash.com/photo-1519741497674-611481863552?auto=format&fit=crop&q=80&w=800"
-  },
-  {
-    name: "Package 2",
-    price: "Starting at 100000",
-    description: "Lorem ipsum",
-    features: ["5-Course Gourmet Meal", "Full Bar Service", "Elegant Floral Design", "Personalized Menus"],
-    image: "https://images.unsplash.com/photo-1414235077428-338989a2e8c0?auto=format&fit=crop&q=80&w=800"
-  },
-  {
-    name: "Package 3",
-    price: "Starting at 100000",
-    description: "Lorem ipsum",
-    features: ["5-Course Gourmet Meal", "Full Bar Service", "Elegant Floral Design", "Personalized Menus"],
-    image: "https://images.unsplash.com/photo-1511795409834-ef04bbd61622?auto=format&fit=crop&q=80&w=800"
-  }
+export interface CateringPackage {
+  id: string;
+  name: string;
+  price: string;
+  pax: string;
+  tag?: string;
+  inclusions: string[];
+}
+
+const fallbackImages = [
+  "https://images.unsplash.com/photo-1547825407-2d060104b7f8?auto=format&fit=crop&q=80&w=800",
+  "https://images.unsplash.com/photo-1555244162-803834f70033?auto=format&fit=crop&q=80&w=800",
+  "https://images.unsplash.com/photo-1414235077428-338989a2e8c0?auto=format&fit=crop&q=80&w=800",
+  "https://images.unsplash.com/photo-1519741497674-611481863552?auto=format&fit=crop&q=80&w=800",
 ];
 
 const steps = [
   {
     number: "01",
     title: "Choose your package",
-    text: "Lorem ipsum"
+    text: "Select from our range of budget-friendly, premium catering collections designed for any occasion."
   },
   {
     number: "02",
     title: "Customize your package",
-    text: "Lorem ipsum"
+    text: "Personalize your menu and services to align with your taste, dietary needs, and event theme."
   },
   {
     number: "03",
     title: "Confirm booking",
-    text: "Lorem ipsum"
+    text: "Finalize your reservation and relax while we deliver a seamless dining experience."
   }
 ];
 
 export default function HomePage() {
+  const [packages, setPackages] = useState<CateringPackage[]>([]);
+
+  useEffect(() => {
+    const fetchPackages = async () => {
+      const { data } = await supabase
+        .from("packages")
+        .select("*")
+        .neq("status", "Archived")
+        .limit(3);
+      
+      if (data) {
+        setPackages(data as CateringPackage[]);
+      }
+    };
+    fetchPackages();
+  }, []);
+
   return (
     <div className="min-h-screen bg-rich-black overflow-hidden font-sans">
       {/* Hero Section */}
@@ -72,7 +83,7 @@ export default function HomePage() {
             transition={{ delay: 0.4 }}
             className="text-5xl md:text-7xl font-serif leading-tight mb-8"
           >
-            Lorem ipsum,<br /><span className="italic">Lorem ipsum</span>
+            Affordable Elegance,<br /><span className="italic">Unforgettable Events</span>
           </motion.h1>
           <motion.div
             initial={{ opacity: 0, y: 30 }}
@@ -103,7 +114,7 @@ export default function HomePage() {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-0 border border-white/10">
             {packages.map((pkg, i) => (
               <motion.div
-                key={pkg.name}
+                key={pkg.id}
                 initial={{ opacity: 0 }}
                 whileInView={{ opacity: 1 }}
                 viewport={{ once: true }}
@@ -111,17 +122,24 @@ export default function HomePage() {
                 className={`p-10 flex flex-col justify-between group hover:bg-[#0F0F0F] transition-colors ${i < 2 ? 'md:border-r border-white/10' : ''}`}
               >
                 <div>
-                  <div className="aspect-[16/9] mb-8 overflow-hidden">
+                  <div className="aspect-[16/9] mb-8 overflow-hidden relative">
+                    {pkg.tag && (
+                      <div className="absolute top-4 left-4 z-10 bg-gold-400 text-black px-3 py-1 text-[9px] font-bold uppercase tracking-widest rounded-sm">
+                        {pkg.tag}
+                      </div>
+                    )}
                     <img 
-                      src={pkg.image} 
+                      src={fallbackImages[i % fallbackImages.length]} 
                       alt={pkg.name}
                       className="w-full h-full object-cover grayscale hover:grayscale-0 transition-all duration-700"
                     />
                   </div>
                   <h3 className="text-2xl font-serif text-white mb-2">{pkg.name}</h3>
-                  <p className="text-[10px] text-white/50 uppercase tracking-widest mb-6">{pkg.price}</p>
+                  <p className="text-[10px] text-white/50 uppercase tracking-widest mb-6">{pkg.price} • {pkg.pax} Guests</p>
                   <p className="text-white/40 text-xs mb-8 leading-relaxed line-clamp-3">
-                    {pkg.description}
+                    {pkg.inclusions && pkg.inclusions.length > 0 
+                      ? pkg.inclusions.join(" • ")
+                      : "Details available upon request."}
                   </p>
                 </div>
                 <Link 
@@ -159,11 +177,11 @@ export default function HomePage() {
               <div className="max-w-xl">
                  <Quote className="text-gold-400/10 mb-8" size={64} />
                  <p className="serif text-2xl md:text-3xl italic leading-relaxed mb-8 text-white/90 font-light">
-                   "Lorem ipsum"
+                  "Roxan Policarpio Events & Catering made our dream wedding a reality. The food was absolutely exquisite, the presentation was flawless, and it didn't break the bank. Truly exceptional service!"
                  </p>
                  <div className="flex items-center gap-4">
                     <div className="w-12 h-[1px] bg-gold-400"></div>
-                    <span className="text-[11px] uppercase tracking-[0.4em] font-bold text-gold-400">Name</span>
+                   <span className="text-[11px] uppercase tracking-[0.4em] font-bold text-gold-400">Maria Santos</span>
                  </div>
               </div>
            </div>

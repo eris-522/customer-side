@@ -11,7 +11,6 @@ import {
   Info,
   Package,
   Utensils,
-  PlusCircle,
   ClipboardCheck,
 } from "lucide-react";
 import { supabase } from "../utils/supabase";
@@ -24,15 +23,13 @@ interface FormData {
   venueName: string;
   venueAddress: string;
   menuSelections: string[];
-  additionalServices: string[];
 }
 
 const steps = [
   { id: 1, title: "Package", icon: Package },
   { id: 2, title: "Details", icon: Calendar },
   { id: 3, title: "Menu", icon: Utensils },
-  { id: 4, title: "Services", icon: PlusCircle },
-  { id: 5, title: "Review", icon: ClipboardCheck },
+  { id: 4, title: "Review", icon: ClipboardCheck },
 ];
 
 export default function BookingPage() {
@@ -57,7 +54,6 @@ export default function BookingPage() {
   // Database States
   const [availablePackages, setAvailablePackages] = useState<any[]>([]);
   const [menuOptions, setMenuOptions] = useState<any[]>([]);
-  const [servicesOptions, setServicesOptions] = useState<any[]>([]);
   const [userProfile, setUserProfile] = useState<any>(null);
 
   // Feature: Main form data object holding all user selections
@@ -69,7 +65,6 @@ export default function BookingPage() {
     venueName: "",
     venueAddress: "",
     menuSelections: [],
-    additionalServices: [],
   });
 
   // Feature: Fetches required dynamic data (packages, menu, services) from Supabase on mount
@@ -92,15 +87,13 @@ export default function BookingPage() {
       setUserProfile(profile);
 
       // Fetch active packages, menu items, and add-ons
-      const [pkgRes, menuRes, srvRes] = await Promise.all([
+      const [pkgRes, menuRes] = await Promise.all([
         supabase.from("packages").select("*").neq("status", "Archived"),
         supabase.from("menu_items").select("*").neq("status", "Archived"),
-        supabase.from("add_ons").select("*").neq("status", "Archived"),
       ]);
 
       if (pkgRes.data) setAvailablePackages(pkgRes.data);
       if (menuRes.data) setMenuOptions(menuRes.data);
-      if (srvRes.data) setServicesOptions(srvRes.data);
 
       setLoadingData(false);
     };
@@ -140,9 +133,8 @@ export default function BookingPage() {
         return;
       }
     }
-    // Step 4 (Services) is typically optional, so no strict validation blocks it here.
 
-    setCurrentStep((prev) => Math.min(prev + 1, 5));
+    setCurrentStep((prev) => Math.min(prev + 1, 4));
   };
 
   // Feature: Moves back a step and clears any active error messages
@@ -169,15 +161,6 @@ export default function BookingPage() {
     setFormData({ ...formData, menuSelections: updated });
   };
 
-  // Feature: Toggles additional services on/off in the formData array
-  const handleServiceToggle = (serviceName: string) => {
-    const current = formData.additionalServices;
-    const updated = current.includes(serviceName)
-      ? current.filter((s) => s !== serviceName)
-      : [...current, serviceName];
-    setFormData({ ...formData, additionalServices: updated });
-  };
-
   // Feature: Submits the final validated form data to the Supabase 'bookings' table
   const handleSubmit = async () => {
     if (!userProfile) return;
@@ -194,7 +177,6 @@ export default function BookingPage() {
         event_location: `${formData.venueName} - ${formData.venueAddress}`,
         guest_count: parseInt(formData.guestCount) || 0,
         selected_menu_items: formData.menuSelections,
-        selected_add_ons: formData.additionalServices,
         status: "Pending",
       },
     ]);
@@ -517,63 +499,8 @@ export default function BookingPage() {
             </motion.div>
           )}
 
-          {/* Step 4: Additional Services */}
+          {/* Step 4: Review */}
           {currentStep === 4 && (
-            <motion.div
-              key="step4"
-              initial={{ opacity: 0, x: 20 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: -20 }}
-              className="grid grid-cols-1 lg:grid-cols-2 gap-16"
-            >
-              <div className="space-y-12 col-span-full lg:col-span-1">
-                <div>
-                  <h2 className="text-3xl font-serif mb-2 uppercase tracking-wide italic gold-text-gradient">
-                    Additional Services
-                  </h2>
-                  <p className="text-base text-white/80 font-bold">
-                    Enhance your event experience (Optional).
-                  </p>
-                </div>
-                <div className="grid grid-cols-1 gap-4">
-                  {servicesOptions.map((service) => (
-                    <button
-                      key={service.id}
-                      onClick={() => handleServiceToggle(service.name)}
-                      className={`p-6 glass-card border flex items-center justify-between transition-all group ${
-                        formData.additionalServices.includes(service.name)
-                          ? "border-gold-400 bg-gold-400/5"
-                          : "border-white/10 hover:border-white/30"
-                      }`}
-                    >
-                      <div>
-                        <span className="text-lg tracking-wide font-bold block text-left">
-                          {service.name}
-                        </span>
-                        <span className="text-base text-gold-400 block text-left mt-1">
-                          ₱{service.price}
-                        </span>
-                      </div>
-                      <div
-                        className={`w-6 h-6 border flex items-center justify-center transition-all ${
-                          formData.additionalServices.includes(service.name)
-                            ? "bg-gold-400 border-gold-400 text-black"
-                            : "border-white/20 group-hover:border-gold-400"
-                        }`}
-                      >
-                        {formData.additionalServices.includes(service.name) && (
-                          <Check size={14} strokeWidth={4} />
-                        )}
-                      </div>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </motion.div>
-          )}
-
-          {/* Step 5: Review */}
-          {currentStep === 5 && (
             <motion.div
               key="step5"
               initial={{ opacity: 0, x: 20 }}
@@ -653,8 +580,8 @@ export default function BookingPage() {
                     </div>
                   </div>
 
-                  {/* Menu & Services */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                  {/* Menu */}
+                  <div className="grid grid-cols-1 gap-8">
                     <div className="p-8 glass-card border border-white/10">
                       <h3 className="text-base tracking-wide text-gold-400 font-bold mb-8 italic">
                         Menu Selection
@@ -670,30 +597,6 @@ export default function BookingPage() {
                             </span>
                           ))}
                         </div>
-                      </div>
-                    </div>
-                    <div className="p-8 glass-card border border-white/10">
-                      <h3 className="text-base tracking-wide text-gold-400 font-bold mb-8 italic">
-                        Add-on Services
-                      </h3>
-                      <div className="space-y-4">
-                        {formData.additionalServices.length > 0 ? (
-                          formData.additionalServices.map((service) => (
-                            <div
-                              key={service}
-                              className="flex items-center gap-3"
-                            >
-                              <div className="w-1.5 h-1.5 bg-gold-400 rotate-45" />
-                              <span className="text-base tracking-wide text-white/90 font-bold">
-                                {service}
-                              </span>
-                            </div>
-                          ))
-                        ) : (
-                          <p className="text-base text-white/60 tracking-wide font-bold">
-                            No extra services selected.
-                          </p>
-                        )}
                       </div>
                     </div>
                   </div>
@@ -784,12 +687,12 @@ export default function BookingPage() {
               <div />
             )}{" "}
             {/* Empty div to keep Next button aligned right via justify-between */}
-            {currentStep > 1 && currentStep < 5 && (
+            {currentStep > 1 && currentStep < 4 && (
               <button
                 onClick={handleNextStep}
                 className="gold-gradient text-black px-12 py-4 font-bold tracking-wide text-lg hover:brightness-110 transition-all flex items-center gap-3"
               >
-                {currentStep === 4 ? "Skip" : "Continue to Next"}{" "}
+                Continue to Next{" "}
                 <ChevronRight size={14} />
               </button>
             )}

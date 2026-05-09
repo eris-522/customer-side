@@ -6,7 +6,7 @@ import {
   useLocation,
   useSearchParams,
 } from "react-router-dom";
-import { Mail, Lock, User, ArrowRight, ChevronLeft, ShieldQuestion } from "lucide-react";
+import { Mail, Lock, User, ArrowRight, ChevronLeft, ShieldQuestion, Phone } from "lucide-react";
 import { supabase } from "../utils/supabase";
 
 export default function AuthPage() {
@@ -18,6 +18,7 @@ export default function AuthPage() {
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [phoneNumber, setPhoneNumber] = useState("");
 
   // Security question fields
   const [securityAnswer, setSecurityAnswer] = useState("");
@@ -154,6 +155,11 @@ export default function AuthPage() {
           return;
         }
 
+        if (phoneNumber.length !== 10) {
+          setError("Phone number must be exactly 10 digits.");
+          return;
+        }
+
         // Security answer validation: must contain at least one number and one special character
         const hasNumber = /[0-9]/.test(securityAnswer);
         const hasSpecialChar = /[^a-zA-Z0-9\s]/.test(securityAnswer);
@@ -179,6 +185,7 @@ export default function AuthPage() {
                 name: fullName,
                 email: email,
                 security_answer: securityAnswer.toLowerCase().trim(),
+                phone_number: phoneNumber ? `+63${phoneNumber}` : "",
               },
               { onConflict: "id" },
             );
@@ -194,6 +201,7 @@ export default function AuthPage() {
           setIsLogin(true);
           setSearchParams({ mode: 'login' });
           setPassword("");
+          setPhoneNumber("");
         }
       }
     } finally {
@@ -271,22 +279,24 @@ export default function AuthPage() {
                     </div>
 
                     <div className="space-y-2">
-                    <label className="text-base text-white/80 font-bold ml-1 flex flex-col gap-1">
-                        <span>Security Question: What is your favorite color?</span>
-                      <span className="text-sm text-gold-400/90 normal-case tracking-normal">Must include at least one number and one special character for uniqueness.</span>
+                    <label className="text-base text-white/80 font-bold ml-1">
+                        Phone number
                       </label>
                       <div className="relative group">
-                        <ShieldQuestion
-                          className="absolute left-4 top-1/2 -translate-y-1/2 text-white/20 group-focus-within:text-gold-400 transition-colors"
-                          size={16}
-                        />
+                        <div className="absolute left-4 top-1/2 -translate-y-1/2 flex items-center gap-2 pointer-events-none">
+                          <span role="img" aria-label="Philippines">🇵🇭</span>
+                          <span className="text-white/60 font-medium group-focus-within:text-gold-400 transition-colors">+63</span>
+                        </div>
                         <input
-                          type="text"
-                          placeholder="Your Answer"
-                          value={securityAnswer}
-                          onChange={(e) => setSecurityAnswer(e.target.value)}
+                          type="tel"
+                          placeholder="917 123 4567"
+                          value={phoneNumber}
+                          onChange={(e) => {
+                            const val = e.target.value.replace(/\D/g, '').slice(0, 10);
+                            setPhoneNumber(val);
+                          }}
                           required={!isLogin}
-                          className="w-full bg-white/5 border border-white/10 px-12 py-4 text-lg focus:outline-none focus:border-gold-400/50 transition-all placeholder:text-white/40"
+                          className="w-full bg-white/5 border border-white/10 pl-24 pr-4 py-4 text-lg focus:outline-none focus:border-gold-400/50 transition-all placeholder:text-white/40"
                         />
                       </div>
                     </div>
@@ -347,6 +357,29 @@ export default function AuthPage() {
                     />
                   </div>
                 </div>
+
+                {!isLogin && (
+                  <div className="space-y-2">
+                  <label className="text-base text-white/80 font-bold ml-1 flex flex-col gap-1">
+                      <span>Security Question: What is your favorite color?</span>
+                    <span className="text-sm text-gold-400/90 normal-case tracking-normal">Must include at least one number and one special character for uniqueness.</span>
+                    </label>
+                    <div className="relative group">
+                      <ShieldQuestion
+                        className="absolute left-4 top-1/2 -translate-y-1/2 text-white/20 group-focus-within:text-gold-400 transition-colors"
+                        size={16}
+                      />
+                      <input
+                        type="text"
+                        placeholder="Your Answer"
+                        value={securityAnswer}
+                        onChange={(e) => setSecurityAnswer(e.target.value)}
+                        required={!isLogin}
+                        className="w-full bg-white/5 border border-white/10 px-12 py-4 text-lg focus:outline-none focus:border-gold-400/50 transition-all placeholder:text-white/40"
+                      />
+                    </div>
+                  </div>
+                )}
 
                 {error && (
                 <div className="p-3 bg-red-500/10 border border-red-500/20 text-red-400 text-base text-center font-medium">

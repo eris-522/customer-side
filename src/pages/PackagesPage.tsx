@@ -1,5 +1,5 @@
 import { motion } from "motion/react";
-import { ChevronRight, Check, Plus } from "lucide-react";
+import { ChevronRight, Check } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useState, useEffect } from "react";
 import { supabase } from "../utils/supabase"; // Feature: Imports the Supabase client for database communication
@@ -14,12 +14,6 @@ export interface CateringPackage {
   inclusions: string[];
 }
 
-export interface AddOn {
-  id: string;
-  name: string;
-  price: number;
-}
-
 // Feature: Fallback images array since the image column was removed from the database schema to simplify the backend
 const fallbackImages = [
   "https://images.unsplash.com/photo-1547825407-2d060104b7f8?auto=format&fit=crop&q=80&w=800",
@@ -31,29 +25,18 @@ const fallbackImages = [
 export default function PackagesPage() {
   // Feature: State hooks to store the live data fetched from the database
   const [packages, setPackages] = useState<CateringPackage[]>([]);
-  const [addOns, setAddOns] = useState<AddOn[]>([]);
   const [loading, setLoading] = useState(true);
 
   // Feature: Executes the database query as soon as the user navigates to this page
   useEffect(() => {
     const fetchOfferings = async () => {
-      // Feature: Promise.all fetches both tables simultaneously for faster loading times
-      // It explicitly filters out any packages or services that the admin marked as 'Archived'
-      const [pkgResponse, addOnResponse] = await Promise.all([
-        supabase.from("packages").select("*").neq("status", "Archived"),
-        supabase.from("add_ons").select("*").neq("status", "Archived"),
-      ]);
+      // It explicitly filters out any packages that the admin marked as 'Archived'
+      const pkgResponse = await supabase.from("packages").select("*").neq("status", "Archived");
 
       if (pkgResponse.error) {
         console.error("Error fetching packages:", pkgResponse.error.message);
       } else if (pkgResponse.data) {
         setPackages(pkgResponse.data as CateringPackage[]);
-      }
-
-      if (addOnResponse.error) {
-        console.error("Error fetching add-ons:", addOnResponse.error.message);
-      } else if (addOnResponse.data) {
-        setAddOns(addOnResponse.data as AddOn[]);
       }
 
       setLoading(false);
@@ -187,48 +170,6 @@ export default function PackagesPage() {
               )}
             </div>
           </section>
-
-          {/* Add-Ons Section - Newly added to support the dashboard's service items */}
-          {addOns.length > 0 && (
-            <section className="py-20 px-10 border-t border-white/5 bg-[#0a0a0a]">
-              <div className="max-w-5xl mx-auto">
-                <div className="text-center mb-16">
-                  <h2 className="text-3xl md:text-5xl font-serif text-white mb-4">
-                    Enhance Your{" "}
-                    <span className="italic gold-text-gradient">Event</span>
-                  </h2>
-                  <p className="text-white/40 text-[10px] uppercase tracking-[0.3em] font-bold">
-                    Premium Add-on Services
-                  </p>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {addOns.map((service, idx) => (
-                    <motion.div
-                      key={service.id}
-                      initial={{ opacity: 0, y: 20 }}
-                      whileInView={{ opacity: 1, y: 0 }}
-                      viewport={{ once: true }}
-                      transition={{ delay: idx * 0.1 }}
-                      className="p-6 border border-white/10 flex justify-between items-center hover:bg-white/5 transition-colors group"
-                    >
-                      <div className="flex items-center gap-4">
-                        <div className="w-10 h-10 rounded-full border border-gold-400/30 flex items-center justify-center group-hover:border-gold-400 transition-colors">
-                          <Plus size={16} className="text-gold-400" />
-                        </div>
-                        <span className="text-sm font-bold text-white uppercase tracking-wider">
-                          {service.name}
-                        </span>
-                      </div>
-                      <span className="text-gold-400 font-serif italic text-xl">
-                        ₱{service.price?.toLocaleString()}
-                      </span>
-                    </motion.div>
-                  ))}
-                </div>
-              </div>
-            </section>
-          )}
         </>
       )}
 
