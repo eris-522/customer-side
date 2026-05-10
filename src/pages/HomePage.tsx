@@ -47,6 +47,8 @@ export default function HomePage() {
         .from("packages")
         .select("*")
         .neq("status", "Archived")
+        .neq("status", "none")
+        .neq("status", "None")
         .limit(3);
       
       if (data) {
@@ -92,7 +94,7 @@ export default function HomePage() {
             className="flex flex-col sm:flex-row gap-6 justify-center"
           >
             <Link to="/booking" className="gold-gradient text-black px-10 py-3 font-bold tracking-widest uppercase text-xs hover:brightness-110 transition-all inline-block text-center focus:outline-none">
-              Book Catering
+              Inquire Now
             </Link>
             <Link to="/menu" className="border border-white text-white px-10 py-3 font-bold tracking-widest uppercase text-xs hover:bg-white hover:text-black transition-all inline-block text-center">
               View Menu
@@ -107,7 +109,7 @@ export default function HomePage() {
           <div className="flex flex-col md:flex-row justify-between items-start mb-20 gap-8">
             <div className="max-w-2xl">
               <span className="text-gold-400 text-[10px] tracking-[0.4em] font-bold uppercase mb-4 block italic">Featured Packages</span>
-              <h2 className="text-4xl md:text-6xl font-serif tracking-tight">Luxury <span className="italic">Catering</span> Collections</h2>
+              <h2 className="text-4xl md:text-6xl font-serif tracking-tight">Roxan <span className="italic">Catering</span> Collections</h2>
             </div>
           </div>
 
@@ -123,7 +125,7 @@ export default function HomePage() {
               >
                 <div>
                   <div className="aspect-[16/9] mb-8 overflow-hidden relative">
-                    {pkg.tag && (
+                    {pkg.tag && pkg.tag.toLowerCase() !== "none" && (
                       <div className="absolute top-4 left-4 z-10 bg-gold-400 text-black px-3 py-1 text-[9px] font-bold uppercase tracking-widest rounded-sm">
                         {pkg.tag}
                       </div>
@@ -138,7 +140,7 @@ export default function HomePage() {
                   <p className="text-[10px] text-white/50 uppercase tracking-widest mb-6">{pkg.price} • {pkg.pax} Guests</p>
                   <p className="text-white/40 text-xs mb-8 leading-relaxed line-clamp-3">
                     {pkg.inclusions && pkg.inclusions.length > 0 
-                      ? pkg.inclusions.join(" • ")
+                      ? [...pkg.inclusions].sort((a, b) => a.localeCompare(b)).join(" • ")
                       : "Details available upon request."}
                   </p>
                 </div>

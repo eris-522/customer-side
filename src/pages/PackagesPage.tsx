@@ -31,7 +31,12 @@ export default function PackagesPage() {
   useEffect(() => {
     const fetchOfferings = async () => {
       // It explicitly filters out any packages that the admin marked as 'Archived'
-      const pkgResponse = await supabase.from("packages").select("*").neq("status", "Archived");
+      const pkgResponse = await supabase
+        .from("packages")
+        .select("*")
+        .neq("status", "Archived")
+        .neq("status", "none")
+        .neq("status", "None");
 
       if (pkgResponse.error) {
         console.error("Error fetching packages:", pkgResponse.error.message);
@@ -104,7 +109,7 @@ export default function PackagesPage() {
                     className="glass-card border border-white/10 flex flex-col group overflow-hidden relative"
                   >
                     {/* Feature: Displays the package tag (e.g., Popular, New) if the admin assigned one */}
-                    {pkg.tag && (
+                    {pkg.tag && pkg.tag.toLowerCase() !== "none" && (
                       <div className="absolute top-4 left-4 z-10 bg-gold-400 text-black px-3 py-1 text-[9px] font-bold uppercase tracking-widest rounded-sm">
                         {pkg.tag}
                       </div>
@@ -138,7 +143,7 @@ export default function PackagesPage() {
                       <div className="space-y-3 mb-10">
                         {/* Feature: Maps through the array of inclusions provided by the admin dashboard */}
                         {pkg.inclusions && pkg.inclusions.length > 0 ? (
-                          pkg.inclusions.map((feature, idx) => (
+                          [...pkg.inclusions].sort((a, b) => a.localeCompare(b)).map((feature, idx) => (
                             <div key={idx} className="flex items-start gap-3">
                               <Check
                                 size={12}

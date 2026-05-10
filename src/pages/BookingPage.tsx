@@ -4,6 +4,7 @@ import { useNavigate } from "react-router-dom";
 import {
   ChevronRight,
   ChevronLeft,
+  ChevronDown,
   Check,
   Calendar,
   Users,
@@ -25,11 +26,108 @@ interface FormData {
   menuSelections: string[];
 }
 
+type Limit = { min: number; max: number };
+type PackageRules = Record<string, Limit>;
+
+// Rules defined based on your catering specifications
+const packageLimits: Record<string, PackageRules> = {
+  basic: {
+    "Appetizer": { min: 1, max: 1 },
+    "Soup": { min: 1, max: 1 },
+    "Main Course": { min: 3, max: 4 },
+    "Pasta": { min: 1, max: 1 },
+    "Vegetable": { min: 1, max: 1 },
+    "Rice": { min: 1, max: 1 },
+    "Dessert": { min: 1, max: 1 },
+    "Drinks": { min: 2, max: 2 },
+  },
+  classic: {
+    "Appetizer": { min: 2, max: 2 },
+    "Soup": { min: 1, max: 1 },
+    "Main Course": { min: 4, max: 5 },
+    "Pasta": { min: 2, max: 2 },
+    "Vegetable": { min: 1, max: 2 },
+    "Rice": { min: 1, max: 1 },
+    "Dessert": { min: 2, max: 2 },
+    "Drinks": { min: 2, max: 3 },
+  },
+  premium: {
+    "Appetizer": { min: 2, max: 3 },
+    "Soup": { min: 1, max: 2 },
+    "Main Course": { min: 5, max: 6 },
+    "Pasta": { min: 3, max: 3 },
+    "Vegetable": { min: 2, max: 2 },
+    "Rice": { min: 1, max: 1 },
+    "Dessert": { min: 3, max: 3 },
+    "Drinks": { min: 3, max: 4 },
+  },
+};
+
+// Helper to normalize raw database categories into our standard limit rules
+const getRuleCategory = (dbCategory: string, itemName: string = "") => {
+  const cat = (dbCategory || "").toLowerCase();
+  const name = (itemName || "").toLowerCase();
+
+  // Smart overrides based on item name to rescue items lumped into combined categories
+  if (name.includes("soup") || name.includes("broth") || name.includes("chowder") || name.includes("sinigang") || name.includes("nilaga") || name.includes("mami") || name.includes("sopas") || name.includes("tinola") || name.includes("lomi")) return "Soup";
+  if (name.includes("vegetable") || name.includes("veggie") || name.includes("salad") || name.includes("chopsuey") || name.includes("pinakbet") || name.includes("pakbet") || name.includes("kangkong") || name.includes("laing")) return "Vegetable";
+  if (name.includes("pasta") || name.includes("noodle") || name.includes("spaghetti") || name.includes("carbonara") || name.includes("pancit") || name.includes("palabok") || name.includes("bihon") || name.includes("sotanghon") || name.includes("canton") || name.includes("macaroni")) return "Pasta";
+  if (name.includes("rice")) return "Rice";
+
+  if (cat.includes("appetizer")) return "Appetizer";
+  if (cat.includes("soup")) return "Soup";
+  if (cat.includes("pasta") || cat.includes("noodle")) return "Pasta";
+  if (cat.includes("vegetable") || cat.includes("veggie")) return "Vegetable";
+  if (cat.includes("rice")) return "Rice";
+  if (cat.includes("dessert") || cat.includes("sweet")) return "Dessert";
+  if (cat.includes("drink") || cat.includes("beverage")) return "Drinks";
+  return "Main Course"; // Treats Beef, Pork, Chicken, Seafood, etc. as Main Course
+};
+
+const getPackageRules = (pkgName: string): PackageRules | null => {
+  const name = (pkgName || "").toLowerCase();
+  if (name.includes("premium")) return packageLimits.premium;
+  if (name.includes("classic")) return packageLimits.classic;
+  if (name.includes("basic") || name.includes("wedding")) return packageLimits.basic;
+  return null;
+};
+
+// Helper function to parse both 24-hour and 12-hour time strings into comparable numbers
+const parseTime = (timeStr: string) => {
+  if (!timeStr) return 0;
+
+  // Handle 24-hour format from database (e.g. "15:00:00")
+  if (!timeStr.toUpperCase().includes("AM") && !timeStr.toUpperCase().includes("PM")) {
+    const [hours, minutes] = timeStr.split(":").map(Number);
+    return hours + (minutes || 0) / 60;
+  }
+
+  // Handle 12-hour format from dropdown (e.g. "03:00 PM")
+  const parts = timeStr.split(" ");
+  if (parts.length !== 2) return 0;
+  const [time, period] = parts;
+  let [hours, minutes] = time.split(":").map(Number);
+  if (period.toUpperCase() === "PM" && hours !== 12) hours += 12;
+  if (period.toUpperCase() === "AM" && hours === 12) hours = 0;
+  return hours + (minutes || 0) / 60;
+};
+
 const steps = [
   { id: 1, title: "Package", icon: Package },
   { id: 2, title: "Details", icon: Calendar },
   { id: 3, title: "Menu", icon: Utensils },
   { id: 4, title: "Review", icon: ClipboardCheck },
+];
+
+const categoryOrder = [
+  "Appetizer",
+  "Soup",
+  "Main Course",
+  "Pasta",
+  "Vegetable",
+  "Rice",
+  "Dessert",
+  "Drinks"
 ];
 
 export default function BookingPage() {
@@ -48,6 +146,7 @@ export default function BookingPage() {
   const [loadingData, setLoadingData] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState("");
+  const [showSuccessModal, setShowSuccessModal] = useState(false);
   // Feature: State to hold validation error messages for the current step
   const [stepError, setStepError] = useState("");
 
@@ -55,6 +154,8 @@ export default function BookingPage() {
   const [availablePackages, setAvailablePackages] = useState<any[]>([]);
   const [menuOptions, setMenuOptions] = useState<any[]>([]);
   const [userProfile, setUserProfile] = useState<any>(null);
+  const [bookedDates, setBookedDates] = useState<string[]>([]);
+  const [existingBookings, setExistingBookings] = useState<any[]>([]);
 
   // Feature: Main form data object holding all user selections
   const [formData, setFormData] = useState<FormData>({
@@ -87,13 +188,46 @@ export default function BookingPage() {
       setUserProfile(profile);
 
       // Fetch active packages, menu items, and add-ons
-      const [pkgRes, menuRes] = await Promise.all([
-        supabase.from("packages").select("*").neq("status", "Archived"),
+      const [pkgRes, menuRes, bookingsRes] = await Promise.all([
+        supabase
+          .from("packages")
+          .select("*")
+          .neq("status", "Archived")
+          .neq("status", "none")
+          .neq("status", "None"),
         supabase.from("menu_items").select("*").neq("status", "Archived"),
+        // Fetch all existing bookings with their times to check for conflicts
+        supabase.from("bookings").select("event_date, event_time, status"),
       ]);
 
       if (pkgRes.data) setAvailablePackages(pkgRes.data);
       if (menuRes.data) setMenuOptions(menuRes.data);
+      if (bookingsRes.data) {
+        // Keep only active bookings to calculate gaps against
+        const validBookings = bookingsRes.data.filter(
+          (b: any) => !["Cancelled", "Rejected", "Declined"].includes(b.status)
+        );
+        setExistingBookings(validBookings);
+
+        const fullyBooked: string[] = [];
+        const uniqueDates = [...new Set(validBookings.map((b: any) => b.event_date))];
+        const allSlots = [
+          "08:00 AM", "09:00 AM", "10:00 AM", "11:00 AM", "12:00 PM",
+          "01:00 PM", "02:00 PM", "03:00 PM", "04:00 PM", "05:00 PM",
+          "06:00 PM", "07:00 PM", "08:00 PM"
+        ];
+
+        // Mark a date fully booked ONLY if no timeslot has a 5-hour gap from existing events
+        uniqueDates.forEach((date) => {
+          const dayBookings = validBookings.filter((b: any) => b.event_date === date);
+          const hasAvailableSlot = allSlots.some((slot) => {
+            const slotVal = parseTime(slot);
+            return !dayBookings.some((b: any) => Math.abs(slotVal - parseTime(b.event_time)) < 5);
+          });
+          if (!hasAvailableSlot) fullyBooked.push(date as string);
+        });
+        setBookedDates(fullyBooked);
+      }
 
       setLoadingData(false);
     };
@@ -115,6 +249,22 @@ export default function BookingPage() {
         setStepError(`Event Date must be ${minSelectableDate} or later.`);
         return;
       }
+      if (bookedDates.includes(formData.date)) {
+        setStepError(`The date ${formData.date} is already fully booked. Please select another date.`);
+        return;
+      }
+
+      // Double-check the 5-hour gap constraint
+      if (formData.date && formData.time) {
+        const dayBookings = existingBookings.filter((b) => b.event_date === formData.date);
+        const slotVal = parseTime(formData.time);
+        const conflict = dayBookings.some((b) => Math.abs(slotVal - parseTime(b.event_time)) < 5);
+        if (conflict) {
+          setStepError("The selected time is too close to an already scheduled event. Please leave at least a 5-hour gap.");
+          return;
+        }
+      }
+
       // Enforce that all text inputs, dates, and numbers are filled out
       if (
         !formData.date ||
@@ -126,11 +276,30 @@ export default function BookingPage() {
         setStepError("Please fill out all event details before continuing.");
         return;
       }
-    } else if (currentStep === 3) {
-      // Enforce at least one menu item selection
-      if (formData.menuSelections.length === 0) {
-        setStepError("Please select at least one menu item for your event.");
+
+      // Validate that guest count is a valid positive number
+      if (parseInt(formData.guestCount) <= 0) {
+        setStepError("Guest count must be at least 1.");
         return;
+      }
+    } else if (currentStep === 3) {
+      if (activeMenuRules) {
+        // Enforce the specific package rules using our ordered category array
+        for (const cat of categoryOrder) {
+          if (!activeMenuRules[cat]) continue;
+          const limit = activeMenuRules[cat];
+          const count = currentMenuCounts[cat] || 0;
+          if (count < limit.min) {
+            setStepError(`Please select ${limit.min === limit.max ? 'exactly' : 'at least'} ${limit.min} item(s) for ${cat}.`);
+            return;
+          }
+        }
+      } else {
+        // Fallback for custom packages without defined rules
+        if (formData.menuSelections.length === 0) {
+          setStepError("Please select at least one menu item for your event.");
+          return;
+        }
       }
     }
 
@@ -146,7 +315,10 @@ export default function BookingPage() {
   // Feature: Auto-advances to step 2 when a package is clicked (since it fulfills step 1 validation)
   const handlePackageSelect = (id: string) => {
     setStepError("");
-    setFormData({ ...formData, packageId: id });
+    // Reset menu selections if they change packages so old limits don't break validation
+    if (formData.packageId !== id) {
+      setFormData({ ...formData, packageId: id, menuSelections: [] });
+    }
     setCurrentStep(2);
   };
 
@@ -154,7 +326,23 @@ export default function BookingPage() {
   const handleMenuToggle = (itemName: string) => {
     setStepError(""); // Clear error if they start selecting items
     const current = formData.menuSelections;
-    const updated = current.includes(itemName)
+    const isSelected = current.includes(itemName);
+
+    const item = menuOptions.find((opt) => opt.name === itemName);
+    if (!item) return;
+
+    const ruleCat = getRuleCategory(item.category, item.name);
+
+    // If trying to add an item, make sure we aren't exceeding the max allowance
+    if (!isSelected && activeMenuRules && activeMenuRules[ruleCat]) {
+      const currentCount = currentMenuCounts[ruleCat] || 0;
+      if (currentCount >= activeMenuRules[ruleCat].max) {
+        setStepError(`You can only select up to ${activeMenuRules[ruleCat].max} item(s) for ${ruleCat}.`);
+        return;
+      }
+    }
+
+    const updated = isSelected
       ? current.filter((i) => i !== itemName)
       : [...current, itemName];
 
@@ -163,14 +351,18 @@ export default function BookingPage() {
 
   // Feature: Submits the final validated form data to the Supabase 'bookings' table
   const handleSubmit = async () => {
-    if (!userProfile) return;
+    const { data: authData } = await supabase.auth.getUser();
+    if (!authData.user) {
+      setSubmitError("You must be logged in to submit a booking.");
+      return;
+    }
 
     setIsSubmitting(true);
     setSubmitError("");
 
     const { error } = await supabase.from("bookings").insert([
       {
-        user_id: userProfile.id,
+        user_id: authData.user.id,
         package_id: formData.packageId,
         event_date: formData.date,
         event_time: formData.time,
@@ -186,16 +378,29 @@ export default function BookingPage() {
     if (error) {
       setSubmitError(error.message);
     } else {
-      alert("Booking submitted successfully! We will contact you soon.");
-      navigate("/");
+      setShowSuccessModal(true);
     }
   };
+
+  // Derived variables dynamically calculated from the user's selected package
+  const selectedPkgForMenu = availablePackages.find((p) => p.id === formData.packageId);
+  const activeMenuRules = selectedPkgForMenu ? getPackageRules(selectedPkgForMenu.name) : null;
+
+  const currentMenuCounts: Record<string, number> = {};
+  formData.menuSelections.forEach((itemName) => {
+    const opt = menuOptions.find((o) => o.name === itemName);
+    if (opt) {
+      const ruleCat = getRuleCategory(opt.category, opt.name);
+      currentMenuCounts[ruleCat] = (currentMenuCounts[ruleCat] || 0) + 1;
+    }
+  });
 
   // Feature: Groups the flat menu item data by their respective categories for organized UI rendering
   const groupedMenu = (menuOptions as Array<any>).reduce(
     (acc: Record<string, string[]>, item: any) => {
-      if (!acc[item.category]) acc[item.category] = [];
-      acc[item.category].push(item.name);
+      const ruleCat = getRuleCategory(item.category, item.name);
+      if (!acc[ruleCat]) acc[ruleCat] = [];
+      acc[ruleCat].push(item.name);
       return acc;
     },
     {} as Record<string, string[]>,
@@ -293,7 +498,7 @@ export default function BookingPage() {
                       : "border-white/10 hover:border-gold-400/50"
                   }`}
                 >
-                  {pkg.tag && (
+                  {pkg.tag && pkg.tag.toLowerCase() !== "none" && (
                     <div className="absolute top-4 left-4 z-10 bg-gold-400 text-black px-3 py-1 text-[9px] font-bold uppercase tracking-widest rounded-sm">
                       {pkg.tag}
                     </div>
@@ -316,7 +521,7 @@ export default function BookingPage() {
 
                     <div className="space-y-3 mb-10">
                       {(Array.isArray(pkg.inclusions) && pkg.inclusions.length
-                        ? (pkg.inclusions as unknown as string[])
+                        ? [...(pkg.inclusions as unknown as string[])].sort((a, b) => a.localeCompare(b))
                         : ["Details available upon request"]
                       ).map((feature: string, idx: number) => (
                         <div key={idx} className="flex items-start gap-3">
@@ -368,8 +573,14 @@ export default function BookingPage() {
                     className="w-full bg-white/5 border border-white/10 px-6 py-4 text-lg focus:outline-none focus:border-gold-400/50 transition-all font-medium [color-scheme:dark]"
                     value={formData.date}
                     onChange={(e) => {
-                      setStepError("");
-                      setFormData({ ...formData, date: e.target.value });
+                      const selectedDate = e.target.value;
+                      if (bookedDates.includes(selectedDate)) {
+                        setStepError(`The date ${selectedDate} is already fully booked. Please select another date.`);
+                        setFormData({ ...formData, date: "", time: "" });
+                      } else {
+                        setStepError("");
+                        setFormData({ ...formData, date: selectedDate, time: "" });
+                      }
                     }}
                   />
                 </div>
@@ -379,12 +590,21 @@ export default function BookingPage() {
                   </label>
                   <input
                     type="number"
-                    placeholder="0"
+                    min="1"
+                    placeholder="1"
                     className="w-full bg-white/5 border border-white/10 px-6 py-4 text-lg focus:outline-none focus:border-gold-400/50 transition-all font-medium"
                     value={formData.guestCount}
                     onChange={(e) => {
                       setStepError("");
-                      setFormData({ ...formData, guestCount: e.target.value });
+                      const val = e.target.value;
+                      if (val === "" || parseInt(val) > 0) {
+                        setFormData({ ...formData, guestCount: val });
+                      }
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === "-" || e.key === "." || e.key === "e") {
+                        e.preventDefault();
+                      }
                     }}
                   />
                 </div>
@@ -392,15 +612,46 @@ export default function BookingPage() {
                   <label className="text-base text-white/80 font-bold">
                     Preferred Time <span className="text-red-400">*</span>
                   </label>
-                  <input
-                    type="time"
-                    className="w-full bg-white/5 border border-white/10 px-6 py-4 text-lg focus:outline-none focus:border-gold-400/50 transition-all font-medium [color-scheme:dark]"
+                <div className="relative">
+                  <select
+                    className="w-full appearance-none bg-white/5 border border-white/10 px-6 py-4 text-lg focus:outline-none focus:border-gold-400/50 transition-all font-medium [color-scheme:dark]"
                     value={formData.time}
                     onChange={(e) => {
                       setStepError("");
                       setFormData({ ...formData, time: e.target.value });
                     }}
-                  />
+                  >
+                    <option value="" disabled>Select a timeslot</option>
+                    {[
+                      "08:00 AM",
+                      "09:00 AM",
+                      "10:00 AM",
+                      "11:00 AM",
+                      "12:00 PM",
+                      "01:00 PM",
+                      "02:00 PM",
+                      "03:00 PM",
+                      "04:00 PM",
+                      "05:00 PM",
+                      "06:00 PM",
+                      "07:00 PM",
+                      "08:00 PM",
+                    ].map((slot) => {
+                      // Dynamically disable timeslots if they are within 5 hours of an existing booking on the same day
+                      const dayBookings = existingBookings.filter((b) => b.event_date === formData.date);
+                      const slotVal = parseTime(slot);
+                      const isDisabled = dayBookings.some((b) => Math.abs(slotVal - parseTime(b.event_time)) < 5);
+                      const isExactMatch = dayBookings.some((b) => parseTime(b.event_time) === slotVal);
+
+                      return (
+                        <option key={slot} value={slot} disabled={isDisabled} className={`bg-[#0f0f0f] ${isDisabled ? "text-white/20" : "text-white"}`}>
+                          {slot} {isExactMatch ? "(Timeslot already taken)" : ""}
+                        </option>
+                      );
+                    })}
+                  </select>
+                  <ChevronDown className="absolute right-6 top-1/2 -translate-y-1/2 text-white/50 pointer-events-none" size={20} />
+                </div>
                 </div>
                 <div className="col-span-full space-y-2">
                   <label className="text-base text-white/80 font-bold">
@@ -454,17 +705,32 @@ export default function BookingPage() {
                   <span className="italic gold-text-gradient">Curation</span>
                 </h2>
                 <p className="text-base text-white/80 font-bold">
-                  Select your preferred dishes from our active catalog.{" "}
-                  <span className="text-red-400">(At least 1 required)</span>
+                  {activeMenuRules 
+                    ? "Select your preferred dishes to fulfill your package inclusions." 
+                    : "Select your preferred dishes from our active catalog."}
                 </p>
               </div>
 
-              {(Object.entries(groupedMenu) as Array<[string, string[]]>).map(
-                ([category, items]) => (
+          {categoryOrder.map(
+            (category) => {
+              const items = groupedMenu[category];
+              if (!items || items.length === 0) return null;
+                  const limit = activeMenuRules ? activeMenuRules[category] : null;
+                  const currentCount = currentMenuCounts[category] || 0;
+                  const isFulfilled = limit ? currentCount >= limit.min && currentCount <= limit.max : currentCount > 0;
+
+                  return (
                   <div key={category} className="space-y-6">
-                    <h3 className="text-xl tracking-wide text-gold-400 font-bold border-b border-gold-400/20 pb-4 italic">
-                      {category}
-                    </h3>
+                    <div className="flex items-center justify-between border-b border-gold-400/20 pb-4">
+                      <h3 className="text-xl tracking-wide text-gold-400 font-bold italic">
+                        {category}
+                      </h3>
+                      {limit && (
+                        <span className={`text-xs font-bold tracking-widest uppercase px-3 py-1 border ${isFulfilled ? "bg-gold-400/10 border-gold-400/30 text-gold-400" : "bg-white/5 border-white/10 text-white/50"}`}>
+                          {currentCount} / {limit.max} Selected {limit.min !== limit.max ? `(Min ${limit.min})` : ""}
+                        </span>
+                      )}
+                    </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                       {items.map((item) => (
                         <button
@@ -494,7 +760,8 @@ export default function BookingPage() {
                       ))}
                     </div>
                   </div>
-                ),
+                  );
+                }
               )}
             </motion.div>
           )}
@@ -699,6 +966,40 @@ export default function BookingPage() {
           </div>
         </div>
       </main>
+
+      {/* Success Confirmation Modal */}
+      <AnimatePresence>
+        {showSuccessModal && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[100] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4"
+          >
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0, y: 20 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.95, opacity: 0, y: 20 }}
+              className="glass-card border border-white/10 p-10 max-w-md w-full text-center relative overflow-hidden"
+            >
+              <div className="absolute top-0 left-0 w-full h-1 bg-gold-400" />
+              <div className="w-20 h-20 bg-gold-400/10 rounded-full flex items-center justify-center mx-auto mb-6">
+                <Check className="text-gold-400" size={40} strokeWidth={3} />
+              </div>
+              <h3 className="text-3xl font-serif text-white mb-4 italic">Booking <span className="gold-text-gradient">Confirmed</span></h3>
+              <p className="text-base text-white/60 mb-8 font-medium leading-relaxed">
+                Thank you for choosing us for your special event. We have received your request and will contact you shortly to finalize the details.
+              </p>
+              <button
+                onClick={() => navigate("/")}
+                className="w-full py-4 gold-gradient text-black font-bold tracking-wide text-base hover:brightness-110 transition-all"
+              >
+                Return to Home
+              </button>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
