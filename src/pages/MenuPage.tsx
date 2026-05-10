@@ -30,6 +30,7 @@ export default function MenuPage() {
           acc[item.category].push({
             id: item.id,
             name: item.name,
+            status: item.status,
             // Fallbacks: Since these were removed from the DB schema, we provide static fallbacks to prevent the UI from breaking
             image:
               "https://images.unsplash.com/photo-1467003909585-2f8a72700288?auto=format&fit=crop&q=80&w=600",
@@ -44,6 +45,21 @@ export default function MenuPage() {
     };
 
     fetchMenu();
+
+    // Fallback polling and real-time subscription for immediate menu updates
+    const intervalId = setInterval(() => fetchMenu(), 10000);
+
+    const channel = supabase
+      .channel("menu-changes")
+      .on("postgres_changes", { event: "*", schema: "public", table: "menu_items" }, () => {
+        fetchMenu();
+      })
+      .subscribe();
+
+    return () => {
+      clearInterval(intervalId);
+      supabase.removeChannel(channel);
+    };
   }, []);
 
   return (
@@ -109,7 +125,7 @@ export default function MenuPage() {
             to="/booking"
             className="gold-gradient text-black px-16 py-5 font-bold tracking-widest uppercase text-xs hover:brightness-110 transition-all inline-block text-center"
           >
-            Start Your Booking Flow
+            Inquire Now
           </Link>
           <div className="mt-12 flex items-center gap-4">
             <div className="w-12 h-[1px] bg-white/10"></div>

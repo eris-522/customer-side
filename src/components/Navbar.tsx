@@ -82,7 +82,7 @@ export default function Navbar() {
         .from('bookings')
         .select('*')
         .eq('user_id', user.id)
-        .in('status', ['Accepted', 'Approved', 'Cancelled', 'Declined', 'Rejected']);
+        .in('status', ['Confirmed', 'Accepted', 'Approved', 'Cancelled', 'Declined', 'Rejected']);
       
       if (data) {
         // Sort primarily by the most recent update so new confirmations sit at the top
@@ -235,7 +235,7 @@ export default function Navbar() {
                                         <span className="font-bold text-red-400">Reason:</span> {reason}
                                       </p>
                                     )}
-                                    {!isCancelled && (notif.status === 'Accepted' || notif.status === 'Approved') && (
+                                    {!isCancelled && (notif.status === 'Confirmed' || notif.status === 'Accepted' || notif.status === 'Approved') && (
                                       <p className="text-xs text-white/60 mt-2">
                                         We're excited to host your event! We will be in touch shortly.
                                       </p>
@@ -328,6 +328,11 @@ export default function Navbar() {
                                 {isCancelled && reason && (
                                   <p className="text-xs text-white/60 mt-2 bg-red-400/10 p-2 border border-red-400/20 rounded-sm">
                                     <span className="font-bold text-red-400">Reason:</span> {reason}
+                                  </p>
+                                )}
+                                {!isCancelled && (notif.status === 'Confirmed' || notif.status === 'Accepted' || notif.status === 'Approved') && (
+                                  <p className="text-xs text-white/60 mt-2">
+                                    We're excited to host your event! We will be in touch shortly.
                                   </p>
                                 )}
                               </div>

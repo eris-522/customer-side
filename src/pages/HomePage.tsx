@@ -11,6 +11,7 @@ export interface CateringPackage {
   pax: string;
   tag?: string;
   inclusions: string[];
+  status: string;
 }
 
 const fallbackImages = [
@@ -40,6 +41,7 @@ const steps = [
 
 export default function HomePage() {
   const [packages, setPackages] = useState<CateringPackage[]>([]);
+  const [inclusionCategories, setInclusionCategories] = useState<Record<string, string[]>>({});
 
   useEffect(() => {
     const fetchPackages = async () => {
@@ -54,8 +56,54 @@ export default function HomePage() {
       if (data) {
         setPackages(data as CateringPackage[]);
       }
+
+      const incResponse = await supabase.from("inclusions").select("*");
+      if (incResponse.data) {
+        const grouped: Record<string, string[]> = {};
+        incResponse.data.forEach((row: any) => {
+          if (!grouped[row.category]) grouped[row.category] = [];
+          if (row.items && row.items.trim() !== "" && row.items !== "-") {
+            if (!grouped[row.category].includes(row.items)) {
+              grouped[row.category].push(row.items);
+            }
+          }
+        });
+        setInclusionCategories(grouped);
+      }
     };
     fetchPackages();
+
+    // Fallback polling: Refresh packages silently every 10 seconds to ensure updates sync even if Realtime is disabled
+    const intervalId = setInterval(() => fetchPackages(), 10000);
+
+    // Feature: Subscribe to real-time changes so package updates reflect instantly on the Home Page
+    const channel = supabase
+      .channel("packages-changes-home")
+      .on("postgres_changes", { event: "*", schema: "public", table: "packages" }, () => {
+        fetchPackages();
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "inclusions" }, () => {
+        supabase.from("inclusions").select("*").then(({ data }) => {
+          if (data) {
+            const grouped: Record<string, string[]> = {};
+            data.forEach((row: any) => {
+              if (!grouped[row.category]) grouped[row.category] = [];
+              if (row.items && row.items.trim() !== "" && row.items !== "-") {
+                if (!grouped[row.category].includes(row.items)) {
+                  grouped[row.category].push(row.items);
+                }
+              }
+            });
+            setInclusionCategories(grouped);
+          }
+        });
+      })
+      .subscribe();
+
+    return () => {
+      clearInterval(intervalId);
+      supabase.removeChannel(channel);
+    };
   }, []);
 
   return (
@@ -139,9 +187,25 @@ export default function HomePage() {
                   <h3 className="text-2xl font-serif text-white mb-2">{pkg.name}</h3>
                   <p className="text-[10px] text-white/50 uppercase tracking-widest mb-6">{pkg.price} • {pkg.pax} Guests</p>
                   <p className="text-white/40 text-xs mb-8 leading-relaxed line-clamp-3">
-                    {pkg.inclusions && pkg.inclusions.length > 0 
-                      ? [...pkg.inclusions].sort((a, b) => a.localeCompare(b)).join(" • ")
-                      : "Details available upon request."}
+                    {(() => {
+                      const allCategorizedItems = Object.values(inclusionCategories).flat();
+                      const pkgInclusions = Array.isArray(pkg.inclusions) ? pkg.inclusions : [];
+                      const formattedGroups: string[] = [];
+
+                      Object.entries(inclusionCategories).forEach(([cat, items]) => {
+                        const selected = pkgInclusions.filter((inc) => items.includes(inc));
+                        if (selected.length > 0) {
+                          formattedGroups.push(`${cat}: ${selected.join(', ')}`);
+                        }
+                      });
+
+                      const uncategorized = pkgInclusions.filter((inc) => !allCategorizedItems.includes(inc));
+                      if (uncategorized.length > 0) {
+                        formattedGroups.push(uncategorized.join(', '));
+                      }
+                      
+                      return formattedGroups.length > 0 ? formattedGroups.join(" • ") : "No inclusions specified.";
+                    })()}
                   </p>
                 </div>
                 <Link 

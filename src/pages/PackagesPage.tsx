@@ -12,6 +12,7 @@ export interface CateringPackage {
   pax: string;
   tag?: string;
   inclusions: string[];
+  status: string;
 }
 
 // Feature: Fallback images array since the image column was removed from the database schema to simplify the backend
@@ -26,6 +27,7 @@ export default function PackagesPage() {
   // Feature: State hooks to store the live data fetched from the database
   const [packages, setPackages] = useState<CateringPackage[]>([]);
   const [loading, setLoading] = useState(true);
+  const [inclusionCategories, setInclusionCategories] = useState<Record<string, string[]>>({});
 
   // Feature: Executes the database query as soon as the user navigates to this page
   useEffect(() => {
@@ -43,11 +45,60 @@ export default function PackagesPage() {
       } else if (pkgResponse.data) {
         setPackages(pkgResponse.data as CateringPackage[]);
       }
+      
+      // Fetch inclusions for categorization
+      const incResponse = await supabase.from("inclusions").select("*");
+      if (incResponse.error) {
+        console.error("Error fetching inclusions:", incResponse.error.message);
+      } else if (incResponse.data) {
+        const grouped: Record<string, string[]> = {};
+        incResponse.data.forEach((row: any) => {
+          if (!grouped[row.category]) grouped[row.category] = [];
+          if (row.items && row.items.trim() !== "" && row.items !== "-") {
+            if (!grouped[row.category].includes(row.items)) {
+              grouped[row.category].push(row.items);
+            }
+          }
+        });
+        setInclusionCategories(grouped);
+      }
 
       setLoading(false);
     };
 
     fetchOfferings();
+
+    // Fallback polling: Refresh offerings silently every 10 seconds to ensure updates sync even if Realtime is disabled
+    const intervalId = setInterval(() => fetchOfferings(), 10000);
+
+    // Feature: Subscribe to real-time changes so package updates (like removed inclusions) reflect instantly
+    const channel = supabase
+      .channel("packages-changes")
+      .on("postgres_changes", { event: "*", schema: "public", table: "packages" }, () => {
+        fetchOfferings();
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "inclusions" }, () => {
+        supabase.from("inclusions").select("*").then(({ data }) => {
+          if (data) {
+            const grouped: Record<string, string[]> = {};
+            data.forEach((row: any) => {
+              if (!grouped[row.category]) grouped[row.category] = [];
+              if (row.items && row.items.trim() !== "" && row.items !== "-") {
+                if (!grouped[row.category].includes(row.items)) {
+                  grouped[row.category].push(row.items);
+                }
+              }
+            });
+            setInclusionCategories(grouped);
+          }
+        });
+      })
+      .subscribe();
+
+    return () => {
+      clearInterval(intervalId);
+      supabase.removeChannel(channel);
+    };
   }, []);
 
   return (
@@ -140,25 +191,58 @@ export default function PackagesPage() {
                         </span>
                       </div>
 
-                      <div className="space-y-3 mb-10">
-                        {/* Feature: Maps through the array of inclusions provided by the admin dashboard */}
-                        {pkg.inclusions && pkg.inclusions.length > 0 ? (
-                          [...pkg.inclusions].sort((a, b) => a.localeCompare(b)).map((feature, idx) => (
-                            <div key={idx} className="flex items-start gap-3">
-                              <Check
-                                size={12}
-                                className="text-gold-400 shrink-0 mt-1"
-                              />
-                              <span className="text-[10px] text-white/60 uppercase tracking-widest font-semibold leading-relaxed">
-                                {feature}
-                              </span>
-                            </div>
-                          ))
-                        ) : (
-                          <p className="text-[10px] text-white/40 italic">
-                            Details available upon request.
-                          </p>
-                        )}
+                      <div className="space-y-4 mb-10">
+                        {(() => {
+                          const allCategorizedItems = Object.values(inclusionCategories).flat();
+                          const pkgInclusions = Array.isArray(pkg.inclusions) ? pkg.inclusions : [];
+                          
+                          const renderGroups: React.ReactNode[] = [];
+                          Object.entries(inclusionCategories).forEach(([cat, items]) => {
+                            const selected = pkgInclusions.filter((inc) => items.includes(inc));
+                            if (selected.length > 0) {
+                              renderGroups.push(
+                                <div key={cat} className="space-y-2">
+                                  <h4 className="text-xs font-bold text-gold-400 uppercase tracking-widest mb-1">
+                                    {cat}
+                                  </h4>
+                                  <div className="space-y-2">
+                                    {selected.map((feature, i) => (
+                                      <div key={i} className="flex items-start gap-3">
+                                        <Check size={12} className="text-gold-400 shrink-0 mt-1" />
+                                        <span className="text-[10px] text-white/60 uppercase tracking-widest font-semibold leading-relaxed">
+                                          {feature}
+                                        </span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              );
+                            }
+                          });
+
+                          const uncategorized = pkgInclusions.filter((inc) => !allCategorizedItems.includes(inc));
+                          if (uncategorized.length > 0) {
+                            renderGroups.push(
+                              <div key="Other" className="space-y-2">
+                                <h4 className="text-xs font-bold text-gold-400 uppercase tracking-widest mb-1">
+                                  Other
+                                </h4>
+                                <div className="space-y-2">
+                                  {uncategorized.map((feature, i) => (
+                                    <div key={i} className="flex items-start gap-3">
+                                      <Check size={12} className="text-gold-400 shrink-0 mt-1" />
+                                      <span className="text-[10px] text-white/60 uppercase tracking-widest font-semibold leading-relaxed">
+                                        {feature}
+                                      </span>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            );
+                          }
+
+                          return renderGroups;
+                        })()}
                       </div>
 
                       <div className="mt-auto">
@@ -188,12 +272,6 @@ export default function PackagesPage() {
             Tailored to your <br /> <span className="italic">unique</span>{" "}
             vision.
           </h2>
-          <Link
-            to="/booking"
-            className="gold-gradient text-black px-16 py-5 font-bold tracking-widest uppercase text-xs hover:brightness-110 transition-all inline-block text-center"
-          >
-            Book This Collection
-          </Link>
           <div className="mt-12 flex items-center gap-4">
             <div className="w-12 h-[1px] bg-white/10"></div>
             <Link

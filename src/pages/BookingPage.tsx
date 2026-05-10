@@ -131,10 +131,10 @@ const categoryOrder = [
 ];
 
 export default function BookingPage() {
-  // Feature: Minimum selectable date (tomorrow only)
+  // Feature: Minimum selectable date (2 days from today to allow 1 day prep)
   const minSelectableDate = (() => {
     const d = new Date();
-    d.setDate(d.getDate() + 1);
+    d.setDate(d.getDate() + 2);
     const yyyy = d.getFullYear();
     const mm = String(d.getMonth() + 1).padStart(2, "0");
     const dd = String(d.getDate()).padStart(2, "0");
@@ -156,6 +156,7 @@ export default function BookingPage() {
   const [userProfile, setUserProfile] = useState<any>(null);
   const [bookedDates, setBookedDates] = useState<string[]>([]);
   const [existingBookings, setExistingBookings] = useState<any[]>([]);
+  const [inclusionCategories, setInclusionCategories] = useState<Record<string, string[]>>({});
 
   // Feature: Main form data object holding all user selections
   const [formData, setFormData] = useState<FormData>({
@@ -188,7 +189,7 @@ export default function BookingPage() {
       setUserProfile(profile);
 
       // Fetch active packages, menu items, and add-ons
-      const [pkgRes, menuRes, bookingsRes] = await Promise.all([
+      const [pkgRes, menuRes, bookingsRes, incRes] = await Promise.all([
         supabase
           .from("packages")
           .select("*")
@@ -198,6 +199,7 @@ export default function BookingPage() {
         supabase.from("menu_items").select("*").neq("status", "Archived"),
         // Fetch all existing bookings with their times to check for conflicts
         supabase.from("bookings").select("event_date, event_time, status"),
+        supabase.from("inclusions").select("*"),
       ]);
 
       if (pkgRes.data) setAvailablePackages(pkgRes.data);
@@ -217,9 +219,15 @@ export default function BookingPage() {
           "06:00 PM", "07:00 PM", "08:00 PM"
         ];
 
-        // Mark a date fully booked ONLY if no timeslot has a 5-hour gap from existing events
+        // Mark a date fully booked if there are 2 or more events, OR if no timeslot has a 5-hour gap from existing events
         uniqueDates.forEach((date) => {
           const dayBookings = validBookings.filter((b: any) => b.event_date === date);
+
+          if (dayBookings.length >= 2) {
+            fullyBooked.push(date as string);
+            return;
+          }
+
           const hasAvailableSlot = allSlots.some((slot) => {
             const slotVal = parseTime(slot);
             return !dayBookings.some((b: any) => Math.abs(slotVal - parseTime(b.event_time)) < 5);
@@ -228,11 +236,97 @@ export default function BookingPage() {
         });
         setBookedDates(fullyBooked);
       }
+      if (incRes.data) {
+        const grouped: Record<string, string[]> = {};
+        incRes.data.forEach((row: any) => {
+          if (!grouped[row.category]) grouped[row.category] = [];
+          if (row.items && row.items.trim() !== "" && row.items !== "-") {
+            if (!grouped[row.category].includes(row.items)) {
+              grouped[row.category].push(row.items);
+            }
+          }
+        });
+        setInclusionCategories(grouped);
+      }
 
       setLoadingData(false);
     };
 
     fetchBookingData();
+
+    // Fallback polling: Refresh packages and inclusions silently every 10 seconds to ensure updates sync even if Realtime is disabled
+    const intervalId = setInterval(() => {
+      supabase
+        .from("packages")
+        .select("*")
+        .neq("status", "Archived")
+        .neq("status", "none")
+        .neq("status", "None")
+        .then(({ data }) => {
+          if (data) setAvailablePackages(data);
+        });
+
+      supabase.from("menu_items").select("*").neq("status", "Archived").then(({ data }) => {
+        if (data) setMenuOptions(data);
+      });
+
+      supabase.from("inclusions").select("*").then(({ data }) => {
+        if (data) {
+          const grouped: Record<string, string[]> = {};
+          data.forEach((row: any) => {
+            if (!grouped[row.category]) grouped[row.category] = [];
+            if (row.items && row.items.trim() !== "" && row.items !== "-") {
+              if (!grouped[row.category].includes(row.items)) {
+                grouped[row.category].push(row.items);
+              }
+            }
+          });
+          setInclusionCategories(grouped);
+        }
+      });
+    }, 10000);
+
+    // Feature: Keep packages updated in real-time during the booking flow
+    const channel = supabase
+      .channel("packages-changes-booking")
+      .on("postgres_changes", { event: "*", schema: "public", table: "packages" }, () => {
+        supabase
+          .from("packages")
+          .select("*")
+          .neq("status", "Archived")
+          .neq("status", "none")
+          .neq("status", "None")
+          .then(({ data }) => {
+            if (data) setAvailablePackages(data);
+          });
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "menu_items" }, () => {
+        supabase.from("menu_items").select("*").neq("status", "Archived").then(({ data }) => {
+          if (data) setMenuOptions(data);
+        });
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "inclusions" }, () => {
+        supabase.from("inclusions").select("*").then(({ data }) => {
+          if (data) {
+            const grouped: Record<string, string[]> = {};
+            data.forEach((row: any) => {
+              if (!grouped[row.category]) grouped[row.category] = [];
+              if (row.items && row.items.trim() !== "" && row.items !== "-") {
+                if (!grouped[row.category].includes(row.items)) {
+                  grouped[row.category].push(row.items);
+                }
+              }
+            });
+            setInclusionCategories(grouped);
+          }
+        });
+      })
+      .subscribe();
+
+    return () => {
+      clearInterval(intervalId);
+      supabase.removeChannel(channel);
+    };
   }, [navigate]);
 
   // Feature: Validates the current step before allowing the user to proceed to the next one
@@ -257,6 +351,12 @@ export default function BookingPage() {
       // Double-check the 5-hour gap constraint
       if (formData.date && formData.time) {
         const dayBookings = existingBookings.filter((b) => b.event_date === formData.date);
+        
+        if (dayBookings.length >= 2) {
+          setStepError(`The date ${formData.date} already has the maximum number of events (2) scheduled. Please select another date.`);
+          return;
+        }
+        
         const slotVal = parseTime(formData.time);
         const conflict = dayBookings.some((b) => Math.abs(slotVal - parseTime(b.event_time)) < 5);
         if (conflict) {
@@ -277,26 +377,37 @@ export default function BookingPage() {
         return;
       }
 
-      // Validate that guest count is a valid positive number
-      if (parseInt(formData.guestCount) <= 0) {
-        setStepError("Guest count must be at least 1.");
+      // Validate that guest count is within 10 and 500
+      const guestCountNum = parseInt(formData.guestCount);
+      if (isNaN(guestCountNum) || guestCountNum < 10 || guestCountNum > 500) {
+        setStepError("Guest count must be between 10 and 500.");
         return;
       }
     } else if (currentStep === 3) {
       if (activeMenuRules) {
-        // Enforce the specific package rules using our ordered category array
+        // Enforce the specific package rules using our ordered category array,
+        // but gracefully lower the minimum requirement if items are unavailable.
         for (const cat of categoryOrder) {
           if (!activeMenuRules[cat]) continue;
+          
+          const availableItemsInCat = (groupedMenu[cat] || []).filter(itemName => {
+             const opt = menuOptions.find(o => o.name === itemName);
+             return opt && opt.status !== "Not Available" && opt.status !== "Archived";
+          });
+
           const limit = activeMenuRules[cat];
+          const dynamicMin = Math.min(limit.min, availableItemsInCat.length);
           const count = currentMenuCounts[cat] || 0;
-          if (count < limit.min) {
-            setStepError(`Please select ${limit.min === limit.max ? 'exactly' : 'at least'} ${limit.min} item(s) for ${cat}.`);
+          
+          if (count < dynamicMin) {
+            setStepError(`Please select at least ${dynamicMin} item(s) for ${cat}.`);
             return;
           }
         }
       } else {
         // Fallback for custom packages without defined rules
-        if (formData.menuSelections.length === 0) {
+        const hasAvailableItems = menuOptions.some(o => o.status !== "Not Available" && o.status !== "Archived");
+        if (formData.menuSelections.length === 0 && hasAvailableItems) {
           setStepError("Please select at least one menu item for your event.");
           return;
         }
@@ -360,6 +471,12 @@ export default function BookingPage() {
     setIsSubmitting(true);
     setSubmitError("");
 
+    // Feature: Clean up any selected menu items that were archived or made unavailable before submission
+    const validSelections = formData.menuSelections.filter(itemName => {
+      const opt = menuOptions.find(o => o.name === itemName);
+      return opt && opt.status !== "Not Available";
+    });
+
     const { error } = await supabase.from("bookings").insert([
       {
         user_id: authData.user.id,
@@ -368,7 +485,7 @@ export default function BookingPage() {
         event_time: formData.time,
         event_location: `${formData.venueName} - ${formData.venueAddress}`,
         guest_count: parseInt(formData.guestCount) || 0,
-        selected_menu_items: formData.menuSelections,
+        selected_menu_items: validSelections,
         status: "Pending",
       },
     ]);
@@ -519,21 +636,58 @@ export default function BookingPage() {
                       </span>
                     </div>
 
-                    <div className="space-y-3 mb-10">
-                      {(Array.isArray(pkg.inclusions) && pkg.inclusions.length
-                        ? [...(pkg.inclusions as unknown as string[])].sort((a, b) => a.localeCompare(b))
-                        : ["Details available upon request"]
-                      ).map((feature: string, idx: number) => (
-                        <div key={idx} className="flex items-start gap-3">
-                          <Check
-                            size={12}
-                            className="text-gold-400 shrink-0 mt-1.5"
-                          />
-                          <span className="text-sm text-white/80 font-semibold leading-relaxed">
-                            {feature}
-                          </span>
-                        </div>
-                      ))}
+                    <div className="space-y-4 mb-10">
+                      {(() => {
+                        const allCategorizedItems = Object.values(inclusionCategories).flat();
+                        const pkgInclusions = Array.isArray(pkg.inclusions) ? pkg.inclusions : [];
+                        
+                        const renderGroups: React.ReactNode[] = [];
+                        Object.entries(inclusionCategories).forEach(([cat, items]) => {
+                          const selected = pkgInclusions.filter((inc: string) => items.includes(inc));
+                          if (selected.length > 0) {
+                            renderGroups.push(
+                              <div key={cat} className="space-y-2">
+                                <h4 className="text-xs font-bold text-gold-400 uppercase tracking-widest mb-1">
+                                  {cat}
+                                </h4>
+                                <div className="space-y-2">
+                                  {selected.map((feature: string, i: number) => (
+                                    <div key={i} className="flex items-start gap-3">
+                                      <Check size={12} className="text-gold-400 shrink-0 mt-1.5" />
+                                      <span className="text-sm text-white/80 font-semibold leading-relaxed">
+                                        {feature}
+                                      </span>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            );
+                          }
+                        });
+
+                        const uncategorized = pkgInclusions.filter((inc: string) => !allCategorizedItems.includes(inc));
+                        if (uncategorized.length > 0) {
+                          renderGroups.push(
+                            <div key="Other" className="space-y-2">
+                              <h4 className="text-xs font-bold text-gold-400 uppercase tracking-widest mb-1">
+                                Other
+                              </h4>
+                              <div className="space-y-2">
+                                {uncategorized.map((feature: string, i: number) => (
+                                  <div key={i} className="flex items-start gap-3">
+                                    <Check size={12} className="text-gold-400 shrink-0 mt-1.5" />
+                                    <span className="text-sm text-white/80 font-semibold leading-relaxed">
+                                      {feature}
+                                    </span>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          );
+                        }
+
+                        return renderGroups;
+                      })()}
                     </div>
                   </div>
                 </button>
@@ -590,14 +744,15 @@ export default function BookingPage() {
                   </label>
                   <input
                     type="number"
-                    min="1"
-                    placeholder="1"
+                    min="10"
+                    max="500"
+                    placeholder="e.g. 50"
                     className="w-full bg-white/5 border border-white/10 px-6 py-4 text-lg focus:outline-none focus:border-gold-400/50 transition-all font-medium"
                     value={formData.guestCount}
                     onChange={(e) => {
                       setStepError("");
                       const val = e.target.value;
-                      if (val === "" || parseInt(val) > 0) {
+                      if (val === "" || parseInt(val) >= 0) {
                         setFormData({ ...formData, guestCount: val });
                       }
                     }}
@@ -716,8 +871,13 @@ export default function BookingPage() {
               const items = groupedMenu[category];
               if (!items || items.length === 0) return null;
                   const limit = activeMenuRules ? activeMenuRules[category] : null;
+                  const availableItemsInCat = items.filter(itemName => {
+                     const opt = menuOptions.find(o => o.name === itemName);
+                     return opt && opt.status !== "Not Available" && opt.status !== "Archived";
+                  });
+                  const dynamicMin = limit ? Math.min(limit.min, availableItemsInCat.length) : 0;
                   const currentCount = currentMenuCounts[category] || 0;
-                  const isFulfilled = limit ? currentCount >= limit.min && currentCount <= limit.max : currentCount > 0;
+                  const isFulfilled = limit ? currentCount >= dynamicMin && currentCount <= limit.max : currentCount > 0;
 
                   return (
                   <div key={category} className="space-y-6">
@@ -727,37 +887,53 @@ export default function BookingPage() {
                       </h3>
                       {limit && (
                         <span className={`text-xs font-bold tracking-widest uppercase px-3 py-1 border ${isFulfilled ? "bg-gold-400/10 border-gold-400/30 text-gold-400" : "bg-white/5 border-white/10 text-white/50"}`}>
-                          {currentCount} / {limit.max} Selected {limit.min !== limit.max ? `(Min ${limit.min})` : ""}
+                          {currentCount} / {limit.max} Selected {dynamicMin !== limit.max && dynamicMin > 0 ? `(Min ${dynamicMin})` : ""}
                         </span>
                       )}
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                      {items.map((item) => (
-                        <button
-                          key={item}
-                          onClick={() => handleMenuToggle(item)}
-                          className={`p-5 glass-card border flex items-center justify-between transition-all group ${
-                            formData.menuSelections.includes(item)
-                              ? "border-gold-400 bg-gold-400/5"
-                              : "border-white/10 hover:border-white/30"
-                          }`}
-                        >
-                          <span className="text-base tracking-wide font-bold text-left">
-                            {item}
-                          </span>
-                          <div
-                            className={`w-5 h-5 border flex items-center justify-center shrink-0 transition-all ${
-                              formData.menuSelections.includes(item)
-                                ? "bg-gold-400 border-gold-400 text-black"
-                                : "border-white/20 group-hover:border-gold-400"
+                      {items.map((item) => {
+                        const opt = menuOptions.find((o) => o.name === item);
+                        const isUnavailable = opt?.status === "Not Available";
+                        const isSelected = formData.menuSelections.includes(item);
+                        
+                        return (
+                          <button
+                            key={item}
+                            onClick={() => !isUnavailable && handleMenuToggle(item)}
+                            disabled={isUnavailable}
+                            className={`p-5 glass-card border flex flex-col justify-center transition-all group ${
+                              isUnavailable 
+                                ? "opacity-50 cursor-not-allowed border-white/5 bg-white/5"
+                                : isSelected
+                                  ? "border-gold-400 bg-gold-400/5"
+                                  : "border-white/10 hover:border-white/30"
                             }`}
                           >
-                            {formData.menuSelections.includes(item) && (
-                              <Check size={12} strokeWidth={4} />
+                            <div className="flex items-center justify-between w-full">
+                              <span className="text-base tracking-wide font-bold text-left">
+                                {item}
+                              </span>
+                              <div
+                                className={`w-5 h-5 border flex items-center justify-center shrink-0 transition-all ${
+                                  isSelected && !isUnavailable
+                                    ? "bg-gold-400 border-gold-400 text-black"
+                                    : "border-white/20 group-hover:border-gold-400"
+                                }`}
+                              >
+                                {isSelected && !isUnavailable && (
+                                  <Check size={12} strokeWidth={4} />
+                                )}
+                              </div>
+                            </div>
+                            {isUnavailable && (
+                              <span className="text-[10px] text-red-400 uppercase tracking-widest mt-2 font-bold text-left">
+                                Not Available
+                              </span>
                             )}
-                          </div>
-                        </button>
-                      ))}
+                          </button>
+                        );
+                      })}
                     </div>
                   </div>
                   );
@@ -854,16 +1030,39 @@ export default function BookingPage() {
                         Menu Selection
                       </h3>
                       <div className="space-y-6">
-                        <div className="flex flex-wrap gap-2">
-                          {formData.menuSelections.map((item) => (
-                            <span
-                              key={item}
-                              className="text-base px-3 py-1 bg-white/5 border border-white/10 tracking-wide text-white/90 font-semibold"
-                            >
-                              {item}
-                            </span>
-                          ))}
-                        </div>
+                        {categoryOrder.map((cat) => {
+                          const itemsInCat = formData.menuSelections.filter((itemName) => {
+                            const opt = menuOptions.find((o) => o.name === itemName);
+                            if (!opt || opt.status === "Not Available") return false;
+                            return getRuleCategory(opt.category, opt.name) === cat;
+                          });
+
+                          if (itemsInCat.length === 0) return null;
+
+                          return (
+                            <div key={cat} className="space-y-3">
+                              <h4 className="text-xs font-bold text-white/50 uppercase tracking-widest border-b border-white/10 pb-2">
+                                {cat}
+                              </h4>
+                              <div className="flex flex-wrap gap-2">
+                                {itemsInCat.map((item) => (
+                                  <span
+                                    key={item}
+                                    className="text-sm px-3 py-1.5 bg-white/5 border border-white/10 tracking-wide text-white/90 font-semibold"
+                                  >
+                                    {item}
+                                  </span>
+                                ))}
+                              </div>
+                            </div>
+                          );
+                        })}
+                        {formData.menuSelections.filter((itemName) => {
+                          const opt = menuOptions.find(o => o.name === itemName);
+                          return opt && opt.status !== "Not Available";
+                        }).length === 0 && (
+                          <p className="text-sm text-white/50 italic">No menu items selected.</p>
+                        )}
                       </div>
                     </div>
                   </div>

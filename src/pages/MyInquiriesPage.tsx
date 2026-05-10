@@ -222,16 +222,22 @@ export default function MyInquiriesPage() {
                     </div>
 
                     {isCancelled && (
-                      <div className="p-4 bg-red-500/10 border border-red-500/20 mt-4 rounded-sm">
+                      <div className="p-4 bg-red-500/10 border border-red-500/20 mt-4 rounded-sm flex flex-col gap-2">
                         <p className="text-sm text-red-400">
                           <span className="font-bold">Reason:</span> {reason || "No reason provided"}
+                        </p>
+                        <p className="text-[10px] text-red-400/60 uppercase tracking-widest font-bold">
+                          Cancelled on: {booking.updated_at ? new Date(booking.updated_at).toLocaleString(undefined, { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : new Date(booking.created_at).toLocaleString(undefined, { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
                         </p>
                       </div>
                     )}
                     {isApproved && (
-                      <div className="p-4 bg-green-500/10 border border-green-500/20 mt-4 rounded-sm">
+                      <div className="p-4 bg-green-500/10 border border-green-500/20 mt-4 rounded-sm flex flex-col gap-2">
                         <p className="text-sm text-green-400 font-medium">
                           Your booking has been successfully confirmed. We'll be in touch soon!
+                        </p>
+                        <p className="text-[10px] text-green-400/60 uppercase tracking-widest font-bold">
+                          Confirmed on: {booking.updated_at ? new Date(booking.updated_at).toLocaleString(undefined, { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : new Date(booking.created_at).toLocaleString(undefined, { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
                         </p>
                       </div>
                     )}
