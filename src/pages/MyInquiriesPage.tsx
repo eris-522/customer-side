@@ -65,7 +65,7 @@ export default function MyInquiriesPage() {
     try {
       const { error } = await supabase
         .from("bookings")
-        .update({ status: "Cancelled", cancellation_reason: finalReason })
+        .update({ status: "Cancelled", cancellation_reason: finalReason, cancelled_by: "Customer" })
         .eq("id", cancelModalId);
 
       if (error) throw error;

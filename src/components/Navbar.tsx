@@ -1,8 +1,9 @@
 import { motion, AnimatePresence } from "motion/react";
 import { Menu as MenuIcon, X, Bell, ChevronDown } from "lucide-react";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { supabase } from "../utils/supabase";
+import { NotificationCenter } from "./NotificationCenter";
 
 export const navLinks = [
 
@@ -20,13 +21,42 @@ export default function Navbar() {
   const [user, setUser] = useState<any>(null);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const [notifications, setNotifications] = useState<any[]>([]);
-  const [unreadCount, setUnreadCount] = useState(0);
   const [isNotifOpen, setIsNotifOpen] = useState(false);
+  const [readIds, setReadIds] = useState<string[]>(() => {
+    try {
+      const parsed = JSON.parse(localStorage.getItem('read_notifs') || '[]');
+      return Array.isArray(parsed) ? parsed.map(String) : [];
+    } catch {
+      return [];
+    }
+  });
   const location = useLocation();
   const navigate = useNavigate();
 
   const isAuthPage = location.pathname === "/auth";
   const mode = new URLSearchParams(location.search).get("mode");
+
+  const desktopNotifRef = useRef<HTMLDivElement>(null);
+  const mobileNotifRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as Node;
+      const clickedDesktop = desktopNotifRef.current?.contains(target);
+      const clickedMobile = mobileNotifRef.current?.contains(target);
+
+      if (!clickedDesktop && !clickedMobile) {
+        setIsNotifOpen(false);
+      }
+    };
+
+    if (isNotifOpen) {
+      document.addEventListener("mousedown", handleClickOutside);
+    }
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [isNotifOpen]);
+
+  const unreadCount = notifications.filter((b: any) => !readIds.includes(`${b.id}-${b.status}`)).length;
 
   // Determine which button should have the "active" (gold) style.
   // On the auth page, the active button matches the current mode (login vs signup).
@@ -66,12 +96,6 @@ export default function Navbar() {
     };
   }, []);
 
-  // Helper to format timestamps so the user knows exactly when the update occurred
-  const formatNotifDate = (dateStr: string) => {
-    if (!dateStr) return '';
-    const date = new Date(dateStr);
-    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
-  };
 
   // Fetch updates related to the user's booking statuses
   useEffect(() => {
@@ -85,11 +109,16 @@ export default function Navbar() {
         .in('status', ['Confirmed', 'Accepted', 'Approved', 'Cancelled', 'Declined', 'Rejected']);
       
       if (data) {
+        // Filter out bookings cancelled by the customer so they don't receive a notification for their own action
+        const validNotifications = data.filter((b: any) => {
+          // Hide if explicitly cancelled by Customer. If cancelled_by is empty/null, show it so Admin cancellations are never missed.
+          if (b.status === 'Cancelled' && b.cancelled_by === 'Customer') return false;
+          return true;
+        });
+
         // Sort primarily by the most recent update so new confirmations sit at the top
-        const sorted = data.sort((a, b) => new Date(b.updated_at || b.created_at).getTime() - new Date(a.updated_at || a.created_at).getTime());
-        const readIds = JSON.parse(localStorage.getItem('read_notifs') || '[]');
+        const sorted = validNotifications.sort((a: any, b: any) => new Date(b.updated_at || b.created_at).getTime() - new Date(a.updated_at || a.created_at).getTime());
         setNotifications(sorted);
-        setUnreadCount(sorted.filter((b: any) => !readIds.includes(b.id)).length);
       }
     };
     fetchNotifications();
@@ -121,11 +150,15 @@ export default function Navbar() {
 
   const handleNotifClick = () => {
     setIsNotifOpen(!isNotifOpen);
-    if (!isNotifOpen && unreadCount > 0) {
-      const readIds = notifications.map(n => n.id);
-      localStorage.setItem('read_notifs', JSON.stringify(readIds));
-      setUnreadCount(0);
-    }
+  };
+
+  const handleDismissNotif = (id: string) => {
+    setReadIds(prev => {
+      if (prev.includes(id)) return prev;
+      const newIds = [...prev, id];
+      localStorage.setItem('read_notifs', JSON.stringify(newIds));
+      return newIds;
+    });
   };
 
 
@@ -192,7 +225,7 @@ export default function Navbar() {
             >
               {user ? (
                 <>
-                  <div className="relative inline-block align-middle mr-2 mt-1">
+                  <div className="relative inline-block align-middle mr-2 mt-1" ref={desktopNotifRef}>
                     <button onClick={handleNotifClick} className="text-white/70 hover:text-gold-400 transition-colors relative flex items-center justify-center p-2">
                       <Bell size={20} />
                       {unreadCount > 0 && (
@@ -201,53 +234,14 @@ export default function Navbar() {
                         </span>
                       )}
                     </button>
-                    <AnimatePresence>
-                      {isNotifOpen && (
-                        <motion.div
-                          initial={{ opacity: 0, y: 10 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          exit={{ opacity: 0, y: 10 }}
-                          className="absolute right-0 mt-4 w-80 glass-card border border-white/10 shadow-2xl z-[100] max-h-[400px] overflow-y-auto"
-                        >
-                          <div className="p-4 border-b border-white/10 sticky top-0 bg-[#070707] z-10 text-left">
-                            <h3 className="font-serif text-lg text-gold-400 italic">Notifications</h3>
-                          </div>
-                          <div className="flex flex-col bg-rich-black text-left">
-                            {notifications.length === 0 ? (
-                              <div className="p-10 text-center flex flex-col items-center">
-                                <Bell className="text-white/10 mb-4" size={32} />
-                                <p className="text-white/40 text-sm font-medium">No updates right now.</p>
-                              </div>
-                            ) : (
-                              notifications.map(notif => {
-                                const isCancelled = ['Cancelled', 'Declined', 'Rejected'].includes(notif.status);
-                                const reason = notif.reason || notif.reject_reason || notif.cancellation_reason || notif.admin_notes;
-                                return (
-                                  <div key={notif.id} className="p-4 border-b border-white/10 hover:bg-white/5 transition-colors text-left">
-                                    <div className="flex justify-between items-start mb-1 gap-2">
-                                      <p className="text-sm text-white/90 font-semibold">
-                                        Booking for {notif.event_date} was <span className={isCancelled ? "text-red-400" : "text-green-400"}>{notif.status}</span>.
-                                      </p>
-                                      <span className="text-[10px] text-white/40 whitespace-nowrap mt-1">{formatNotifDate(notif.updated_at || notif.created_at)}</span>
-                                    </div>
-                                    {isCancelled && reason && (
-                                      <p className="text-xs text-white/60 mt-2 bg-red-400/10 p-2 border border-red-400/20 rounded-sm">
-                                        <span className="font-bold text-red-400">Reason:</span> {reason}
-                                      </p>
-                                    )}
-                                    {!isCancelled && (notif.status === 'Confirmed' || notif.status === 'Accepted' || notif.status === 'Approved') && (
-                                      <p className="text-xs text-white/60 mt-2">
-                                        We're excited to host your event! We will be in touch shortly.
-                                      </p>
-                                    )}
-                                  </div>
-                                )
-                              })
-                            )}
-                          </div>
-                        </motion.div>
-                      )}
-                    </AnimatePresence>
+                    <NotificationCenter 
+                      isOpen={isNotifOpen} 
+                      onClose={() => setIsNotifOpen(false)} 
+                      notifications={notifications} 
+                      unreadCount={unreadCount} 
+                      readIds={readIds}
+                      onDismiss={handleDismissNotif}
+                    />
                   </div>
                   <button
                     type="button"
@@ -287,7 +281,7 @@ export default function Navbar() {
 
           <div className="flex items-center gap-5 lg:hidden">
             {user && (
-              <div className="relative">
+              <div className="relative" ref={mobileNotifRef}>
                 <button onClick={handleNotifClick} className="text-gold-400 transition-colors relative flex items-center justify-center p-1">
                   <Bell size={22} />
                   {unreadCount > 0 && (
@@ -296,53 +290,14 @@ export default function Navbar() {
                     </span>
                   )}
                 </button>
-                <AnimatePresence>
-                  {isNotifOpen && (
-                    <motion.div
-                      initial={{ opacity: 0, y: 10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0, y: 10 }}
-                      className="absolute right-0 mt-4 w-72 glass-card border border-white/10 shadow-2xl z-[100] max-h-[350px] overflow-y-auto"
-                    >
-                      <div className="p-4 border-b border-white/10 sticky top-0 bg-[#070707] z-10 text-left">
-                        <h3 className="font-serif text-lg text-gold-400 italic">Notifications</h3>
-                      </div>
-                      <div className="flex flex-col bg-rich-black text-left">
-                        {notifications.length === 0 ? (
-                          <div className="p-10 text-center flex flex-col items-center">
-                            <Bell className="text-white/10 mb-4" size={32} />
-                            <p className="text-white/40 text-sm font-medium">No updates right now.</p>
-                          </div>
-                        ) : (
-                          notifications.map(notif => {
-                            const isCancelled = ['Cancelled', 'Declined', 'Rejected'].includes(notif.status);
-                            const reason = notif.reason || notif.reject_reason || notif.cancellation_reason || notif.admin_notes;
-                            return (
-                              <div key={notif.id} className="p-4 border-b border-white/10 hover:bg-white/5 transition-colors">
-                                <div className="flex justify-between items-start mb-1 gap-2">
-                                  <p className="text-sm text-white/90 font-semibold">
-                                    Booking for {notif.event_date} was <span className={isCancelled ? "text-red-400" : "text-green-400"}>{notif.status}</span>.
-                                  </p>
-                                  <span className="text-[10px] text-white/40 whitespace-nowrap mt-1">{formatNotifDate(notif.updated_at || notif.created_at)}</span>
-                                </div>
-                                {isCancelled && reason && (
-                                  <p className="text-xs text-white/60 mt-2 bg-red-400/10 p-2 border border-red-400/20 rounded-sm">
-                                    <span className="font-bold text-red-400">Reason:</span> {reason}
-                                  </p>
-                                )}
-                                {!isCancelled && (notif.status === 'Confirmed' || notif.status === 'Accepted' || notif.status === 'Approved') && (
-                                  <p className="text-xs text-white/60 mt-2">
-                                    We're excited to host your event! We will be in touch shortly.
-                                  </p>
-                                )}
-                              </div>
-                            )
-                          })
-                        )}
-                      </div>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
+                <NotificationCenter 
+                  isOpen={isNotifOpen} 
+                  onClose={() => setIsNotifOpen(false)} 
+                  notifications={notifications} 
+                  unreadCount={unreadCount} 
+                  readIds={readIds}
+                  onDismiss={handleDismissNotif}
+                />
               </div>
             )}
             <button 

@@ -150,6 +150,17 @@ export default function BookingPage() {
   // Feature: State to hold validation error messages for the current step
   const [stepError, setStepError] = useState("");
 
+  useEffect(() => {
+    if (stepError || submitError) {
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    }
+  }, [stepError, submitError]);
+
+  // Feature: Scroll to the top of the page whenever the user navigates to a new step
+  useEffect(() => {
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }, [currentStep]);
+
   // Database States
   const [availablePackages, setAvailablePackages] = useState<any[]>([]);
   const [menuOptions, setMenuOptions] = useState<any[]>([]);
@@ -168,6 +179,13 @@ export default function BookingPage() {
     venueAddress: "",
     menuSelections: [],
   });
+
+  // Derived variables dynamically calculated from the user's selected package
+  const selectedPkgForMenu = availablePackages.find((p) => p.id === formData.packageId);
+  const activeMenuRules = selectedPkgForMenu ? getPackageRules(selectedPkgForMenu.name) : null;
+  const maxGuests = selectedPkgForMenu?.pax 
+    ? Math.max(...(selectedPkgForMenu.pax.match(/\d+/g) || ['500']).map((n: string) => parseInt(n, 10))) 
+    : 500;
 
   // Feature: Fetches required dynamic data (packages, menu, services) from Supabase on mount
   useEffect(() => {
@@ -377,10 +395,10 @@ export default function BookingPage() {
         return;
       }
 
-      // Validate that guest count is within 10 and 500
+      // Validate that guest count is within limits
       const guestCountNum = parseInt(formData.guestCount);
-      if (isNaN(guestCountNum) || guestCountNum < 10 || guestCountNum > 500) {
-        setStepError("Guest count must be between 10 and 500.");
+      if (isNaN(guestCountNum) || guestCountNum < 10 || guestCountNum > maxGuests) {
+        setStepError(`Guest count must be between 10 and ${maxGuests} for this package.`);
         return;
       }
     } else if (currentStep === 3) {
@@ -499,10 +517,6 @@ export default function BookingPage() {
     }
   };
 
-  // Derived variables dynamically calculated from the user's selected package
-  const selectedPkgForMenu = availablePackages.find((p) => p.id === formData.packageId);
-  const activeMenuRules = selectedPkgForMenu ? getPackageRules(selectedPkgForMenu.name) : null;
-
   const currentMenuCounts: Record<string, number> = {};
   formData.menuSelections.forEach((itemName) => {
     const opt = menuOptions.find((o) => o.name === itemName);
@@ -586,6 +600,32 @@ export default function BookingPage() {
       </div>
 
       <main className="max-w-5xl mx-auto px-10 pb-32">
+        {/* Feature: Displays validation errors sticky at the top for better visibility */}
+        <div className="sticky top-24 z-40 w-full flex flex-col gap-2 mb-6">
+          <AnimatePresence>
+            {stepError && (
+              <motion.div
+                initial={{ opacity: 0, y: -10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+                className="p-4 bg-red-950/90 border border-red-500/50 text-red-200 text-center font-bold tracking-wide rounded-md shadow-2xl backdrop-blur-sm"
+              >
+                {stepError}
+              </motion.div>
+            )}
+            {submitError && (
+              <motion.div
+                initial={{ opacity: 0, y: -10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+                className="p-4 bg-red-950/90 border border-red-500/50 text-red-200 text-center font-bold tracking-wide rounded-md shadow-2xl backdrop-blur-sm"
+              >
+                {submitError}
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+
         <AnimatePresence mode="wait">
           {/* Step 1: Package Selection */}
           {currentStep === 1 && (
@@ -745,7 +785,7 @@ export default function BookingPage() {
                   <input
                     type="number"
                     min="10"
-                    max="500"
+                    max={maxGuests}
                     placeholder="e.g. 50"
                     className="w-full bg-white/5 border border-white/10 px-6 py-4 text-lg focus:outline-none focus:border-gold-400/50 transition-all font-medium"
                     value={formData.guestCount}
@@ -1111,11 +1151,6 @@ export default function BookingPage() {
               </div>
 
               <div className="flex flex-col items-center pt-20">
-                {submitError && (
-                  <p className="text-red-400 mb-4 text-base tracking-wide font-medium">
-                    {submitError}
-                  </p>
-                )}
                 <button
                   onClick={handleSubmit}
                   disabled={isSubmitting || !formData.packageId}
@@ -1130,16 +1165,6 @@ export default function BookingPage() {
 
         {/* Navigation Buttons */}
         <div className="mt-20 flex flex-col items-center gap-6">
-          {/* Feature: Displays validation errors to the user directly above the next button */}
-          {stepError && (
-            <motion.p
-              initial={{ opacity: 0, y: -10 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="text-red-400 text-base tracking-wide font-bold bg-red-400/10 px-4 py-2 border border-red-400/20"
-            >
-              {stepError}
-            </motion.p>
-          )}
 
           <div className="w-full flex flex-col md:flex-row justify-between items-center gap-6">
             {currentStep > 1 ? (
