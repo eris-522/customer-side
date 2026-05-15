@@ -33,6 +33,7 @@ export default function MenuPage() {
             status: item.status,
             // Fallbacks: Since these were removed from the DB schema, we provide static fallbacks to prevent the UI from breaking
             image:
+              item.image_url ||
               "https://images.unsplash.com/photo-1467003909585-2f8a72700288?auto=format&fit=crop&q=80&w=600",
           });
 
@@ -51,9 +52,13 @@ export default function MenuPage() {
 
     const channel = supabase
       .channel("menu-changes")
-      .on("postgres_changes", { event: "*", schema: "public", table: "menu_items" }, () => {
-        fetchMenu();
-      })
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "menu_items" },
+        () => {
+          fetchMenu();
+        },
+      )
       .subscribe();
 
     return () => {

@@ -13,6 +13,7 @@ import {
   Package,
   Utensils,
   ClipboardCheck,
+  CreditCard,
 } from "lucide-react";
 import { supabase } from "../utils/supabase";
 
@@ -21,6 +22,7 @@ interface FormData {
   date: string;
   time: string;
   guestCount: string;
+  additionalPax: string;
   venueName: string;
   venueAddress: string;
   menuSelections: string[];
@@ -175,6 +177,7 @@ export default function BookingPage() {
     date: "",
     time: "",
     guestCount: "",
+    additionalPax: "",
     venueName: "",
     venueAddress: "",
     menuSelections: [],
@@ -204,6 +207,13 @@ export default function BookingPage() {
         .eq("id", authData.user.id)
         .single();
 
+      // Secondary security check: force logout if user was archived while they had an active session
+      if (profile?.status === "Archived") {
+        await supabase.auth.signOut();
+        navigate("/auth");
+        return;
+      }
+
       setUserProfile(profile);
 
       // Fetch active packages, menu items, and add-ons
@@ -220,12 +230,19 @@ export default function BookingPage() {
         supabase.from("inclusions").select("*"),
       ]);
 
-      if (pkgRes.data) setAvailablePackages(pkgRes.data);
+      if (pkgRes.data) {
+        const sortedPackages = pkgRes.data.sort((a: any, b: any) => {
+          const priceA = parseFloat(String(a.price || "0").replace(/[^0-9.-]+/g, ""));
+          const priceB = parseFloat(String(b.price || "0").replace(/[^0-9.-]+/g, ""));
+          return priceA - priceB;
+        });
+        setAvailablePackages(sortedPackages);
+      }
       if (menuRes.data) setMenuOptions(menuRes.data);
       if (bookingsRes.data) {
         // Keep only active bookings to calculate gaps against
         const validBookings = bookingsRes.data.filter(
-          (b: any) => !["Cancelled", "Rejected", "Declined"].includes(b.status)
+          (b: any) => !["Cancelled", "Rejected", "Declined", "Archived"].includes(b.status)
         );
         setExistingBookings(validBookings);
 
@@ -281,7 +298,14 @@ export default function BookingPage() {
         .neq("status", "none")
         .neq("status", "None")
         .then(({ data }) => {
-          if (data) setAvailablePackages(data);
+          if (data) {
+            const sortedPackages = data.sort((a: any, b: any) => {
+              const priceA = parseFloat(String(a.price || "0").replace(/[^0-9.-]+/g, ""));
+              const priceB = parseFloat(String(b.price || "0").replace(/[^0-9.-]+/g, ""));
+              return priceA - priceB;
+            });
+            setAvailablePackages(sortedPackages);
+          }
         });
 
       supabase.from("menu_items").select("*").neq("status", "Archived").then(({ data }) => {
@@ -315,7 +339,14 @@ export default function BookingPage() {
           .neq("status", "none")
           .neq("status", "None")
           .then(({ data }) => {
-            if (data) setAvailablePackages(data);
+            if (data) {
+              const sortedPackages = data.sort((a: any, b: any) => {
+                const priceA = parseFloat(String(a.price || "0").replace(/[^0-9.-]+/g, ""));
+                const priceB = parseFloat(String(b.price || "0").replace(/[^0-9.-]+/g, ""));
+                return priceA - priceB;
+              });
+              setAvailablePackages(sortedPackages);
+            }
           });
       })
       .on("postgres_changes", { event: "*", schema: "public", table: "menu_items" }, () => {
@@ -503,6 +534,7 @@ export default function BookingPage() {
         event_time: formData.time,
         event_location: `${formData.venueName} - ${formData.venueAddress}`,
         guest_count: parseInt(formData.guestCount) || 0,
+        additional_pax: parseInt(formData.additionalPax) || 0,
         selected_menu_items: validSelections,
         status: "Pending",
       },
@@ -674,6 +706,14 @@ export default function BookingPage() {
                       <span className="text-sm text-white/80 font-bold">
                         {pkg.pax} Guests
                       </span>
+                      {pkg.additional_pax_price && (
+                        <>
+                          <span className="w-1.5 h-1.5 rounded-full bg-white/20"></span>
+                          <span className="text-[10px] text-gold-400/80 uppercase tracking-widest font-bold">
+                            +₱{pkg.additional_pax_price} / Extra Pax
+                          </span>
+                        </>
+                      )}
                     </div>
 
                     <div className="space-y-4 mb-10">
@@ -728,6 +768,16 @@ export default function BookingPage() {
 
                         return renderGroups;
                       })()}
+                    </div>
+                    
+                    <div className="mt-auto w-full">
+                      <div className={`w-full py-4 border text-[10px] uppercase tracking-[0.3em] font-bold transition-all flex items-center justify-center gap-3 ${
+                        formData.packageId === pkg.id
+                          ? "bg-gold-400 text-black border-gold-400"
+                          : "border-gold-400/20 text-gold-400 group-hover:bg-gold-400 group-hover:text-black"
+                      }`}>
+                        {formData.packageId === pkg.id ? "Selected" : "Choose Package"} <ChevronRight size={14} />
+                      </div>
                     </div>
                   </div>
                 </button>
@@ -793,7 +843,12 @@ export default function BookingPage() {
                       setStepError("");
                       const val = e.target.value;
                       if (val === "" || parseInt(val) >= 0) {
-                        setFormData({ ...formData, guestCount: val });
+                      const isUnderMax = !val || parseInt(val) < maxGuests;
+                      setFormData({
+                        ...formData,
+                        guestCount: val,
+                        additionalPax: isUnderMax ? "" : formData.additionalPax,
+                      });
                       }
                     }}
                     onKeyDown={(e) => {
@@ -847,6 +902,46 @@ export default function BookingPage() {
                   </select>
                   <ChevronDown className="absolute right-6 top-1/2 -translate-y-1/2 text-white/50 pointer-events-none" size={20} />
                 </div>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-base text-white/80 font-bold flex items-center gap-2">
+                    Additional Pax <span className="text-sm font-normal text-white/50">(Optional)</span>
+                    {selectedPkgForMenu?.additional_pax_price && (
+                      <div className="relative group/tooltip flex items-center justify-center">
+                        <Info size={16} className="text-gold-400/80 cursor-help transition-colors hover:text-gold-400" />
+                        <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-56 p-3 bg-[#0a0a0a] border border-white/10 text-xs text-white/80 text-center rounded opacity-0 invisible group-hover/tooltip:opacity-100 group-hover/tooltip:visible transition-all z-10 pointer-events-none shadow-2xl">
+                          <span className="font-bold text-gold-400 block mb-1">Additional Pax Pricing</span>
+                          Each additional guest costs ₱{selectedPkgForMenu.additional_pax_price}. This will be automatically added to your estimated budget.
+                          <div className="absolute -bottom-1.5 left-1/2 -translate-x-1/2 w-3 h-3 bg-[#0a0a0a] border-b border-r border-white/10 rotate-45"></div>
+                        </div>
+                      </div>
+                    )}
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    placeholder="e.g. 10"
+                    disabled={!formData.guestCount || parseInt(formData.guestCount) < maxGuests}
+                    className={`w-full bg-white/5 border border-white/10 px-6 py-4 text-lg focus:outline-none focus:border-gold-400/50 transition-all font-medium ${(!formData.guestCount || parseInt(formData.guestCount) < maxGuests) ? "opacity-50 cursor-not-allowed" : ""}`}
+                    value={formData.additionalPax}
+                    onChange={(e) => {
+                      setStepError("");
+                      const val = e.target.value;
+                      if (val === "" || parseInt(val) >= 0) {
+                        setFormData({ ...formData, additionalPax: val });
+                      }
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === "-" || e.key === "." || e.key === "e") {
+                        e.preventDefault();
+                      }
+                    }}
+                  />
+                  {(!formData.guestCount || parseInt(formData.guestCount) < maxGuests) && (
+                    <span className="text-xs font-normal text-white/40 italic block mt-1">
+                      Available at max capacity ({maxGuests} pax)
+                    </span>
+                  )}
                 </div>
                 <div className="col-span-full space-y-2">
                   <label className="text-base text-white/80 font-bold">
@@ -1043,9 +1138,51 @@ export default function BookingPage() {
                           </p>
                           <p className="text-lg font-serif tracking-wider">
                             {formData.guestCount || "0"} People
+                            {formData.additionalPax && parseInt(formData.additionalPax) > 0 ? (
+                              <span className="text-sm text-white/50 block font-sans font-bold tracking-wide mt-1">
+                                + {formData.additionalPax} Additional Pax
+                              </span>
+                            ) : null}
                           </p>
                         </div>
                       </div>
+                    <div className="flex gap-4">
+                      <CreditCard className="text-gold-400 shrink-0 mt-0.5" size={18} />
+                      <div className="w-full pr-4">
+                        <p className="text-sm tracking-wide text-white/70 font-bold mb-3">
+                          Budget Breakdown
+                        </p>
+                        {(() => {
+                          const pkg = availablePackages.find((p) => p.id === formData.packageId);
+                          const basePrice = pkg && pkg.price ? parseFloat(String(pkg.price).replace(/[^0-9.-]+/g, "")) || 0 : 0;
+                          const addPrice = pkg && pkg.additional_pax_price ? parseFloat(String(pkg.additional_pax_price).replace(/[^0-9.-]+/g, "")) || 0 : 0;
+                          const extraPax = parseInt(formData.additionalPax) || 0;
+                          const additionalPaxTotal = addPrice * extraPax;
+                          const totalBudget = basePrice + additionalPaxTotal;
+
+                          return (
+                            <div className="space-y-2 w-full max-w-sm">
+                              <div className="flex justify-between text-sm text-white/90 font-medium">
+                                <span>Base Package ({formData.guestCount || "0"} Pax)</span>
+                                <span>₱{basePrice.toLocaleString()}</span>
+                              </div>
+                              {extraPax > 0 && (
+                                <div className="flex justify-between text-sm text-white/90 font-medium">
+                                  <span>Extra Pax ({extraPax} @ ₱{addPrice.toLocaleString()})</span>
+                                  <span>₱{additionalPaxTotal.toLocaleString()}</span>
+                                </div>
+                              )}
+                              <div className="flex justify-between items-center pt-3 mt-3 border-t border-white/10">
+                                <span className="text-xs font-bold text-white/50 uppercase tracking-widest">Total Estimated</span>
+                                <span className="text-xl font-bold text-gold-400 font-serif tracking-wider">
+                                  ₱{totalBudget.toLocaleString()}
+                                </span>
+                              </div>
+                            </div>
+                          );
+                        })()}
+                      </div>
+                    </div>
                       <div className="col-span-full flex gap-4 border-t border-white/5 pt-8">
                         <MapPin className="text-gold-400 shrink-0" size={18} />
                         <div>

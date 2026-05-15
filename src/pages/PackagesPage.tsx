@@ -10,9 +10,11 @@ export interface CateringPackage {
   name: string;
   price: string;
   pax: string;
+  additional_pax_price?: string;
   tag?: string;
   inclusions: string[];
   status: string;
+  image_url?: string;
 }
 
 // Feature: Fallback images array since the image column was removed from the database schema to simplify the backend
@@ -27,7 +29,9 @@ export default function PackagesPage() {
   // Feature: State hooks to store the live data fetched from the database
   const [packages, setPackages] = useState<CateringPackage[]>([]);
   const [loading, setLoading] = useState(true);
-  const [inclusionCategories, setInclusionCategories] = useState<Record<string, string[]>>({});
+  const [inclusionCategories, setInclusionCategories] = useState<
+    Record<string, string[]>
+  >({});
 
   // Feature: Executes the database query as soon as the user navigates to this page
   useEffect(() => {
@@ -43,9 +47,21 @@ export default function PackagesPage() {
       if (pkgResponse.error) {
         console.error("Error fetching packages:", pkgResponse.error.message);
       } else if (pkgResponse.data) {
-        setPackages(pkgResponse.data as CateringPackage[]);
+        // Parse the formatted price string (e.g. "₱ 10,000") into a number and sort from lowest to highest
+        const sortedPackages = (pkgResponse.data as CateringPackage[]).sort(
+          (a, b) => {
+            const priceA = parseFloat(
+              String(a.price || "0").replace(/[^0-9.-]+/g, ""),
+            );
+            const priceB = parseFloat(
+              String(b.price || "0").replace(/[^0-9.-]+/g, ""),
+            );
+            return priceA - priceB;
+          },
+        );
+        setPackages(sortedPackages);
       }
-      
+
       // Fetch inclusions for categorization
       const incResponse = await supabase.from("inclusions").select("*");
       if (incResponse.error) {
@@ -74,25 +90,40 @@ export default function PackagesPage() {
     // Feature: Subscribe to real-time changes so package updates (like removed inclusions) reflect instantly
     const channel = supabase
       .channel("packages-changes")
-      .on("postgres_changes", { event: "*", schema: "public", table: "packages" }, () => {
-        fetchOfferings();
-      })
-      .on("postgres_changes", { event: "*", schema: "public", table: "inclusions" }, () => {
-        supabase.from("inclusions").select("*").then(({ data }) => {
-          if (data) {
-            const grouped: Record<string, string[]> = {};
-            data.forEach((row: any) => {
-              if (!grouped[row.category]) grouped[row.category] = [];
-              if (row.items && row.items.trim() !== "" && row.items !== "-") {
-                if (!grouped[row.category].includes(row.items)) {
-                  grouped[row.category].push(row.items);
-                }
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "packages" },
+        () => {
+          fetchOfferings();
+        },
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "inclusions" },
+        () => {
+          supabase
+            .from("inclusions")
+            .select("*")
+            .then(({ data }) => {
+              if (data) {
+                const grouped: Record<string, string[]> = {};
+                data.forEach((row: any) => {
+                  if (!grouped[row.category]) grouped[row.category] = [];
+                  if (
+                    row.items &&
+                    row.items.trim() !== "" &&
+                    row.items !== "-"
+                  ) {
+                    if (!grouped[row.category].includes(row.items)) {
+                      grouped[row.category].push(row.items);
+                    }
+                  }
+                });
+                setInclusionCategories(grouped);
               }
             });
-            setInclusionCategories(grouped);
-          }
-        });
-      })
+        },
+      )
       .subscribe();
 
     return () => {
@@ -168,7 +199,10 @@ export default function PackagesPage() {
                     <div className="aspect-video overflow-hidden">
                       {/* Feature: Automatically assigns a fallback image to keep the aesthetic intact */}
                       <img
-                        src={fallbackImages[i % fallbackImages.length]}
+                        src={
+                          pkg.image_url ||
+                          fallbackImages[i % fallbackImages.length]
+                        }
                         alt={pkg.name}
                         className="w-full h-full object-cover grayscale group-hover:grayscale-0 transition-all duration-700 group-hover:scale-105"
                       />
@@ -183,44 +217,66 @@ export default function PackagesPage() {
                         </span>
                       </div>
 
-
                       {/* Feature: Displays pax limitations clearly to the customer */}
                       <div className="flex items-center gap-4 mb-6 pb-6 border-b border-white/10">
                         <span className="text-[10px] text-white/60 uppercase tracking-widest">
                           {pkg.pax} Guests
                         </span>
+                        {pkg.additional_pax_price && (
+                          <>
+                            <span className="w-1 h-1 rounded-full bg-white/20"></span>
+                            <span className="text-[10px] text-gold-400/80 uppercase tracking-widest font-bold">
+                              +₱{pkg.additional_pax_price} / Extra Pax
+                            </span>
+                          </>
+                        )}
                       </div>
 
                       <div className="space-y-4 mb-10">
                         {(() => {
-                          const allCategorizedItems = Object.values(inclusionCategories).flat();
-                          const pkgInclusions = Array.isArray(pkg.inclusions) ? pkg.inclusions : [];
-                          
-                          const renderGroups: React.ReactNode[] = [];
-                          Object.entries(inclusionCategories).forEach(([cat, items]) => {
-                            const selected = pkgInclusions.filter((inc) => items.includes(inc));
-                            if (selected.length > 0) {
-                              renderGroups.push(
-                                <div key={cat} className="space-y-2">
-                                  <h4 className="text-xs font-bold text-gold-400 uppercase tracking-widest mb-1">
-                                    {cat}
-                                  </h4>
-                                  <div className="space-y-2">
-                                    {selected.map((feature, i) => (
-                                      <div key={i} className="flex items-start gap-3">
-                                        <Check size={12} className="text-gold-400 shrink-0 mt-1" />
-                                        <span className="text-[10px] text-white/60 uppercase tracking-widest font-semibold leading-relaxed">
-                                          {feature}
-                                        </span>
-                                      </div>
-                                    ))}
-                                  </div>
-                                </div>
-                              );
-                            }
-                          });
+                          const allCategorizedItems =
+                            Object.values(inclusionCategories).flat();
+                          const pkgInclusions = Array.isArray(pkg.inclusions)
+                            ? pkg.inclusions
+                            : [];
 
-                          const uncategorized = pkgInclusions.filter((inc) => !allCategorizedItems.includes(inc));
+                          const renderGroups: React.ReactNode[] = [];
+                          Object.entries(inclusionCategories).forEach(
+                            ([cat, items]) => {
+                              const selected = pkgInclusions.filter((inc) =>
+                                items.includes(inc),
+                              );
+                              if (selected.length > 0) {
+                                renderGroups.push(
+                                  <div key={cat} className="space-y-2">
+                                    <h4 className="text-xs font-bold text-gold-400 uppercase tracking-widest mb-1">
+                                      {cat}
+                                    </h4>
+                                    <div className="space-y-2">
+                                      {selected.map((feature, i) => (
+                                        <div
+                                          key={i}
+                                          className="flex items-start gap-3"
+                                        >
+                                          <Check
+                                            size={12}
+                                            className="text-gold-400 shrink-0 mt-1"
+                                          />
+                                          <span className="text-[10px] text-white/60 uppercase tracking-widest font-semibold leading-relaxed">
+                                            {feature}
+                                          </span>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </div>,
+                                );
+                              }
+                            },
+                          );
+
+                          const uncategorized = pkgInclusions.filter(
+                            (inc) => !allCategorizedItems.includes(inc),
+                          );
                           if (uncategorized.length > 0) {
                             renderGroups.push(
                               <div key="Other" className="space-y-2">
@@ -229,15 +285,21 @@ export default function PackagesPage() {
                                 </h4>
                                 <div className="space-y-2">
                                   {uncategorized.map((feature, i) => (
-                                    <div key={i} className="flex items-start gap-3">
-                                      <Check size={12} className="text-gold-400 shrink-0 mt-1" />
+                                    <div
+                                      key={i}
+                                      className="flex items-start gap-3"
+                                    >
+                                      <Check
+                                        size={12}
+                                        className="text-gold-400 shrink-0 mt-1"
+                                      />
                                       <span className="text-[10px] text-white/60 uppercase tracking-widest font-semibold leading-relaxed">
                                         {feature}
                                       </span>
                                     </div>
                                   ))}
                                 </div>
-                              </div>
+                              </div>,
                             );
                           }
 

@@ -9,6 +9,7 @@ export interface CateringPackage {
   name: string;
   price: string;
   pax: string;
+  additional_pax_price?: string;
   tag?: string;
   inclusions: string[];
   status: string;
@@ -25,23 +26,25 @@ const steps = [
   {
     number: "01",
     title: "Choose your package",
-    text: "Select from our range of budget-friendly, premium catering collections designed for any occasion."
+    text: "Select from our range of budget-friendly, premium catering collections designed for any occasion.",
   },
   {
     number: "02",
     title: "Customize your package",
-    text: "Personalize your menu and services to align with your taste, dietary needs, and event theme."
+    text: "Personalize your menu and services to align with your taste, dietary needs, and event theme.",
   },
   {
     number: "03",
     title: "Confirm booking",
-    text: "Finalize your reservation and relax while we deliver a seamless dining experience."
-  }
+    text: "Finalize your reservation and relax while we deliver a seamless dining experience.",
+  },
 ];
 
 export default function HomePage() {
   const [packages, setPackages] = useState<CateringPackage[]>([]);
-  const [inclusionCategories, setInclusionCategories] = useState<Record<string, string[]>>({});
+  const [inclusionCategories, setInclusionCategories] = useState<
+    Record<string, string[]>
+  >({});
 
   useEffect(() => {
     const fetchPackages = async () => {
@@ -50,11 +53,20 @@ export default function HomePage() {
         .select("*")
         .neq("status", "Archived")
         .neq("status", "none")
-        .neq("status", "None")
-        .limit(3);
-      
+        .neq("status", "None");
+
       if (data) {
-        setPackages(data as CateringPackage[]);
+        // Sort packages by price (lowest to highest) and take the top 3 for the Featured section
+        const sortedPackages = (data as CateringPackage[]).sort((a, b) => {
+          const priceA = parseFloat(
+            String(a.price || "0").replace(/[^0-9.-]+/g, ""),
+          );
+          const priceB = parseFloat(
+            String(b.price || "0").replace(/[^0-9.-]+/g, ""),
+          );
+          return priceA - priceB;
+        });
+        setPackages(sortedPackages.slice(0, 3));
       }
 
       const incResponse = await supabase.from("inclusions").select("*");
@@ -79,25 +91,40 @@ export default function HomePage() {
     // Feature: Subscribe to real-time changes so package updates reflect instantly on the Home Page
     const channel = supabase
       .channel("packages-changes-home")
-      .on("postgres_changes", { event: "*", schema: "public", table: "packages" }, () => {
-        fetchPackages();
-      })
-      .on("postgres_changes", { event: "*", schema: "public", table: "inclusions" }, () => {
-        supabase.from("inclusions").select("*").then(({ data }) => {
-          if (data) {
-            const grouped: Record<string, string[]> = {};
-            data.forEach((row: any) => {
-              if (!grouped[row.category]) grouped[row.category] = [];
-              if (row.items && row.items.trim() !== "" && row.items !== "-") {
-                if (!grouped[row.category].includes(row.items)) {
-                  grouped[row.category].push(row.items);
-                }
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "packages" },
+        () => {
+          fetchPackages();
+        },
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "inclusions" },
+        () => {
+          supabase
+            .from("inclusions")
+            .select("*")
+            .then(({ data }) => {
+              if (data) {
+                const grouped: Record<string, string[]> = {};
+                data.forEach((row: any) => {
+                  if (!grouped[row.category]) grouped[row.category] = [];
+                  if (
+                    row.items &&
+                    row.items.trim() !== "" &&
+                    row.items !== "-"
+                  ) {
+                    if (!grouped[row.category].includes(row.items)) {
+                      grouped[row.category].push(row.items);
+                    }
+                  }
+                });
+                setInclusionCategories(grouped);
               }
             });
-            setInclusionCategories(grouped);
-          }
-        });
-      })
+        },
+      )
       .subscribe();
 
     return () => {
@@ -109,10 +136,13 @@ export default function HomePage() {
   return (
     <div className="min-h-screen bg-rich-black overflow-hidden font-sans">
       {/* Hero Section */}
-      <section id="home" className="relative h-[80vh] flex items-center justify-center overflow-hidden">
+      <section
+        id="home"
+        className="relative h-[80vh] flex items-center justify-center overflow-hidden"
+      >
         <div className="absolute inset-0 z-0">
           <div className="absolute inset-0 bg-gradient-to-b from-rich-black/70 via-rich-black/70 to-rich-black z-10" />
-          <img 
+          <img
             src="https://images.unsplash.com/photo-1555244162-803834f70033?auto=format&fit=crop&q=80&w=2000"
             className="w-full h-full object-cover"
           />
@@ -133,7 +163,9 @@ export default function HomePage() {
             transition={{ delay: 0.4 }}
             className="text-5xl md:text-7xl font-serif leading-tight mb-8"
           >
-            Affordable Elegance,<br /><span className="italic">Unforgettable Events</span>
+            Affordable Elegance,
+            <br />
+            <span className="italic">Unforgettable Events</span>
           </motion.h1>
           <motion.div
             initial={{ opacity: 0, y: 30 }}
@@ -141,10 +173,16 @@ export default function HomePage() {
             transition={{ delay: 0.6 }}
             className="flex flex-col sm:flex-row gap-6 justify-center"
           >
-            <Link to="/booking" className="gold-gradient text-black px-10 py-3 font-bold tracking-widest uppercase text-xs hover:brightness-110 transition-all inline-block text-center focus:outline-none">
+            <Link
+              to="/booking"
+              className="gold-gradient text-black px-10 py-3 font-bold tracking-widest uppercase text-xs hover:brightness-110 transition-all inline-block text-center focus:outline-none"
+            >
               Inquire Now
             </Link>
-            <Link to="/menu" className="border border-white text-white px-10 py-3 font-bold tracking-widest uppercase text-xs hover:bg-white hover:text-black transition-all inline-block text-center">
+            <Link
+              to="/menu"
+              className="border border-white text-white px-10 py-3 font-bold tracking-widest uppercase text-xs hover:bg-white hover:text-black transition-all inline-block text-center"
+            >
               View Menu
             </Link>
           </motion.div>
@@ -152,12 +190,19 @@ export default function HomePage() {
       </section>
 
       {/* Featured Packages */}
-      <section id="packages" className="py-24 px-10 bg-rich-black relative border-y border-white/10">
+      <section
+        id="packages"
+        className="py-24 px-10 bg-rich-black relative border-y border-white/10"
+      >
         <div className="max-w-7xl mx-auto">
           <div className="flex flex-col md:flex-row justify-between items-start mb-20 gap-8">
             <div className="max-w-2xl">
-              <span className="text-gold-400 text-[10px] tracking-[0.4em] font-bold uppercase mb-4 block italic">Featured Packages</span>
-              <h2 className="text-4xl md:text-6xl font-serif tracking-tight">Roxan <span className="italic">Catering</span> Collections</h2>
+              <span className="text-gold-400 text-[10px] tracking-[0.4em] font-bold uppercase mb-4 block italic">
+                Featured Packages
+              </span>
+              <h2 className="text-4xl md:text-6xl font-serif tracking-tight">
+                Roxan <span className="italic">Catering</span> Collections
+              </h2>
             </div>
           </div>
 
@@ -169,7 +214,7 @@ export default function HomePage() {
                 whileInView={{ opacity: 1 }}
                 viewport={{ once: true }}
                 transition={{ delay: i * 0.2 }}
-                className={`p-10 flex flex-col justify-between group hover:bg-[#0F0F0F] transition-colors ${i < 2 ? 'md:border-r border-white/10' : ''}`}
+                className={`p-10 flex flex-col justify-between group hover:bg-[#0F0F0F] transition-colors ${i < 2 ? "md:border-r border-white/10" : ""}`}
               >
                 <div>
                   <div className="aspect-[16/9] mb-8 overflow-hidden relative">
@@ -178,38 +223,61 @@ export default function HomePage() {
                         {pkg.tag}
                       </div>
                     )}
-                    <img 
-                      src={fallbackImages[i % fallbackImages.length]} 
+                    <img
+                      src={fallbackImages[i % fallbackImages.length]}
                       alt={pkg.name}
                       className="w-full h-full object-cover grayscale hover:grayscale-0 transition-all duration-700"
                     />
                   </div>
-                  <h3 className="text-2xl font-serif text-white mb-2">{pkg.name}</h3>
-                  <p className="text-[10px] text-white/50 uppercase tracking-widest mb-6">{pkg.price} • {pkg.pax} Guests</p>
+                  <h3 className="text-2xl font-serif text-white mb-2">
+                    {pkg.name}
+                  </h3>
+                  <p className="text-[10px] text-white/50 uppercase tracking-widest mb-6">
+                    {pkg.price} • {pkg.pax} Guests
+                    {pkg.additional_pax_price && (
+                      <>
+                        {" "}•{" "}
+                        <span className="text-gold-400/80 font-bold">+₱{pkg.additional_pax_price} / Extra Pax</span>
+                      </>
+                    )}
+                  </p>
                   <p className="text-white/40 text-xs mb-8 leading-relaxed line-clamp-3">
                     {(() => {
-                      const allCategorizedItems = Object.values(inclusionCategories).flat();
-                      const pkgInclusions = Array.isArray(pkg.inclusions) ? pkg.inclusions : [];
+                      const allCategorizedItems =
+                        Object.values(inclusionCategories).flat();
+                      const pkgInclusions = Array.isArray(pkg.inclusions)
+                        ? pkg.inclusions
+                        : [];
                       const formattedGroups: string[] = [];
 
-                      Object.entries(inclusionCategories).forEach(([cat, items]) => {
-                        const selected = pkgInclusions.filter((inc) => items.includes(inc));
-                        if (selected.length > 0) {
-                          formattedGroups.push(`${cat}: ${selected.join(', ')}`);
-                        }
-                      });
+                      Object.entries(inclusionCategories).forEach(
+                        ([cat, items]) => {
+                          const selected = pkgInclusions.filter((inc) =>
+                            items.includes(inc),
+                          );
+                          if (selected.length > 0) {
+                            formattedGroups.push(
+                              `${cat}: ${selected.join(", ")}`,
+                            );
+                          }
+                        },
+                      );
 
-                      const uncategorized = pkgInclusions.filter((inc) => !allCategorizedItems.includes(inc));
+                      const uncategorized = pkgInclusions.filter(
+                        (inc) => !allCategorizedItems.includes(inc),
+                      );
                       if (uncategorized.length > 0) {
-                        formattedGroups.push(uncategorized.join(', '));
+                        formattedGroups.push(uncategorized.join(", "));
                       }
-                      
-                      return formattedGroups.length > 0 ? formattedGroups.join(" • ") : "No inclusions specified.";
+
+                      return formattedGroups.length > 0
+                        ? formattedGroups.join(" • ")
+                        : "No inclusions specified.";
                     })()}
                   </p>
                 </div>
-                <Link 
-                  to="/packages" 
+                <Link
+                  to="/packages"
                   className="text-[10px] uppercase tracking-[0.3em] font-bold text-gold-400 hover:text-white transition-colors flex items-center gap-2"
                 >
                   EXPLORE <ChevronRight size={12} />
@@ -223,48 +291,81 @@ export default function HomePage() {
       {/* How It Work */}
       <section id="process" className="bg-rich-black">
         <div className="max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-3">
-           <div className="p-16 md:p-20 border-r border-white/10 bg-[#0F0F0F]">
-              <span className="text-gold-400 text-[10px] tracking-[0.4em] font-bold uppercase mb-12 block italic">The Process</span>
-              <div className="space-y-12">
-                {steps.map((step, i) => (
-                  <div key={step.number} className="flex gap-6">
-                    <span className="serif text-3xl gold-text-gradient opacity-50 italic shrink-0">{step.number}</span>
-                    <div>
-                      <p className="font-bold text-xs uppercase tracking-widest mb-2 text-white">{step.title}</p>
-                      <p className="text-[10px] text-white/40 leading-relaxed font-medium">{step.text}</p>
-                    </div>
+          <div className="p-16 md:p-20 border-r border-white/10 bg-[#0F0F0F]">
+            <span className="text-gold-400 text-[10px] tracking-[0.4em] font-bold uppercase mb-12 block italic">
+              The Process
+            </span>
+            <div className="space-y-12">
+              {steps.map((step, i) => (
+                <div key={step.number} className="flex gap-6">
+                  <span className="serif text-3xl gold-text-gradient opacity-50 italic shrink-0">
+                    {step.number}
+                  </span>
+                  <div>
+                    <p className="font-bold text-xs uppercase tracking-widest mb-2 text-white">
+                      {step.title}
+                    </p>
+                    <p className="text-[10px] text-white/40 leading-relaxed font-medium">
+                      {step.text}
+                    </p>
                   </div>
-                ))}
-              </div>
-           </div>
+                </div>
+              ))}
+            </div>
+          </div>
 
-           <div className="p-16 md:p-20 border-r border-white/10 flex flex-col justify-center bg-black col-span-1 md:col-span-2">
-              <span className="text-gold-400 text-[10px] tracking-[0.4em] font-bold uppercase mb-8 block italic">Customer Review</span>
-              <div className="max-w-xl">
-                 <Quote className="text-gold-400/10 mb-8" size={64} />
-                 <p className="serif text-2xl md:text-3xl italic leading-relaxed mb-8 text-white/90 font-light">
-                  "Roxan Policarpio Events & Catering made our dream wedding a reality. The food was absolutely exquisite, the presentation was flawless, and it didn't break the bank. Truly exceptional service!"
-                 </p>
-                 <div className="flex items-center gap-4">
-                    <div className="w-12 h-[1px] bg-gold-400"></div>
-                   <span className="text-[11px] uppercase tracking-[0.4em] font-bold text-gold-400">Maria Santos</span>
-                 </div>
+          <div className="p-16 md:p-20 border-r border-white/10 flex flex-col justify-center bg-black col-span-1 md:col-span-2">
+            <span className="text-gold-400 text-[10px] tracking-[0.4em] font-bold uppercase mb-8 block italic">
+              Customer Review
+            </span>
+            <div className="max-w-xl">
+              <Quote className="text-gold-400/10 mb-8" size={64} />
+              <p className="serif text-2xl md:text-3xl italic leading-relaxed mb-8 text-white/90 font-light">
+                "Roxan Policarpio Events & Catering made our dream wedding a
+                reality. The food was absolutely exquisite, the presentation was
+                flawless, and it didn't break the bank. Truly exceptional
+                service!"
+              </p>
+              <div className="flex items-center gap-4">
+                <div className="w-12 h-[1px] bg-gold-400"></div>
+                <span className="text-[11px] uppercase tracking-[0.4em] font-bold text-gold-400">
+                  Maria Santos
+                </span>
               </div>
-           </div>
+            </div>
+          </div>
         </div>
       </section>
       {/* Contact Section */}
-      <section id="contact" className="py-32 px-10 border-t border-white/10 bg-black">
+      <section
+        id="contact"
+        className="py-32 px-10 border-t border-white/10 bg-black"
+      >
         <div className="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-center gap-12">
-           <div className="max-w-md">
-              <span className="text-gold-400 text-[10px] tracking-[0.4em] font-bold uppercase mb-4 block italic">Get In Touch</span>
-              <h2 className="text-4xl md:text-5xl font-serif text-white mb-6">Let's craft your <span className="italic">perfect</span> event together.</h2>
-              <p className="text-white/40 text-xs leading-relaxed uppercase tracking-widest">Available for weddings, corporate galas, and private celebrations across the region.</p>
-           </div>
-           <div className="flex flex-col gap-6 items-start md:items-end">
-              <a href="mailto:rpcatering@gmail.com" className="text-2xl md:text-4xl font-serif text-gold-400 hover:text-white transition-colors italic">rpcatering@gmail.com</a>
-              <p className="text-[10px] text-white/30 uppercase tracking-[0.3em] font-bold">+63 921 469 7142</p>
-           </div>
+          <div className="max-w-md">
+            <span className="text-gold-400 text-[10px] tracking-[0.4em] font-bold uppercase mb-4 block italic">
+              Get In Touch
+            </span>
+            <h2 className="text-4xl md:text-5xl font-serif text-white mb-6">
+              Let's craft your <span className="italic">perfect</span> event
+              together.
+            </h2>
+            <p className="text-white/40 text-xs leading-relaxed uppercase tracking-widest">
+              Available for weddings, corporate galas, and private celebrations
+              across the region.
+            </p>
+          </div>
+          <div className="flex flex-col gap-6 items-start md:items-end">
+            <a
+              href="mailto:rpcatering@gmail.com"
+              className="text-2xl md:text-4xl font-serif text-gold-400 hover:text-white transition-colors italic"
+            >
+              rpcatering@gmail.com
+            </a>
+            <p className="text-[10px] text-white/30 uppercase tracking-[0.3em] font-bold">
+              +63 921 469 7142
+            </p>
+          </div>
         </div>
       </section>
     </div>
