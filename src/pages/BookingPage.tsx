@@ -25,45 +25,12 @@ interface FormData {
   additionalPax: string;
   venueName: string;
   venueAddress: string;
+  foodAllergies: string;
   menuSelections: string[];
 }
 
 type Limit = { min: number; max: number };
 type PackageRules = Record<string, Limit>;
-
-// Rules defined based on your catering specifications
-const packageLimits: Record<string, PackageRules> = {
-  basic: {
-    "Appetizer": { min: 1, max: 1 },
-    "Soup": { min: 1, max: 1 },
-    "Main Course": { min: 3, max: 4 },
-    "Pasta": { min: 1, max: 1 },
-    "Vegetable": { min: 1, max: 1 },
-    "Rice": { min: 1, max: 1 },
-    "Dessert": { min: 1, max: 1 },
-    "Drinks": { min: 2, max: 2 },
-  },
-  classic: {
-    "Appetizer": { min: 2, max: 2 },
-    "Soup": { min: 1, max: 1 },
-    "Main Course": { min: 4, max: 5 },
-    "Pasta": { min: 2, max: 2 },
-    "Vegetable": { min: 1, max: 2 },
-    "Rice": { min: 1, max: 1 },
-    "Dessert": { min: 2, max: 2 },
-    "Drinks": { min: 2, max: 3 },
-  },
-  premium: {
-    "Appetizer": { min: 2, max: 3 },
-    "Soup": { min: 1, max: 2 },
-    "Main Course": { min: 5, max: 6 },
-    "Pasta": { min: 3, max: 3 },
-    "Vegetable": { min: 2, max: 2 },
-    "Rice": { min: 1, max: 1 },
-    "Dessert": { min: 3, max: 3 },
-    "Drinks": { min: 3, max: 4 },
-  },
-};
 
 // Helper to normalize raw database categories into our standard limit rules
 const getRuleCategory = (dbCategory: string, itemName: string = "") => {
@@ -86,11 +53,23 @@ const getRuleCategory = (dbCategory: string, itemName: string = "") => {
   return "Main Course"; // Treats Beef, Pork, Chicken, Seafood, etc. as Main Course
 };
 
-const getPackageRules = (pkgName: string): PackageRules | null => {
-  const name = (pkgName || "").toLowerCase();
-  if (name.includes("premium")) return packageLimits.premium;
-  if (name.includes("classic")) return packageLimits.classic;
-  if (name.includes("basic") || name.includes("wedding")) return packageLimits.basic;
+// Helper to extract package rules from the database JSON
+const getActiveMenuRules = (pkg: any): PackageRules | null => {
+  if (!pkg) return null;
+  if (pkg.category_limits && Object.keys(pkg.category_limits).length > 0) {
+    const limits = pkg.category_limits;
+    const rules: PackageRules = {};
+    let hasRules = false;
+    
+    const allCats = ["Appetizer", "Soup", "Main Course", "Pasta", "Vegetable", "Rice", "Dessert", "Drinks"];
+    for (const cat of allCats) {
+      const maxVal = limits[cat] !== undefined ? Number(limits[cat]) : 0;
+      rules[cat] = { min: maxVal, max: maxVal };
+      if (maxVal > 0) hasRules = true;
+    }
+    
+    if (hasRules) return rules;
+  }
   return null;
 };
 
@@ -142,6 +121,12 @@ export default function BookingPage() {
     const dd = String(d.getDate()).padStart(2, "0");
     return `${yyyy}-${mm}-${dd}`;
   })();
+  // Feature: Maximum selectable date (End of the year, 2 years from today)
+  const maxSelectableDate = (() => {
+    const d = new Date();
+    const yyyy = d.getFullYear() + 2;
+    return `${yyyy}-12-31`;
+  })();
   const navigate = useNavigate();
   // Feature: State for tracking the current view in the multi-step form
   const [currentStep, setCurrentStep] = useState(1);
@@ -180,12 +165,13 @@ export default function BookingPage() {
     additionalPax: "",
     venueName: "",
     venueAddress: "",
+    foodAllergies: "",
     menuSelections: [],
   });
 
   // Derived variables dynamically calculated from the user's selected package
   const selectedPkgForMenu = availablePackages.find((p) => p.id === formData.packageId);
-  const activeMenuRules = selectedPkgForMenu ? getPackageRules(selectedPkgForMenu.name) : null;
+  const activeMenuRules = getActiveMenuRules(selectedPkgForMenu);
   const maxGuests = selectedPkgForMenu?.pax 
     ? Math.max(...(selectedPkgForMenu.pax.match(/\d+/g) || ['500']).map((n: string) => parseInt(n, 10))) 
     : 500;
@@ -392,6 +378,11 @@ export default function BookingPage() {
         setStepError(`Event Date must be ${minSelectableDate} or later.`);
         return;
       }
+      if (formData.date && formData.date > maxSelectableDate) {
+        const maxYear = new Date().getFullYear() + 2;
+        setStepError(`Event Date cannot be beyond the end of ${maxYear} (${maxSelectableDate}).`);
+        return;
+      }
       if (bookedDates.includes(formData.date)) {
         setStepError(`The date ${formData.date} is already fully booked. Please select another date.`);
         return;
@@ -438,6 +429,7 @@ export default function BookingPage() {
         // but gracefully lower the minimum requirement if items are unavailable.
         for (const cat of categoryOrder) {
           if (!activeMenuRules[cat]) continue;
+          if (activeMenuRules[cat].max === 0) continue;
           
           const availableItemsInCat = (groupedMenu[cat] || []).filter(itemName => {
              const opt = menuOptions.find(o => o.name === itemName);
@@ -535,6 +527,7 @@ export default function BookingPage() {
         event_location: `${formData.venueName} - ${formData.venueAddress}`,
         guest_count: parseInt(formData.guestCount) || 0,
         additional_pax: parseInt(formData.additionalPax) || 0,
+        food_allergies: formData.foodAllergies.trim(),
         selected_menu_items: validSelections,
         status: "Pending",
       },
@@ -814,6 +807,7 @@ export default function BookingPage() {
                   <input
                     type="date"
                     min={minSelectableDate}
+                    max={maxSelectableDate}
                     className="w-full bg-white/5 border border-white/10 px-6 py-4 text-lg focus:outline-none focus:border-gold-400/50 transition-all font-medium [color-scheme:dark]"
                     value={formData.date}
                     onChange={(e) => {
@@ -976,6 +970,20 @@ export default function BookingPage() {
                     }}
                   />
                 </div>
+                <div className="col-span-full space-y-2">
+                  <label className="text-base text-white/80 font-bold">
+                    Food Allergies / Dietary Restrictions <span className="text-sm font-normal text-white/50">(Optional)</span>
+                  </label>
+                  <textarea
+                    placeholder="e.g. Peanut allergy, vegetarian options needed..."
+                    rows={2}
+                    className="w-full bg-white/5 border border-white/10 px-6 py-4 text-lg focus:outline-none focus:border-gold-400/50 transition-all font-medium resize-none"
+                    value={formData.foodAllergies}
+                    onChange={(e) => {
+                      setFormData({ ...formData, foodAllergies: e.target.value });
+                    }}
+                  />
+                </div>
               </div>
             </motion.div>
           )}
@@ -1006,6 +1014,7 @@ export default function BookingPage() {
               const items = groupedMenu[category];
               if (!items || items.length === 0) return null;
                   const limit = activeMenuRules ? activeMenuRules[category] : null;
+                  if (limit && limit.max === 0) return null; // Hide categories with 0 allowance
                   const availableItemsInCat = items.filter(itemName => {
                      const opt = menuOptions.find(o => o.name === itemName);
                      return opt && opt.status !== "Not Available" && opt.status !== "Archived";
@@ -1197,6 +1206,19 @@ export default function BookingPage() {
                           </p>
                         </div>
                       </div>
+                      {formData.foodAllergies && (
+                        <div className="col-span-full flex gap-4 border-t border-white/5 pt-8">
+                          <Info className="text-gold-400 shrink-0" size={18} />
+                          <div>
+                            <p className="text-sm tracking-wide text-white/70 font-bold mb-1">
+                              Dietary Restrictions
+                            </p>
+                            <p className="text-base text-white/80 tracking-wide leading-relaxed">
+                              {formData.foodAllergies}
+                            </p>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </div>
 

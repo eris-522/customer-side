@@ -115,7 +115,21 @@ export default function AuthPage() {
   const [recoveryEmailError, setRecoveryEmailError] = useState("");
 
   useEffect(() => {
+    // Listen for password recovery redirect from email links
+    const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === "PASSWORD_RECOVERY") {
+        setForgotPasswordStep("reset");
+        setIsLogin(true);
+      }
+    });
+
     const init = async () => {
+      // Check if we are currently in a recovery flow
+      if (window.location.hash.includes("type=recovery")) {
+        setForgotPasswordStep("reset");
+        return;
+      }
+
       // If already signed in, skip auth page
       const { data } = await supabase.auth.getUser();
       if (data.user) {
@@ -125,6 +139,10 @@ export default function AuthPage() {
     };
 
     init();
+
+    return () => {
+      authListener.subscription.unsubscribe();
+    };
   }, [navigate]);
 
   useEffect(() => {
@@ -167,22 +185,31 @@ export default function AuthPage() {
         }
       } else if (forgotPasswordStep === "question") {
         if (recoveryAnswer.toLowerCase().trim() === fetchedAnswer) {
-          setForgotPasswordStep("reset");
+          // Send the recovery email instead of skipping directly to reset
+          const { error } = await supabase.auth.resetPasswordForEmail(recoveryEmail, {
+            redirectTo: `${window.location.origin}/auth?mode=login`,
+          });
+
+          if (error) {
+            setError(`Failed to send reset email: ${error.message}`);
+          } else {
+            setMessage("Security answer correct! We've sent a password reset link to your email. Please click the link to continue.");
+          }
         } else {
           setError("Incorrect answer.");
         }
       } else if (forgotPasswordStep === "reset") {
-        // Note: Supabase requires an active session or admin API to update a password natively.
-        // We attempt an update here for dummy accounts, but catch and display the error if Supabase blocks it.
+        // After clicking the email link, a recovery session is established, allowing updateUser to succeed.
         const { error } = await supabase.auth.updateUser({
           password: newPassword,
         });
         if (error) {
           setError(
-            `Supabase Error: ${error.message}. (Note: Resetting password without being logged in requires Supabase Edge Functions/Admin API)`,
+            `Supabase Error: ${error.message}. (Please ensure you clicked the reset link from your email.)`,
           );
         } else {
           setMessage("Password reset successful. You can now log in.");
+          await supabase.auth.signOut(); // Sign out the recovery session
           setForgotPasswordStep("none");
           setIsLogin(true);
           setSearchParams({ mode: "login" });

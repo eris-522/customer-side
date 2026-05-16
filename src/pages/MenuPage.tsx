@@ -4,6 +4,15 @@ import { Link } from "react-router-dom";
 import { useEffect, useState } from "react";
 import { supabase } from "../utils/supabase";
 
+// Feature: Fallback images array for dishes without an image
+const fallbackImages = [
+  "https://images.unsplash.com/photo-1467003909585-2f8a72700288?auto=format&fit=crop&q=80&w=600",
+  "https://images.unsplash.com/photo-1544025162-d76694265947?auto=format&fit=crop&q=80&w=600",
+  "https://images.unsplash.com/photo-1565299624946-b28f40a0ae38?auto=format&fit=crop&q=80&w=600",
+  "https://images.unsplash.com/photo-1504674900247-0877df9cc836?auto=format&fit=crop&q=80&w=600",
+  "https://images.unsplash.com/photo-1432139555190-58524dae6a55?auto=format&fit=crop&q=80&w=600",
+];
+
 export default function MenuPage() {
   // Feature: State variables to hold the dynamic menu data and manage loading UI
   const [menuData, setMenuData] = useState<Record<string, MenuItem[]>>({});
@@ -22,23 +31,25 @@ export default function MenuPage() {
         console.error("Error fetching menu data:", error.message);
       } else if (data) {
         // Feature: Iterates through the flat database list and organizes items into categories (e.g., all 'Main Course' together)
-        const groupedData = data.reduce((acc: Record<string, any[]>, item) => {
-          if (!acc[item.category]) {
-            acc[item.category] = [];
-          }
+        const groupedData = data.reduce(
+          (acc: Record<string, any[]>, item, index) => {
+            if (!acc[item.category]) {
+              acc[item.category] = [];
+            }
 
-          acc[item.category].push({
-            id: item.id,
-            name: item.name,
-            status: item.status,
-            // Fallbacks: Since these were removed from the DB schema, we provide static fallbacks to prevent the UI from breaking
-            image:
-              item.image_url ||
-              "https://images.unsplash.com/photo-1467003909585-2f8a72700288?auto=format&fit=crop&q=80&w=600",
-          });
+            acc[item.category].push({
+              id: item.id,
+              name: item.name,
+              status: item.status,
+              // Fallbacks: Since these were removed from the DB schema, we provide static fallbacks to prevent the UI from breaking
+              image:
+                item.image_url || fallbackImages[index % fallbackImages.length],
+            });
 
-          return acc;
-        }, {});
+            return acc;
+          },
+          {},
+        );
 
         setMenuData(groupedData);
       }

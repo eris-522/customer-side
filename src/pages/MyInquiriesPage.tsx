@@ -83,12 +83,25 @@ export default function MyInquiriesPage() {
 
     setCancellingId(cancelModalId);
     const finalReason = cancelReason.trim();
+
+    const targetBooking = bookings.find((b) => b.id === cancelModalId);
+    const wasConfirmed =
+      targetBooking &&
+      ["accepted", "approved", "confirmed"].includes(
+        String(targetBooking.status || "")
+          .toLowerCase()
+          .trim(),
+      );
+    const formattedReason = wasConfirmed
+      ? `[⚠️ LATE CANCELLATION - PREVIOUSLY CONFIRMED] ${finalReason}`
+      : finalReason;
+
     try {
       const { error } = await supabase
         .from("bookings")
         .update({
           status: "Cancelled",
-          cancellation_reason: finalReason,
+          cancellation_reason: formattedReason,
           cancelled_by: "Customer",
         })
         .eq("id", cancelModalId);
@@ -98,7 +111,11 @@ export default function MyInquiriesPage() {
       setBookings((prev) =>
         prev.map((b) =>
           b.id === cancelModalId
-            ? { ...b, status: "Cancelled", cancellation_reason: finalReason }
+            ? {
+                ...b,
+                status: "Cancelled",
+                cancellation_reason: formattedReason,
+              }
             : b,
         ),
       );
@@ -135,6 +152,17 @@ export default function MyInquiriesPage() {
     if (filter === "Pending") return ["pending"].includes(status);
     return true;
   });
+
+  const bookingToCancel = cancelModalId
+    ? bookings.find((b) => b.id === cancelModalId)
+    : null;
+  const isCancelConfirmed =
+    bookingToCancel &&
+    ["accepted", "approved", "confirmed"].includes(
+      String(bookingToCancel.status || "")
+        .toLowerCase()
+        .trim(),
+    );
 
   return (
     <div className="min-h-screen bg-rich-black pt-32 pb-20 px-6 font-sans text-white">
@@ -372,13 +400,13 @@ export default function MyInquiriesPage() {
                       </div>
                     )}
 
-                    {statusLower === "pending" && (
+                    {(statusLower === "pending" || isApproved) && (
                       <div className="mt-4 pt-4 border-t border-white/5 flex justify-end">
                         <button
                           onClick={() => setCancelModalId(booking.id)}
                           className="px-6 py-2 border border-red-500/30 text-red-400/80 text-xs font-bold tracking-widest uppercase hover:bg-red-500/10 hover:border-red-500/50 hover:text-red-400 transition-all"
                         >
-                          Cancel Request
+                          Cancel {isApproved ? "Booking" : "Request"}
                         </button>
                       </div>
                     )}
@@ -410,8 +438,15 @@ export default function MyInquiriesPage() {
                 Cancel <span className="text-red-400">Booking</span>
               </h3>
               <p className="text-sm text-white/60 mb-6 font-medium leading-relaxed">
-                Are you sure you want to cancel this booking request? This
-                action cannot be undone.
+                Are you sure you want to cancel this booking
+                {isCancelConfirmed ? "" : " request"}? This action cannot be
+                undone.
+                {isCancelConfirmed && (
+                  <span className="block mt-3 p-3 bg-red-500/10 border border-red-500/30 text-red-400 rounded-sm">
+                    <strong>Note:</strong> As your booking is already confirmed,
+                    your downpayment is non-refundable.
+                  </span>
+                )}
               </p>
 
               <div className="mb-8 text-left">
