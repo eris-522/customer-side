@@ -3,6 +3,7 @@ import { ChevronRight, Quote } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useState, useEffect } from "react";
 import { supabase } from "../utils/supabase";
+import { useCMS } from "../context/CMSContext";
 
 export interface CateringPackage {
   id: string;
@@ -22,29 +23,23 @@ const fallbackImages = [
   "https://images.unsplash.com/photo-1519741497674-611481863552?auto=format&fit=crop&q=80&w=800",
 ];
 
-const steps = [
-  {
-    number: "01",
-    title: "Choose your package",
-    text: "Select from our range of budget-friendly, premium catering collections designed for any occasion.",
-  },
-  {
-    number: "02",
-    title: "Customize your package",
-    text: "Personalize your menu and services to align with your taste, dietary needs, and event theme.",
-  },
-  {
-    number: "03",
-    title: "Confirm booking",
-    text: "Finalize your reservation and relax while we deliver a seamless dining experience.",
-  },
-];
-
 export default function HomePage() {
+  const { cms } = useCMS();
+  const { hero, process: processData, testimonials, contact } = cms;
   const [packages, setPackages] = useState<CateringPackage[]>([]);
   const [inclusionCategories, setInclusionCategories] = useState<
     Record<string, string[]>
   >({});
+
+  const featuredReview =
+    testimonials?.items?.find((t) => t.featured && t.active) ||
+    testimonials?.items?.find((t) => t.active) ||
+    testimonials?.items?.[0];
+
+  const processSteps =
+    processData?.steps && processData.steps.length > 0
+      ? processData.steps
+      : [];
 
   useEffect(() => {
     const fetchPackages = async () => {
@@ -73,10 +68,12 @@ export default function HomePage() {
       if (incResponse.data) {
         const grouped: Record<string, string[]> = {};
         incResponse.data.forEach((row: any) => {
-          if (!grouped[row.category]) grouped[row.category] = [];
-          if (row.items && row.items.trim() !== "" && row.items !== "-") {
-            if (!grouped[row.category].includes(row.items)) {
-              grouped[row.category].push(row.items);
+          if (row.category && !row.category.startsWith("__CMS_")) {
+            if (!grouped[row.category]) grouped[row.category] = [];
+            if (row.items && row.items.trim() !== "" && row.items !== "-") {
+              if (!grouped[row.category].includes(row.items)) {
+                grouped[row.category].push(row.items);
+              }
             }
           }
         });
@@ -109,14 +106,16 @@ export default function HomePage() {
               if (data) {
                 const grouped: Record<string, string[]> = {};
                 data.forEach((row: any) => {
-                  if (!grouped[row.category]) grouped[row.category] = [];
-                  if (
-                    row.items &&
-                    row.items.trim() !== "" &&
-                    row.items !== "-"
-                  ) {
-                    if (!grouped[row.category].includes(row.items)) {
-                      grouped[row.category].push(row.items);
+                  if (row.category && !row.category.startsWith("__CMS_")) {
+                    if (!grouped[row.category]) grouped[row.category] = [];
+                    if (
+                      row.items &&
+                      row.items.trim() !== "" &&
+                      row.items !== "-"
+                    ) {
+                      if (!grouped[row.category].includes(row.items)) {
+                        grouped[row.category].push(row.items);
+                      }
                     }
                   }
                 });
@@ -143,7 +142,8 @@ export default function HomePage() {
         <div className="absolute inset-0 z-0">
           <div className="absolute inset-0 bg-gradient-to-b from-rich-black/70 via-rich-black/70 to-rich-black z-10" />
           <img
-            src="https://images.unsplash.com/photo-1555244162-803834f70033?auto=format&fit=crop&q=80&w=2000"
+            src={hero.backgroundImage || "https://images.unsplash.com/photo-1555244162-803834f70033?auto=format&fit=crop&q=80&w=2000"}
+            alt="Hero Backdrop"
             className="w-full h-full object-cover"
           />
         </div>
@@ -155,7 +155,7 @@ export default function HomePage() {
             transition={{ delay: 0.2 }}
             className="text-gold-400 font-semibold tracking-[0.5em] uppercase text-[12px] mb-6 block"
           >
-            Exquisite Culinary Experiences
+            {hero.tagline || "Exquisite Culinary Experiences"}
           </motion.span>
           <motion.h1
             initial={{ opacity: 0, y: 30 }}
@@ -163,9 +163,9 @@ export default function HomePage() {
             transition={{ delay: 0.4 }}
             className="text-5xl md:text-7xl font-serif leading-tight mb-8"
           >
-            Affordable Elegance,
+            {hero.title || "Affordable Elegance,"}
             <br />
-            <span className="italic">Unforgettable Events</span>
+            <span className="italic">{hero.titleItalic || "Unforgettable Events"}</span>
           </motion.h1>
           <motion.div
             initial={{ opacity: 0, y: 30 }}
@@ -174,16 +174,16 @@ export default function HomePage() {
             className="flex flex-col sm:flex-row gap-6 justify-center"
           >
             <Link
-              to="/booking"
+              to={hero.primaryBtnLink || "/booking"}
               className="gold-gradient text-black px-10 py-3 font-bold tracking-widest uppercase text-xs hover:brightness-110 transition-all inline-block text-center focus:outline-none"
             >
-              Inquire Now
+              {hero.primaryBtnText || "Inquire Now"}
             </Link>
             <Link
-              to="/menu"
+              to={hero.secondaryBtnLink || "/menu"}
               className="border border-white text-white px-10 py-3 font-bold tracking-widest uppercase text-xs hover:bg-white hover:text-black transition-all inline-block text-center"
             >
-              View Menu
+              {hero.secondaryBtnText || "View Menu"}
             </Link>
           </motion.div>
         </div>
@@ -288,15 +288,15 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* How It Work */}
+      {/* How It Works */}
       <section id="process" className="bg-rich-black">
         <div className="max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-3">
           <div className="p-16 md:p-20 border-r border-white/10 bg-[#0F0F0F]">
             <span className="text-gold-400 text-[10px] tracking-[0.4em] font-bold uppercase mb-12 block italic">
-              The Process
+              {processData?.subtitle || "The Process"}
             </span>
             <div className="space-y-12">
-              {steps.map((step, i) => (
+              {processSteps.map((step) => (
                 <div key={step.number} className="flex gap-6">
                   <span className="serif text-3xl gold-text-gradient opacity-50 italic shrink-0">
                     {step.number}
@@ -316,26 +316,29 @@ export default function HomePage() {
 
           <div className="p-16 md:p-20 border-r border-white/10 flex flex-col justify-center bg-black col-span-1 md:col-span-2">
             <span className="text-gold-400 text-[10px] tracking-[0.4em] font-bold uppercase mb-8 block italic">
-              Customer Review
+              {testimonials?.subtitle || "Customer Review"}
             </span>
             <div className="max-w-xl">
               <Quote className="text-gold-400/10 mb-8" size={64} />
               <p className="serif text-2xl md:text-3xl italic leading-relaxed mb-8 text-white/90 font-light">
-                "Roxan Policarpio Events & Catering made our dream wedding a
-                reality. The food was absolutely exquisite, the presentation was
-                flawless, and it didn't break the bank. Truly exceptional
-                service!"
+                "{featuredReview?.quote || "Roxan Policarpio Events & Catering made our dream wedding a reality. The food was absolutely exquisite, the presentation was flawless, and it didn't break the bank. Truly exceptional service!"}"
               </p>
               <div className="flex items-center gap-4">
                 <div className="w-12 h-[1px] bg-gold-400"></div>
                 <span className="text-[11px] uppercase tracking-[0.4em] font-bold text-gold-400">
-                  Maria Santos
+                  {featuredReview?.author || "Maria Santos"}
                 </span>
+                {featuredReview?.role && (
+                  <span className="text-[9px] uppercase tracking-widest text-white/40 font-semibold">
+                    • {featuredReview.role}
+                  </span>
+                )}
               </div>
             </div>
           </div>
         </div>
       </section>
+
       {/* Contact Section */}
       <section
         id="contact"
@@ -351,19 +354,18 @@ export default function HomePage() {
               together.
             </h2>
             <p className="text-white/40 text-xs leading-relaxed uppercase tracking-widest">
-              Available for weddings, corporate galas, and private celebrations
-              across the region.
+              {contact.locationNote || "Available for weddings, corporate galas, and private celebrations across the region."}
             </p>
           </div>
           <div className="flex flex-col gap-6 items-start md:items-end">
             <a
-              href="mailto:rpcatering@gmail.com"
+              href={`mailto:${contact.email || "rpcatering@gmail.com"}`}
               className="text-2xl md:text-4xl font-serif text-gold-400 hover:text-white transition-colors italic"
             >
-              rpcatering@gmail.com
+              {contact.email || "rpcatering@gmail.com"}
             </a>
             <p className="text-[10px] text-white/30 uppercase tracking-[0.3em] font-bold">
-              +63 921 469 7142
+              {contact.phone || "+63 921 469 7142"}
             </p>
           </div>
         </div>

@@ -69,10 +69,12 @@ export default function PackagesPage() {
       } else if (incResponse.data) {
         const grouped: Record<string, string[]> = {};
         incResponse.data.forEach((row: any) => {
-          if (!grouped[row.category]) grouped[row.category] = [];
-          if (row.items && row.items.trim() !== "" && row.items !== "-") {
-            if (!grouped[row.category].includes(row.items)) {
-              grouped[row.category].push(row.items);
+          if (row.category && !row.category.startsWith("__CMS_")) {
+            if (!grouped[row.category]) grouped[row.category] = [];
+            if (row.items && row.items.trim() !== "" && row.items !== "-") {
+              if (!grouped[row.category].includes(row.items)) {
+                grouped[row.category].push(row.items);
+              }
             }
           }
         });
@@ -108,14 +110,16 @@ export default function PackagesPage() {
               if (data) {
                 const grouped: Record<string, string[]> = {};
                 data.forEach((row: any) => {
-                  if (!grouped[row.category]) grouped[row.category] = [];
-                  if (
-                    row.items &&
-                    row.items.trim() !== "" &&
-                    row.items !== "-"
-                  ) {
-                    if (!grouped[row.category].includes(row.items)) {
-                      grouped[row.category].push(row.items);
+                  if (row.category && !row.category.startsWith("__CMS_")) {
+                    if (!grouped[row.category]) grouped[row.category] = [];
+                    if (
+                      row.items &&
+                      row.items.trim() !== "" &&
+                      row.items !== "-"
+                    ) {
+                      if (!grouped[row.category].includes(row.items)) {
+                        grouped[row.category].push(row.items);
+                      }
                     }
                   }
                 });

@@ -152,6 +152,8 @@ export default function AuthPage() {
     setForgotPasswordStep("none");
     setEmailError("");
     setRecoveryEmailError("");
+    setError("");
+    setMessage("");
   }, [searchParams]);
 
   const handleForgotSubmit = async (e: React.FormEvent) => {
@@ -245,7 +247,13 @@ export default function AuthPage() {
         });
 
         if (error) {
-          setError(error.message);
+          if (error.message.toLowerCase().includes("email not confirmed")) {
+            setError(
+              "Your email is not confirmed yet. Please check your email inbox to confirm your account before signing in.",
+            );
+          } else {
+            setError(error.message);
+          }
         } else if (authData.user) {
           // Check if the user's account has been archived by the admin
           const { data: profile } = await supabase
@@ -368,16 +376,64 @@ export default function AuthPage() {
           return;
         }
 
+        // Check if the email is already registered in the profiles table
+        const { data: existingProfile } = await supabase
+          .from("profiles")
+          .select("id")
+          .eq("email", currentEmail)
+          .maybeSingle();
+
+        if (existingProfile) {
+          setError(
+            "This email is already in use. Please sign in or use a different email.",
+          );
+          setEmailError("This email is already in use.");
+          return;
+        }
+
         const { data: authData, error: authError } = await supabase.auth.signUp(
           {
             email: currentEmail,
             password: password,
+            options: {
+              emailRedirectTo: `${window.location.origin}/auth?mode=login`,
+            },
           },
         );
 
         if (authError) {
-          setError(authError.message);
-        } else if (authData.user) {
+          const isAlreadyRegistered =
+            authError.message.toLowerCase().includes("already registered") ||
+            authError.message.toLowerCase().includes("already in use") ||
+            authError.message.toLowerCase().includes("user already exists") ||
+            (authError as any).status === 422;
+
+          if (isAlreadyRegistered) {
+            setError(
+              "This email is already in use. Please sign in or use a different email.",
+            );
+            setEmailError("This email is already in use.");
+          } else {
+            setError(authError.message);
+          }
+          return;
+        }
+
+        // In Supabase, if email confirmation is enabled and the user already exists,
+        // signUp returns a user object with an empty identities array: identities = []
+        if (
+          authData.user &&
+          Array.isArray(authData.user.identities) &&
+          authData.user.identities.length === 0
+        ) {
+          setError(
+            "This email is already in use. Please sign in or use a different email.",
+          );
+          setEmailError("This email is already in use.");
+          return;
+        }
+
+        if (authData.user) {
           // Sync display name to profiles table (BookingPage reads `profiles.name`)
           const { error: profileError } = await supabase
             .from("profiles")
@@ -397,9 +453,17 @@ export default function AuthPage() {
             return;
           }
 
-          setMessage(
-            "Registration successful! You can now log in to book your event.",
-          );
+          // If email confirmation is required/unconfirmed, inform the user to check their email
+          if (!authData.session || !authData.user.email_confirmed_at) {
+            setMessage(
+              "Registration successful! Please check your email to confirm your account before logging in.",
+            );
+          } else {
+            setMessage(
+              "Registration successful! You can now log in to book your event.",
+            );
+          }
+
           setIsLogin(true);
           setSearchParams({ mode: "login" });
           setPassword("");
@@ -538,9 +602,30 @@ export default function AuthPage() {
                           if (!err) setEmailError("");
                         }
                       }}
-                      onBlur={(e) => {
-                        if (e.target.value) {
-                          setEmailError(validateEmailFormat(e.target.value));
+                      onBlur={async (e) => {
+                        const val = e.target.value.trim();
+                        if (val) {
+                          const formatErr = validateEmailFormat(val);
+                          if (formatErr) {
+                            setEmailError(formatErr);
+                            return;
+                          }
+                          if (!isLogin) {
+                            try {
+                              const { data: existingUser } = await supabase
+                                .from("profiles")
+                                .select("id")
+                                .eq("email", val)
+                                .maybeSingle();
+                              if (existingUser) {
+                                setEmailError("This email is already in use.");
+                                return;
+                              }
+                            } catch {
+                              // Ignore query error on blur
+                            }
+                          }
+                          setEmailError("");
                         } else {
                           setEmailError("");
                         }

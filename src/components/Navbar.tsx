@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { supabase } from "../utils/supabase";
 import { NotificationCenter } from "./NotificationCenter";
+import { AnnouncementBanner } from "./AnnouncementBanner";
 
 export const navLinks = [
 
@@ -165,150 +166,154 @@ export default function Navbar() {
 
   return (
     <>
-      <nav 
-        className={`fixed w-full z-50 transition-all duration-500 h-16 flex items-center ${
-          isScrolled ? "glass-card border-b border-white/10" : "bg-transparent"
-        }`}
-      >
-        <div className="max-w-7xl mx-auto w-full px-10 flex justify-between items-center">
+      <header className="fixed top-0 left-0 right-0 z-50 flex flex-col pointer-events-none">
+        <div className="pointer-events-auto w-full">
+          <AnnouncementBanner />
+        </div>
+        <nav 
+          className={`w-full transition-all duration-500 h-16 flex items-center pointer-events-auto ${
+            isScrolled ? "glass-card border-b border-white/10 shadow-md backdrop-blur-md" : "bg-transparent"
+          }`}
+        >
+          <div className="max-w-7xl mx-auto w-full px-10 flex justify-between items-center">
 
-          <motion.div 
-            initial={{ opacity: 0, x: -20 }}
-            animate={{ opacity: 1, x: 0 }}
-          >
-            <Link to="/" className="flex flex-col">
-              <span className="text-xl font-serif tracking-[0.2em] text-gold-400 font-bold uppercase">ROXAN POLICARPIO</span>
-            <span className="text-sm tracking-wide text-gold-300/90 -mt-1 font-semibold">Events & Catering</span>
-            </Link>
-          </motion.div>
-
-          <div className="hidden lg:flex items-center gap-8">
-            {navLinks.map((link, i) => (
-              <motion.div
-                key={link.name}
-                initial={{ opacity: 0, y: -10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: i * 0.1 }}
-              >
-                {link.name === "Book" && user ? (
-                  <div className="relative group">
-                    <Link
-                      to="/booking"
-                      className={`text-base tracking-wide font-semibold transition-colors flex items-center gap-1 ${
-                        location.pathname.includes("/booking") || location.pathname.includes("/my-inquiries") ? "text-gold-400" : "text-white/70 hover:text-gold-400"
-                      }`}
-                    >
-                      Book <ChevronDown size={14} className="group-hover:rotate-180 transition-transform duration-300" />
-                    </Link>
-                    <div className="absolute top-full left-1/2 -translate-x-1/2 pt-6 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-300 transform origin-top translate-y-2 group-hover:translate-y-0 z-50">
-                      <div className="glass-card border border-white/10 py-2 w-48 flex flex-col gap-1 shadow-2xl">
-                        <Link to="/booking" className="px-4 py-2 text-sm font-semibold tracking-wide text-white/70 hover:text-gold-400 hover:bg-white/5 transition-colors text-left">New Booking</Link>
-                        <Link to="/my-inquiries" className="px-4 py-2 text-sm font-semibold tracking-wide text-white/70 hover:text-gold-400 hover:bg-white/5 transition-colors text-left">My Inquiries</Link>
-                      </div>
-                    </div>
-                  </div>
-                ) : (
-                  <Link
-                    to={link.href}
-                  className={`text-base tracking-wide font-semibold transition-colors ${
-                      location.pathname === link.href ? "text-gold-400" : "text-white/70 hover:text-gold-400"
-                    }`}
-                  >
-                    {link.name}
-                  </Link>
-                )}
-              </motion.div>
-            ))}
-            <motion.div
-              initial={{ opacity: 0, scale: 0.9 }}
-              animate={{ opacity: 1, scale: 1 }}
+            <motion.div 
+              initial={{ opacity: 0, x: -20 }}
+              animate={{ opacity: 1, x: 0 }}
             >
-              {user ? (
-                <>
-                  <div className="relative inline-block align-middle mr-2 mt-1" ref={desktopNotifRef}>
-                    <button onClick={handleNotifClick} className="text-white/70 hover:text-gold-400 transition-colors relative flex items-center justify-center p-2">
-                      <Bell size={20} />
-                      {unreadCount > 0 && (
-                        <span className="absolute top-0 right-0 bg-red-500 text-white text-[10px] font-bold w-4 h-4 rounded-full flex items-center justify-center">
-                          {unreadCount}
-                        </span>
-                      )}
-                    </button>
-                    <NotificationCenter 
-                      isOpen={isNotifOpen} 
-                      onClose={() => setIsNotifOpen(false)} 
-                      notifications={notifications} 
-                      unreadCount={unreadCount} 
-                      readIds={readIds}
-                      onDismiss={handleDismissNotif}
-                    />
-                  </div>
-                  <button
-                    type="button"
-                    onClick={handleLogoutClick}
-                  className="ml-4 px-5 py-2 border border-white/10 text-white/90 text-base tracking-wide font-bold hover:border-gold-400 hover:text-gold-400 transition-all inline-block"
-                  >
-                    Logout
-                  </button>
-                </>
-              ) : (
-                <>
-                  <Link
-                    to="/auth?mode=login"
-                  className={`ml-4 px-5 py-2 border text-base tracking-wide font-bold transition-all inline-block ${
-                      isLoginActive
-                        ? "border-gold-400 text-gold-400 hover:bg-gold-400 hover:text-black"
-                      : "border-white/10 text-white/90 hover:border-gold-400 hover:text-gold-400"
-                    }`}
-                  >
-                    Login
-                  </Link>
-                  <Link
-                    to="/auth?mode=signup"
-                  className={`ml-4 px-5 py-2 border text-base tracking-wide font-bold transition-all inline-block ${
-                      isSignupActive
-                        ? "border-gold-400 text-gold-400 hover:bg-gold-400 hover:text-black"
-                      : "border-white/10 text-white/90 hover:border-gold-400 hover:text-gold-400"
-                    }`}
-                  >
-                    Sign Up
-                  </Link>
-                </>
-              )}
+              <Link to="/" className="flex flex-col">
+                <span className="text-xl font-serif tracking-[0.2em] text-gold-400 font-bold uppercase">ROXAN POLICARPIO</span>
+              <span className="text-sm tracking-wide text-gold-300/90 -mt-1 font-semibold">Events & Catering</span>
+              </Link>
             </motion.div>
 
-          </div>
-
-          <div className="flex items-center gap-5 lg:hidden">
-            {user && (
-              <div className="relative" ref={mobileNotifRef}>
-                <button onClick={handleNotifClick} className="text-gold-400 transition-colors relative flex items-center justify-center p-1">
-                  <Bell size={22} />
-                  {unreadCount > 0 && (
-                    <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] font-bold w-4 h-4 rounded-full flex items-center justify-center">
-                      {unreadCount}
-                    </span>
+            <div className="hidden lg:flex items-center gap-8">
+              {navLinks.map((link, i) => (
+                <motion.div
+                  key={link.name}
+                  initial={{ opacity: 0, y: -10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: i * 0.1 }}
+                >
+                  {link.name === "Book" && user ? (
+                    <div className="relative group">
+                      <Link
+                        to="/booking"
+                        className={`text-base tracking-wide font-semibold transition-colors flex items-center gap-1 ${
+                          location.pathname.includes("/booking") || location.pathname.includes("/my-inquiries") ? "text-gold-400" : "text-white/70 hover:text-gold-400"
+                        }`}
+                      >
+                        Book <ChevronDown size={14} className="group-hover:rotate-180 transition-transform duration-300" />
+                      </Link>
+                      <div className="absolute top-full left-1/2 -translate-x-1/2 pt-6 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-300 transform origin-top translate-y-2 group-hover:translate-y-0 z-50">
+                        <div className="glass-card border border-white/10 py-2 w-48 flex flex-col gap-1 shadow-2xl">
+                          <Link to="/booking" className="px-4 py-2 text-sm font-semibold tracking-wide text-white/70 hover:text-gold-400 hover:bg-white/5 transition-colors text-left">New Booking</Link>
+                          <Link to="/my-inquiries" className="px-4 py-2 text-sm font-semibold tracking-wide text-white/70 hover:text-gold-400 hover:bg-white/5 transition-colors text-left">My Inquiries</Link>
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <Link
+                      to={link.href}
+                    className={`text-base tracking-wide font-semibold transition-colors ${
+                        location.pathname === link.href ? "text-gold-400" : "text-white/70 hover:text-gold-400"
+                      }`}
+                    >
+                      {link.name}
+                    </Link>
                   )}
-                </button>
-                <NotificationCenter 
-                  isOpen={isNotifOpen} 
-                  onClose={() => setIsNotifOpen(false)} 
-                  notifications={notifications} 
-                  unreadCount={unreadCount} 
-                  readIds={readIds}
-                  onDismiss={handleDismissNotif}
-                />
-              </div>
-            )}
-            <button 
-              className="text-gold-400"
-              onClick={() => setIsMobileMenuOpen(true)}
-            >
-              <MenuIcon size={24} />
-            </button>
+                </motion.div>
+              ))}
+              <motion.div
+                initial={{ opacity: 0, scale: 0.9 }}
+                animate={{ opacity: 1, scale: 1 }}
+              >
+                {user ? (
+                  <>
+                    <div className="relative inline-block align-middle mr-2 mt-1" ref={desktopNotifRef}>
+                      <button onClick={handleNotifClick} className="text-white/70 hover:text-gold-400 transition-colors relative flex items-center justify-center p-2">
+                        <Bell size={20} />
+                        {unreadCount > 0 && (
+                          <span className="absolute top-0 right-0 bg-red-500 text-white text-[10px] font-bold w-4 h-4 rounded-full flex items-center justify-center">
+                            {unreadCount}
+                          </span>
+                        )}
+                      </button>
+                      <NotificationCenter 
+                        isOpen={isNotifOpen} 
+                        onClose={() => setIsNotifOpen(false)} 
+                        notifications={notifications} 
+                        unreadCount={unreadCount} 
+                        readIds={readIds}
+                        onDismiss={handleDismissNotif}
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleLogoutClick}
+                    className="ml-4 px-5 py-2 border border-white/10 text-white/90 text-base tracking-wide font-bold hover:border-gold-400 hover:text-gold-400 transition-all inline-block"
+                    >
+                      Logout
+                    </button>
+                  </>
+                ) : (
+                  <div className="flex items-center gap-4 ml-4">
+                    <Link
+                      to="/auth?mode=login"
+                      className={`text-base tracking-wide font-bold transition-colors ${
+                        isLoginActive
+                          ? "gold-gradient text-black px-6 py-2 shadow-lg"
+                          : "text-white/90 hover:text-gold-400"
+                      }`}
+                    >
+                      Login
+                    </Link>
+                    <Link
+                      to="/auth?mode=signup"
+                      className={`text-base tracking-wide font-bold transition-all ${
+                        isSignupActive
+                          ? "gold-gradient text-black px-6 py-2 shadow-lg hover:brightness-110"
+                          : "text-white/90 hover:text-gold-400"
+                      }`}
+                    >
+                      Sign Up
+                    </Link>
+                  </div>
+                )}
+              </motion.div>
+            </div>
+
+            <div className="flex items-center gap-5 lg:hidden">
+              {user && (
+                <div className="relative" ref={mobileNotifRef}>
+                  <button onClick={handleNotifClick} className="text-gold-400 transition-colors relative flex items-center justify-center p-1">
+                    <Bell size={22} />
+                    {unreadCount > 0 && (
+                      <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] font-bold w-4 h-4 rounded-full flex items-center justify-center">
+                        {unreadCount}
+                      </span>
+                    )}
+                  </button>
+                  <NotificationCenter 
+                    isOpen={isNotifOpen} 
+                    onClose={() => setIsNotifOpen(false)} 
+                    notifications={notifications} 
+                    unreadCount={unreadCount} 
+                    readIds={readIds}
+                    onDismiss={handleDismissNotif}
+                  />
+                </div>
+              )}
+              <button 
+                className="text-gold-400"
+                onClick={() => setIsMobileMenuOpen(true)}
+              >
+                <MenuIcon size={24} />
+              </button>
+            </div>
           </div>
-        </div>
-      </nav>
+        </nav>
+      </header>
 
       <AnimatePresence>
         {isMobileMenuOpen && (
