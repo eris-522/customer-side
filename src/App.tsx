@@ -13,6 +13,7 @@ import ContactPage from "./pages/ContactPage";
 import AuthPage from "./pages/AuthPage";
 import BookingPage from "./pages/BookingPage";
 import MyInquiriesPage from "./pages/MyInquiriesPage";
+import TermsPage from "./pages/TermsPage";
 import Navbar from "./components/Navbar";
 import Footer from "./components/Footer";
 import { ScrollToTop } from "./components/ScrollToTop";
@@ -36,6 +37,7 @@ export default function App() {
               <Route path="/auth" element={<AuthPage />} />
               <Route path="/booking" element={<BookingPage />} />
               <Route path="/my-inquiries" element={<MyInquiriesPage />} />
+              <Route path="/terms" element={<TermsPage />} />
             </Routes>
           </main>
           <Footer />

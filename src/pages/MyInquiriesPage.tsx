@@ -1,8 +1,69 @@
 import { motion, AnimatePresence } from "motion/react";
 import { useState, useEffect } from "react";
 import { supabase } from "../utils/supabase";
-import { Calendar, MapPin, Users, Package, ChevronRight } from "lucide-react";
+import {
+  Calendar,
+  MapPin,
+  Users,
+  Package,
+  ChevronRight,
+  CreditCard,
+  Eye,
+  X,
+  Clock,
+  AlertTriangle,
+  CheckCircle,
+  Building2,
+  QrCode,
+  UploadCloud,
+  Copy,
+  ShieldAlert,
+} from "lucide-react";
 import { Link } from "react-router-dom";
+
+// Client-side image compression helper to ensure balance receipts upload quickly and reliably
+const compressImage = (file: File): Promise<string> => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    reader.onload = (event) => {
+      const img = new Image();
+      img.src = event.target?.result as string;
+      img.onload = () => {
+        const maxWidth = 1000;
+        const maxHeight = 1000;
+        let width = img.width;
+        let height = img.height;
+
+        if (width > height) {
+          if (width > maxWidth) {
+            height = Math.round((height * maxWidth) / width);
+            width = maxWidth;
+          }
+        } else {
+          if (height > maxHeight) {
+            width = Math.round((width * maxHeight) / height);
+            height = maxHeight;
+          }
+        }
+
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) {
+          resolve(event.target?.result as string);
+          return;
+        }
+        ctx.drawImage(img, 0, 0, width, height);
+        const dataUrl = canvas.toDataURL("image/jpeg", 0.75);
+        resolve(dataUrl);
+      };
+      img.onerror = (err) => reject(err);
+    };
+    reader.onerror = (err) => reject(err);
+  });
+};
 
 export default function MyInquiriesPage() {
   const [bookings, setBookings] = useState<any[]>([]);
@@ -13,6 +74,17 @@ export default function MyInquiriesPage() {
   const [cancellingId, setCancellingId] = useState<string | null>(null);
   const [cancelReason, setCancelReason] = useState("");
   const [cancelReasonError, setCancelReasonError] = useState("");
+  const [viewingReceiptUrl, setViewingReceiptUrl] = useState<string | null>(null);
+
+  // 15-Day Final Balance Payment Modal State
+  const [payingBalanceBooking, setPayingBalanceBooking] = useState<any | null>(null);
+  const [balancePaymentMethod, setBalancePaymentMethod] = useState<"GCash" | "Bank Transfer">("GCash");
+  const [balanceRef, setBalanceRef] = useState<string>("");
+  const [balanceReceiptImage, setBalanceReceiptImage] = useState<string>("");
+  const [balanceReceiptName, setBalanceReceiptName] = useState<string>("");
+  const [balanceError, setBalanceError] = useState<string>("");
+  const [isSubmittingBalance, setIsSubmittingBalance] = useState<boolean>(false);
+  const [copiedBalanceAccount, setCopiedBalanceAccount] = useState<string>("");
 
   useEffect(() => {
     const fetchInquiries = async () => {
@@ -127,6 +199,124 @@ export default function MyInquiriesPage() {
       setCancelModalId(null);
       setCancelReason("");
       setCancelReasonError("");
+    }
+  };
+
+  const handleOpenBalanceModal = (booking: any) => {
+    setPayingBalanceBooking(booking);
+    setBalancePaymentMethod("GCash");
+    setBalanceRef("");
+    setBalanceReceiptImage("");
+    setBalanceReceiptName("");
+    setBalanceError("");
+    setCopiedBalanceAccount("");
+  };
+
+  const handleBalanceReceiptUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith("image/")) {
+      setBalanceError("Please upload an image file (JPG, PNG, WEBP).");
+      return;
+    }
+
+    try {
+      setBalanceError("");
+      const compressed = await compressImage(file);
+      setBalanceReceiptImage(compressed);
+      setBalanceReceiptName(file.name);
+    } catch (err) {
+      console.error("Receipt compression error:", err);
+      setBalanceError("Failed to process image. Please try another image file.");
+    }
+  };
+
+  const handleSubmitBalancePayment = async () => {
+    if (!payingBalanceBooking) return;
+    if (!balanceReceiptImage) {
+      setBalanceError("Please upload your payment receipt or transfer slip.");
+      return;
+    }
+
+    setIsSubmittingBalance(true);
+    setBalanceError("");
+
+    try {
+      // 1. Attempt direct update
+      let { error } = await supabase
+        .from("bookings")
+        .update({
+          final_balance_status: "Pending Verification",
+          final_balance_method: balancePaymentMethod,
+          final_balance_reference: balanceRef.trim(),
+          final_balance_receipt: balanceReceiptImage,
+        })
+        .eq("id", payingBalanceBooking.id);
+
+      // 2. Resilient fallback if columns not yet in DB
+      if (error && error.message.toLowerCase().includes("column")) {
+        console.warn("Direct balance columns not yet in DB. Using fallback metadata sync.", error.message);
+        let currentMeta: any = {};
+        let baseAllergies = payingBalanceBooking.food_allergies || "";
+        if (baseAllergies.includes("__PAYMENT_METADATA__:")) {
+          const parts = baseAllergies.split("__PAYMENT_METADATA__:");
+          baseAllergies = parts[0].trim();
+          try {
+            currentMeta = JSON.parse(parts[1]);
+          } catch (e) {}
+        }
+        currentMeta.finalBalanceStatus = "Pending Verification";
+        currentMeta.finalBalanceMethod = balancePaymentMethod;
+        currentMeta.finalBalanceRef = balanceRef.trim();
+        currentMeta.finalBalanceReceipt = balanceReceiptImage;
+        const updatedAllergies = `${baseAllergies ? baseAllergies + "\n" : ""}__PAYMENT_METADATA__:${JSON.stringify(currentMeta)}`;
+
+        const fb = await supabase
+          .from("bookings")
+          .update({ food_allergies: updatedAllergies })
+          .eq("id", payingBalanceBooking.id);
+        error = fb.error;
+      }
+
+      if (error) throw error;
+
+      // Update state locally
+      setBookings((prev) =>
+        prev.map((b) =>
+          b.id === payingBalanceBooking.id
+            ? {
+                ...b,
+                final_balance_status: "Pending Verification",
+                final_balance_method: balancePaymentMethod,
+                final_balance_reference: balanceRef.trim(),
+                final_balance_receipt: balanceReceiptImage,
+                food_allergies:
+                  b.food_allergies && b.food_allergies.includes("__PAYMENT_METADATA__:")
+                    ? (() => {
+                        const parts = b.food_allergies.split("__PAYMENT_METADATA__:");
+                        let m: any = {};
+                        try {
+                          m = JSON.parse(parts[1]);
+                        } catch (e) {}
+                        m.finalBalanceStatus = "Pending Verification";
+                        m.finalBalanceMethod = balancePaymentMethod;
+                        m.finalBalanceRef = balanceRef.trim();
+                        m.finalBalanceReceipt = balanceReceiptImage;
+                        return `${parts[0].trim() ? parts[0].trim() + "\n" : ""}__PAYMENT_METADATA__:${JSON.stringify(m)}`;
+                      })()
+                    : b.food_allergies,
+              }
+            : b,
+        ),
+      );
+
+      setPayingBalanceBooking(null);
+    } catch (err: any) {
+      console.error("Error submitting final balance:", err);
+      setBalanceError(err.message || "Failed to submit final balance payment.");
+    } finally {
+      setIsSubmittingBalance(false);
     }
   };
 
@@ -267,6 +457,63 @@ export default function MyInquiriesPage() {
                 booking.cancellation_reason ||
                 booking.admin_notes;
 
+              const paymentData = (() => {
+                let method = booking.payment_method || "";
+                let scheme = booking.payment_scheme || "";
+                let downpayment = Number(booking.downpayment_amount) || 0;
+                let status = booking.payment_status || "Pending Verification";
+                let receipt = booking.receipt_url || "";
+                let ref = booking.reference_number || "";
+                let balanceAmount = Number(booking.final_balance_amount) || 0;
+                let balanceStatus = booking.final_balance_status || "Unpaid";
+                let balanceMethod = booking.final_balance_method || "";
+                let balanceRef = booking.final_balance_reference || "";
+                let balanceReceipt = booking.final_balance_receipt || "";
+                let installments = booking.installment_schedule || null;
+
+                if (typeof booking.food_allergies === "string" && booking.food_allergies.includes("__PAYMENT_METADATA__:")) {
+                  try {
+                    const raw = booking.food_allergies.split("__PAYMENT_METADATA__:")[1];
+                    const parsed = JSON.parse(raw);
+                    if (!method) method = parsed.method || "";
+                    if (!scheme) scheme = parsed.scheme || "";
+                    if (!downpayment) downpayment = Number(parsed.downpayment) || 0;
+                    if (!status || status === "Pending Verification") status = parsed.status || "Pending Verification";
+                    if (!receipt) receipt = parsed.receipt || "";
+                    if (!ref) ref = parsed.ref || "";
+                    if (!balanceAmount) balanceAmount = Number(parsed.balance) || 0;
+                    if (!balanceStatus || balanceStatus === "Unpaid") balanceStatus = parsed.finalBalanceStatus || "Unpaid";
+                    if (!balanceMethod) balanceMethod = parsed.finalBalanceMethod || "";
+                    if (!balanceRef) balanceRef = parsed.finalBalanceRef || "";
+                    if (!balanceReceipt) balanceReceipt = parsed.finalBalanceReceipt || "";
+                    if (!installments) installments = parsed.installments || null;
+                  } catch (e) {}
+                }
+
+                if (!method && !downpayment && !receipt && !balanceAmount) return null;
+
+                return {
+                  method: method || "Payment",
+                  scheme: scheme || "Standard 50%",
+                  downpayment,
+                  status,
+                  receipt,
+                  ref,
+                  balanceAmount,
+                  balanceStatus,
+                  balanceMethod,
+                  balanceRef,
+                  balanceReceipt,
+                  installments,
+                };
+              })();
+
+              const eventDateObj = new Date(booking.event_date);
+              const isValidEventDate = !isNaN(eventDateObj.getTime());
+              const finalDeadline = isValidEventDate ? new Date(eventDateObj.getTime() - 15 * 24 * 60 * 60 * 1000) : null;
+              const daysUntilDeadline = finalDeadline ? Math.ceil((finalDeadline.getTime() - Date.now()) / (1000 * 60 * 60 * 24)) : null;
+              const formattedDeadline = finalDeadline ? finalDeadline.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "";
+
               return (
                 <motion.div
                   key={booking.id || i}
@@ -326,6 +573,138 @@ export default function MyInquiriesPage() {
                         </span>
                       </div>
                     </div>
+
+                    {paymentData && (
+                      <div className="space-y-3 mt-4">
+                        {/* Initial Security Downpayment Row */}
+                        <div className="p-4 bg-white/5 border border-white/10 rounded-sm flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+                          <div className="flex items-center gap-3">
+                            <div className="w-9 h-9 rounded-full bg-gold-400/10 border border-gold-400/30 flex items-center justify-center text-gold-400 shrink-0">
+                              <CreditCard size={16} />
+                            </div>
+                            <div>
+                              <p className="text-xs text-white font-bold flex items-center gap-2">
+                                <span>{paymentData.scheme || "Deposit"}: ₱{paymentData.downpayment.toLocaleString()}</span>
+                                <span className="text-[10px] px-2 py-0.5 rounded bg-white/10 text-white/70 font-sans uppercase font-bold tracking-wider">
+                                  {paymentData.method}
+                                </span>
+                              </p>
+                              <p className="text-[10px] text-white/50 mt-0.5">
+                                Deposit Status:{" "}
+                                <span className={paymentData.status === "Verified" ? "text-green-400 font-bold" : "text-gold-400 font-bold"}>
+                                  {paymentData.status}
+                                </span>
+                                {paymentData.ref && ` • Ref: ${paymentData.ref}`}
+                              </p>
+                            </div>
+                          </div>
+                          {paymentData.receipt && (
+                            <button
+                              type="button"
+                              onClick={() => setViewingReceiptUrl(paymentData.receipt)}
+                              className="px-3 py-1.5 border border-gold-400/30 text-gold-400 hover:bg-gold-400/10 text-[10px] font-bold uppercase tracking-wider rounded transition-colors flex items-center gap-1.5 shrink-0"
+                            >
+                              <Eye size={12} /> View Deposit Slip
+                            </button>
+                          )}
+                        </div>
+
+                        {/* 15-Day Final Balance Settlement Tracker (Clause 1) */}
+                        {!isCancelled && (
+                          <div className="p-4 bg-gradient-to-r from-gold-400/[0.07] via-white/[0.03] to-transparent border border-gold-400/25 rounded-sm space-y-3">
+                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-white/10 pb-2">
+                              <div className="flex items-center gap-2">
+                                <Clock size={15} className="text-gold-400 shrink-0" />
+                                <span className="text-xs font-bold uppercase tracking-wider text-white">
+                                  15-Day Balance Settlement Tracker
+                                </span>
+                                <span className="text-[10px] text-gold-400/70 font-mono">
+                                  Clause 1
+                                </span>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                {paymentData.balanceStatus === "Verified" ? (
+                                  <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-green-500/20 text-green-400 border border-green-500/40 flex items-center gap-1">
+                                    <CheckCircle size={12} /> Balance Settled & Verified
+                                  </span>
+                                ) : paymentData.balanceStatus === "Pending Verification" ? (
+                                  <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-amber-500/20 text-amber-300 border border-amber-500/40 flex items-center gap-1">
+                                    <Clock size={12} /> Balance Under Review
+                                  </span>
+                                ) : (
+                                  <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-yellow-500/20 text-yellow-300 border border-yellow-500/40">
+                                    Final Balance Unpaid
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+
+                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                              <div>
+                                <p className="text-xs text-white/90">
+                                  Final Balance Due:{" "}
+                                  <strong className="text-gold-400 font-serif text-sm">
+                                    ₱{paymentData.balanceAmount.toLocaleString()}
+                                  </strong>
+                                </p>
+                                {formattedDeadline && (
+                                  <p className="text-[11px] text-white/60 mt-0.5">
+                                    Strict Deadline: <strong className="text-white/90">{formattedDeadline}</strong> (15 days before event)
+                                  </p>
+                                )}
+                                {daysUntilDeadline !== null && paymentData.balanceStatus !== "Verified" && (
+                                  <p className={`text-[11px] font-bold mt-1 ${daysUntilDeadline <= 0 ? "text-red-400" : daysUntilDeadline <= 7 ? "text-amber-400" : "text-gold-300"}`}>
+                                    {daysUntilDeadline > 0
+                                      ? `⏳ Final Balance due in ${daysUntilDeadline} day${daysUntilDeadline === 1 ? "" : "s"} (Strictly 15 days before event date)`
+                                      : `⚠️ Final Balance is strictly overdue (${Math.abs(daysUntilDeadline)} days past 15-day deadline)`}
+                                  </p>
+                                )}
+                              </div>
+
+                              <div className="flex items-center gap-2 self-start sm:self-auto shrink-0">
+                                {paymentData.balanceReceipt && (
+                                  <button
+                                    type="button"
+                                    onClick={() => setViewingReceiptUrl(paymentData.balanceReceipt)}
+                                    className="px-3 py-1.5 border border-white/20 hover:border-gold-400/50 text-white/80 hover:text-white text-[10px] font-bold uppercase tracking-wider rounded transition-colors flex items-center gap-1.5"
+                                  >
+                                    <Eye size={12} /> View Balance Slip
+                                  </button>
+                                )}
+
+                                {paymentData.balanceStatus !== "Verified" && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleOpenBalanceModal({ ...booking, paymentData })}
+                                    className="px-4 py-2 gold-gradient text-black hover:brightness-110 text-xs font-bold uppercase tracking-wider rounded transition-all shadow-md flex items-center gap-1.5"
+                                  >
+                                    <CreditCard size={13} />
+                                    {paymentData.balanceStatus === "Pending Verification" ? "Re-upload Balance Slip" : "Pay Final Balance"}
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+
+                            {/* Monthly installment milestone list if 20% scheme was selected */}
+                            {paymentData.installments && paymentData.installments.length > 0 && (
+                              <div className="pt-2 border-t border-white/5 space-y-1.5">
+                                <p className="text-[10px] uppercase font-bold text-white/40 tracking-wider">
+                                  Scheduled Installment Milestones (Clause 1)
+                                </p>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                                  {paymentData.installments.map((inst: any, idx: number) => (
+                                    <div key={idx} className="flex justify-between items-center px-2.5 py-1.5 bg-black/40 rounded border border-white/5 text-[11px]">
+                                      <span className="text-white/70">{inst.title}</span>
+                                      <span className="font-bold text-gold-400 font-serif">₱{Number(inst.amount).toLocaleString()}</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )}
 
                     {isCancelled && (
                       <div className="p-4 bg-red-500/10 border border-red-500/20 mt-4 rounded-sm flex flex-col gap-2">
@@ -441,12 +820,12 @@ export default function MyInquiriesPage() {
                 Are you sure you want to cancel this booking
                 {isCancelConfirmed ? "" : " request"}? This action cannot be
                 undone.
-                {isCancelConfirmed && (
-                  <span className="block mt-3 p-3 bg-red-500/10 border border-red-500/30 text-red-400 rounded-sm">
-                    <strong>Note:</strong> As your booking is already confirmed,
-                    your downpayment is non-refundable.
-                  </span>
-                )}
+                <span className="block mt-3 p-3 bg-red-500/10 border border-red-500/30 text-red-400 rounded-sm text-xs leading-relaxed text-left">
+                  <strong className="block font-bold mb-1">
+                    Strict Non-Refundable Policy (Contract Clauses 1 & 16):
+                  </strong>
+                  All down payments, reservation fees, and prior installment settlements are strictly non-refundable and will be forfeited upon cancellation. No date transfers or refunds apply.
+                </span>
               </p>
 
               <div className="mb-8 text-left">
@@ -492,6 +871,356 @@ export default function MyInquiriesPage() {
                   {cancellingId === cancelModalId
                     ? "Cancelling..."
                     : "Yes, Cancel"}
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Proof of Downpayment Receipt Viewer Modal */}
+      <AnimatePresence>
+        {viewingReceiptUrl && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[110] bg-black/90 backdrop-blur-md flex items-center justify-center p-4"
+            onClick={() => setViewingReceiptUrl(null)}
+          >
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="glass-card border border-white/15 p-6 max-w-lg w-full relative overflow-hidden rounded-xl bg-[#0c0c0c] shadow-2xl"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between pb-4 mb-4 border-b border-white/10">
+                <h4 className="text-base font-serif text-white flex items-center gap-2">
+                  <CreditCard className="text-gold-400" size={18} />
+                  Proof of Payment Receipt
+                </h4>
+                <button
+                  onClick={() => setViewingReceiptUrl(null)}
+                  className="text-white/50 hover:text-white p-1 rounded hover:bg-white/10 transition-colors"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+              <div className="max-h-[65vh] overflow-auto flex items-center justify-center bg-black/50 rounded-lg p-2 border border-white/5">
+                <img
+                  src={viewingReceiptUrl}
+                  alt="Proof of Payment"
+                  className="max-h-[60vh] w-auto object-contain rounded"
+                />
+              </div>
+              <div className="mt-4 flex justify-end">
+                <button
+                  onClick={() => setViewingReceiptUrl(null)}
+                  className="px-6 py-2 gold-gradient text-black text-xs font-bold uppercase tracking-wider rounded-sm hover:brightness-110 transition-all"
+                >
+                  Close Receipt
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* 15-Day Final Balance Payment Modal */}
+      <AnimatePresence>
+        {payingBalanceBooking && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[105] bg-black/85 backdrop-blur-md flex items-center justify-center p-4 sm:p-6"
+          >
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0, y: 20 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.95, opacity: 0, y: 20 }}
+              className="glass-card border border-white/15 max-w-2xl w-full max-h-[92vh] flex flex-col relative overflow-hidden shadow-2xl rounded-xl bg-[#0c0c0c]"
+            >
+              {/* Header */}
+              <div className="p-6 border-b border-white/10 flex items-center justify-between bg-black/40">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-full bg-gold-400/10 border border-gold-400/30 flex items-center justify-center">
+                    <CreditCard className="text-gold-400" size={20} />
+                  </div>
+                  <div>
+                    <h3 className="text-xl sm:text-2xl font-serif text-white italic">
+                      Pay <span className="gold-text-gradient font-bold not-italic">Final Balance</span>
+                    </h3>
+                    <p className="text-xs text-white/60 uppercase tracking-widest font-semibold mt-0.5">
+                      Strictly Due 15 Days Before Event Date (Clause 1)
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setPayingBalanceBooking(null)}
+                  className="text-white/40 hover:text-white p-2 rounded-lg hover:bg-white/5 transition-colors"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+
+              {/* Scrollable Content */}
+              <div className="p-6 sm:p-8 overflow-y-auto space-y-6 scrollbar-thin">
+                {balanceError && (
+                  <div className="p-4 bg-red-950/90 border border-red-500/50 rounded-lg text-red-200 text-xs font-bold flex items-center gap-2">
+                    <AlertTriangle size={16} className="text-red-400 shrink-0" />
+                    <span>{balanceError}</span>
+                  </div>
+                )}
+
+                {/* Amount Due Card */}
+                <div className="p-6 bg-gradient-to-r from-gold-400/15 via-white/5 to-transparent border border-gold-400/30 rounded-xl relative overflow-hidden">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <p className="text-[10px] uppercase font-bold tracking-widest text-gold-400 mb-1">
+                        Final Balance Amount Due
+                      </p>
+                      <p className="text-3xl font-serif text-gold-400 font-bold">
+                        ₱{Number(payingBalanceBooking.paymentData?.balanceAmount || payingBalanceBooking.final_balance_amount || 0).toLocaleString()}
+                      </p>
+                      <span className="text-[11px] text-white/60">
+                        {payingBalanceBooking.packages?.name || "Catering Event Package"}
+                      </span>
+                    </div>
+                    <div className="sm:border-l sm:border-white/10 sm:pl-4">
+                      <p className="text-[10px] uppercase font-bold tracking-widest text-white/50 mb-1">
+                        Event Date & Settlement Deadline
+                      </p>
+                      <p className="text-sm font-bold text-white">
+                        {payingBalanceBooking.event_date || "Event Date"}
+                      </p>
+                      <span className="text-[10px] text-amber-300 font-semibold block mt-1">
+                        Strictly due at least 15 days before event
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Method Selector */}
+                <div>
+                  <label className="text-xs font-bold uppercase tracking-wider text-white/80 block mb-3">
+                    Choose Payment Option <span className="text-red-400">*</span>
+                  </label>
+                  <div className="grid grid-cols-2 gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setBalancePaymentMethod("GCash")}
+                      className={`p-4 rounded-lg border text-left transition-all flex items-center gap-3 ${
+                        balancePaymentMethod === "GCash"
+                          ? "bg-[#007DFE]/15 border-[#007DFE] text-white shadow-lg shadow-[#007DFE]/10"
+                          : "bg-white/5 border-white/10 text-white/60 hover:border-white/20"
+                      }`}
+                    >
+                      <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs ${balancePaymentMethod === "GCash" ? "bg-[#007DFE] text-white" : "bg-white/10 text-white/40"}`}>
+                        G
+                      </div>
+                      <div>
+                        <p className="font-bold text-sm text-white">GCash</p>
+                        <p className="text-[10px] text-white/50">Instant transfer / QR</p>
+                      </div>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setBalancePaymentMethod("Bank Transfer")}
+                      className={`p-4 rounded-lg border text-left transition-all flex items-center gap-3 ${
+                        balancePaymentMethod === "Bank Transfer"
+                          ? "bg-gold-400/15 border-gold-400 text-white shadow-lg shadow-gold-400/10"
+                          : "bg-white/5 border-white/10 text-white/60 hover:border-white/20"
+                      }`}
+                    >
+                      <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs ${balancePaymentMethod === "Bank Transfer" ? "bg-gold-400 text-black" : "bg-white/10 text-white/40"}`}>
+                        <Building2 size={16} />
+                      </div>
+                      <div>
+                        <p className="font-bold text-sm text-white">Bank Transfer</p>
+                        <p className="text-[10px] text-white/50">BDO / BPI Online Banking</p>
+                      </div>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Instructions for Selected Method */}
+                {balancePaymentMethod === "GCash" ? (
+                  <div className="p-5 bg-gradient-to-b from-[#007DFE]/10 to-transparent border border-[#007DFE]/30 rounded-xl space-y-4">
+                    <div className="flex flex-col sm:flex-row items-center gap-6">
+                      <div className="bg-white p-3 rounded-lg shadow-xl shrink-0 flex flex-col items-center">
+                        <div className="w-32 h-32 bg-gray-100 border-2 border-dashed border-[#007DFE]/40 rounded flex flex-col items-center justify-center p-2 relative overflow-hidden">
+                          <QrCode className="text-[#007DFE] opacity-70" size={44} />
+                          <span className="text-[9px] font-bold text-[#007DFE] mt-1 uppercase tracking-tighter">
+                            GCash QR
+                          </span>
+                        </div>
+                        <span className="text-[10px] text-gray-700 font-bold uppercase tracking-wider mt-2">
+                          Scan to Pay
+                        </span>
+                      </div>
+                      <div className="space-y-3 flex-1 text-left">
+                        <div>
+                          <span className="text-[10px] font-bold uppercase tracking-widest text-[#007DFE] block">
+                            GCash Account Name
+                          </span>
+                          <span className="text-sm font-bold text-white">
+                            ROXAN POLICARPIO (ROXAN POLICARPIO CATERING)
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-[10px] font-bold uppercase tracking-widest text-[#007DFE] block">
+                            GCash Mobile Number
+                          </span>
+                          <div className="flex items-center gap-2 mt-1">
+                            <span className="text-base font-mono font-bold text-white bg-white/10 px-3 py-1 rounded">
+                              0946 715 8519
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                navigator.clipboard.writeText("09467158519");
+                                setCopiedBalanceAccount("gcash");
+                                setTimeout(() => setCopiedBalanceAccount(""), 2500);
+                              }}
+                              className="px-2.5 py-1 bg-[#007DFE]/20 text-[#007DFE] hover:bg-[#007DFE]/30 text-xs font-bold rounded transition-colors flex items-center gap-1"
+                            >
+                              {copiedBalanceAccount === "gcash" ? <CheckCircle size={13} /> : <Copy size={13} />}
+                              {copiedBalanceAccount === "gcash" ? "Copied" : "Copy"}
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="p-5 bg-gradient-to-b from-gold-400/10 to-transparent border border-gold-400/30 rounded-xl space-y-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-left">
+                      <div className="p-3 bg-white/5 border border-white/10 rounded-lg space-y-1.5">
+                        <div className="flex justify-between items-center">
+                          <span className="text-xs font-bold text-gold-400 uppercase tracking-wider">BDO Unibank</span>
+                          <span className="text-[9px] bg-gold-400/20 text-gold-300 px-1.5 py-0.5 rounded font-bold">Current</span>
+                        </div>
+                        <p className="text-[10px] text-white/50 uppercase font-semibold">0012 3456 7890</p>
+                        <p className="text-xs font-bold text-white">Roxan Policarpio Events & Catering</p>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            navigator.clipboard.writeText("001234567890");
+                            setCopiedBalanceAccount("bdo");
+                            setTimeout(() => setCopiedBalanceAccount(""), 2500);
+                          }}
+                          className="text-[10px] text-gold-400 hover:text-white font-bold flex items-center gap-1"
+                        >
+                          {copiedBalanceAccount === "bdo" ? "Copied Account!" : "Copy BDO Number"}
+                        </button>
+                      </div>
+
+                      <div className="p-3 bg-white/5 border border-white/10 rounded-lg space-y-1.5">
+                        <div className="flex justify-between items-center">
+                          <span className="text-xs font-bold text-gold-400 uppercase tracking-wider">BPI Banking</span>
+                          <span className="text-[9px] bg-gold-400/20 text-gold-300 px-1.5 py-0.5 rounded font-bold">Savings</span>
+                        </div>
+                        <p className="text-[10px] text-white/50 uppercase font-semibold">4598 1234 56</p>
+                        <p className="text-xs font-bold text-white">Roxan Policarpio Events & Catering</p>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            navigator.clipboard.writeText("4598123456");
+                            setCopiedBalanceAccount("bpi");
+                            setTimeout(() => setCopiedBalanceAccount(""), 2500);
+                          }}
+                          className="text-[10px] text-gold-400 hover:text-white font-bold flex items-center gap-1"
+                        >
+                          {copiedBalanceAccount === "bpi" ? "Copied Account!" : "Copy BPI Number"}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Upload Receipt */}
+                <div className="space-y-3 text-left">
+                  <label className="text-xs font-bold uppercase tracking-wider text-white/90 block">
+                    Upload Final Balance Receipt <span className="text-red-400">*</span>
+                  </label>
+                  {balanceReceiptImage ? (
+                    <div className="p-4 bg-white/5 border border-gold-400/40 rounded-xl flex items-center justify-between gap-4">
+                      <div className="flex items-center gap-4 min-w-0">
+                        <img
+                          src={balanceReceiptImage}
+                          alt="Receipt Preview"
+                          className="w-16 h-16 object-cover rounded border border-white/20 shrink-0"
+                        />
+                        <div className="min-w-0">
+                          <p className="text-sm font-bold text-white truncate">
+                            {balanceReceiptName || "balance_receipt.jpg"}
+                          </p>
+                          <p className="text-[11px] text-green-400 font-semibold flex items-center gap-1 mt-0.5">
+                            <CheckCircle size={12} /> Receipt Ready for Verification
+                          </p>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setBalanceReceiptImage("");
+                          setBalanceReceiptName("");
+                        }}
+                        className="px-3 py-1.5 border border-red-500/40 text-red-400 hover:bg-red-500/10 text-xs font-bold rounded transition-colors shrink-0"
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  ) : (
+                    <label className="border-2 border-dashed border-white/20 hover:border-gold-400/60 transition-colors p-6 rounded-xl flex flex-col items-center justify-center cursor-pointer bg-white/[0.02] hover:bg-white/[0.04]">
+                      <UploadCloud size={32} className="text-gold-400 mb-2" />
+                      <p className="text-sm font-bold text-white">Click to upload balance receipt slip</p>
+                      <p className="text-xs text-white/50 mt-1">PNG, JPG, or WEBP transaction confirmation</p>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={handleBalanceReceiptUpload}
+                        className="hidden"
+                      />
+                    </label>
+                  )}
+                </div>
+
+                {/* Reference Number */}
+                <div className="space-y-2 text-left">
+                  <label className="text-xs font-bold uppercase tracking-wider text-white/90 block">
+                    Reference Number <span className="text-white/40 font-normal">(Optional but recommended)</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={balanceRef}
+                    onChange={(e) => setBalanceRef(e.target.value)}
+                    placeholder="e.g. 9876 5432 1098"
+                    className="w-full bg-white/5 border border-white/10 px-4 py-3 text-sm focus:outline-none focus:border-gold-400/50 rounded-lg font-medium text-white"
+                  />
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="p-6 border-t border-white/10 bg-black/60 flex flex-col sm:flex-row items-center justify-between gap-4">
+                <button
+                  type="button"
+                  onClick={() => setPayingBalanceBooking(null)}
+                  className="w-full sm:w-auto px-6 py-3 border border-white/20 text-white/70 text-xs font-bold uppercase tracking-wider hover:bg-white/5 transition-colors rounded-sm"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSubmitBalancePayment}
+                  disabled={isSubmittingBalance || !balanceReceiptImage}
+                  className="w-full sm:w-auto px-8 py-3 gold-gradient text-black text-xs font-bold uppercase tracking-wider hover:brightness-110 transition-all disabled:opacity-40 disabled:cursor-not-allowed rounded-sm flex items-center justify-center gap-2 shadow-lg shadow-gold-400/10"
+                >
+                  {isSubmittingBalance ? "Submitting Balance..." : "Submit Proof of Final Balance"}
+                  {!isSubmittingBalance && <ChevronRight size={14} />}
                 </button>
               </div>
             </motion.div>
