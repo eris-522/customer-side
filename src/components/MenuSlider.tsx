@@ -92,7 +92,13 @@ export default function MenuSlider({ category, items }: MenuSliderProps) {
                   <img 
                     src={item.image} 
                     alt={item.name}
-                  className="absolute inset-0 w-full h-full object-cover grayscale group-hover:grayscale-0 transition-all duration-700 group-hover:scale-105"
+                    onError={(e) => {
+                      const fallback = "https://images.unsplash.com/photo-1544025162-d76694265947?auto=format&fit=crop&q=80&w=600";
+                      if (e.currentTarget.src !== fallback) {
+                        e.currentTarget.src = fallback;
+                      }
+                    }}
+                    className="absolute inset-0 w-full h-full object-cover grayscale group-hover:grayscale-0 transition-all duration-700 group-hover:scale-105"
                   />
                 </div>
                 <h3 className="text-xl font-serif text-white mb-2 group-hover:text-gold-400 transition-colors uppercase tracking-wider">{item.name}</h3>

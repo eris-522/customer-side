@@ -3,6 +3,7 @@ import { ChevronRight, Check } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useState, useEffect } from "react";
 import { supabase } from "../utils/supabase"; // Feature: Imports the Supabase client for database communication
+import { useCMS } from "../context/CMSContext";
 
 // Feature: Defines the TypeScript interfaces mapping to your Supabase tables
 export interface CateringPackage {
@@ -26,6 +27,9 @@ const fallbackImages = [
 ];
 
 export default function PackagesPage() {
+  const { cms } = useCMS();
+  const packagesCms = cms?.packages;
+
   // Feature: State hooks to store the live data fetched from the database
   const [packages, setPackages] = useState<CateringPackage[]>([]);
   const [loading, setLoading] = useState(true);
@@ -145,7 +149,7 @@ export default function PackagesPage() {
           animate={{ opacity: 1, y: 0 }}
           className="text-gold-400 text-[12px] tracking-[0.5em] font-bold uppercase mb-6 block"
         >
-          Exclusive Collections
+          {packagesCms?.headerSubtitle || "Exclusive Collections"}
         </motion.span>
         <motion.h1
           initial={{ opacity: 0, y: 20 }}
@@ -153,7 +157,10 @@ export default function PackagesPage() {
           transition={{ delay: 0.1 }}
           className="text-6xl md:text-8xl font-serif text-white mb-8"
         >
-          Catering <span className="italic gold-text-gradient">Packages</span>
+          {packagesCms?.headerTitle || "Catering"}{" "}
+          <span className="italic gold-text-gradient">
+            {packagesCms?.headerTitleItalic || "Packages"}
+          </span>
         </motion.h1>
         <motion.p
           initial={{ opacity: 0, y: 20 }}
@@ -161,8 +168,8 @@ export default function PackagesPage() {
           transition={{ delay: 0.2 }}
           className="text-white/40 text-[11px] uppercase tracking-[0.4em] font-bold max-w-2xl mx-auto"
         >
-          From intimate gatherings to grand celebrations, find the perfect
-          curation for your event's specific needs and scale.
+          {packagesCms?.description ||
+            "From intimate gatherings to grand celebrations, find the perfect curation for your event's specific needs and scale."}
         </motion.p>
       </header>
 
@@ -185,33 +192,49 @@ export default function PackagesPage() {
                   </p>
                 </div>
               ) : (
-                packages.map((pkg, i) => (
-                  <motion.div
-                    key={pkg.id}
-                    initial={{ opacity: 0, y: 30 }}
-                    whileInView={{ opacity: 1, y: 0 }}
-                    viewport={{ once: true }}
-                    transition={{ delay: i * 0.1 }}
-                    className="glass-card border border-white/10 flex flex-col group overflow-hidden relative"
-                  >
-                    {/* Feature: Displays the package tag (e.g., Popular, New) if the admin assigned one */}
-                    {pkg.tag && pkg.tag.toLowerCase() !== "none" && (
-                      <div className="absolute top-4 left-4 z-10 bg-gold-400 text-black px-3 py-1 text-[9px] font-bold uppercase tracking-widest rounded-sm">
-                        {pkg.tag}
+                packages.map((pkg, i) => {
+                  const packageImage =
+                    packagesCms?.packageImages?.[pkg.id] ||
+                    packagesCms?.packageImages?.[pkg.name] ||
+                    packagesCms?.items?.find(
+                      (item) =>
+                        item.name?.toLowerCase() === pkg.name?.toLowerCase() ||
+                        item.id === pkg.id
+                    )?.image ||
+                    pkg.image_url ||
+                    fallbackImages[i % fallbackImages.length];
+
+                  return (
+                    <motion.div
+                      key={pkg.id}
+                      initial={{ opacity: 0, y: 30 }}
+                      whileInView={{ opacity: 1, y: 0 }}
+                      viewport={{ once: true }}
+                      transition={{ delay: i * 0.1 }}
+                      className="glass-card border border-white/10 flex flex-col group overflow-hidden relative"
+                    >
+                      {/* Feature: Displays the package tag (e.g., Popular, New) if the admin assigned one */}
+                      {pkg.tag && pkg.tag.toLowerCase() !== "none" && (
+                        <div className="absolute top-4 left-4 z-10 bg-gold-400 text-black px-3 py-1 text-[9px] font-bold uppercase tracking-widest rounded-sm">
+                          {pkg.tag}
+                        </div>
+                      )}
+                      <div className="aspect-video overflow-hidden bg-black/40">
+                        {/* Feature: Automatically assigns a fallback image to keep the aesthetic intact */}
+                        <img
+                          src={packageImage}
+                          alt={pkg.name}
+                          onError={(e) => {
+                            const target = e.currentTarget;
+                            const fallback = fallbackImages[i % fallbackImages.length];
+                            if (target.src !== fallback) {
+                              target.src = fallback;
+                            }
+                          }}
+                          className="w-full h-full object-cover grayscale group-hover:grayscale-0 transition-all duration-700 group-hover:scale-105"
+                        />
                       </div>
-                    )}
-                    <div className="aspect-video overflow-hidden">
-                      {/* Feature: Automatically assigns a fallback image to keep the aesthetic intact */}
-                      <img
-                        src={
-                          pkg.image_url ||
-                          fallbackImages[i % fallbackImages.length]
-                        }
-                        alt={pkg.name}
-                        className="w-full h-full object-cover grayscale group-hover:grayscale-0 transition-all duration-700 group-hover:scale-105"
-                      />
-                    </div>
-                    <div className="p-8 flex-grow flex flex-col">
+                      <div className="p-8 flex-grow flex flex-col">
                       <div className="flex justify-between items-start mb-4 gap-4">
                         <h3 className="text-2xl font-serif text-white uppercase tracking-wider">
                           {pkg.name}
@@ -321,8 +344,9 @@ export default function PackagesPage() {
                       </div>
                     </div>
                   </motion.div>
-                ))
-              )}
+                );
+              })
+            )}
             </div>
           </section>
         </>

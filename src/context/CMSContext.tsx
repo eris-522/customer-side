@@ -119,6 +119,42 @@ export interface FooterLink {
   url: string;
 }
 
+export interface PackageCMSItem {
+  id: string;
+  name: string;
+  image: string;
+  tag?: string;
+  price?: string;
+  pax?: string;
+}
+
+export interface PackagesCMS {
+  headerSubtitle: string;
+  headerTitle: string;
+  headerTitleItalic: string;
+  description: string;
+  packageImages: Record<string, string>;
+  items: PackageCMSItem[];
+}
+
+export interface MenuCMSItem {
+  id: string;
+  name: string;
+  category: string;
+  sub_category?: string;
+  description?: string;
+  image: string;
+}
+
+export interface MenuCMS {
+  headerSubtitle: string;
+  headerTitle: string;
+  headerTitleItalic: string;
+  description: string;
+  menuImages: Record<string, string>;
+  items: MenuCMSItem[];
+}
+
 export interface FooterCMS {
   brandName: string;
   copyrightText: string;
@@ -129,6 +165,8 @@ export interface FullCMSData {
   hero: HeroCMS;
   announcement: AnnouncementCMS;
   about: AboutCMS;
+  packages: PackagesCMS;
+  menu: MenuCMS;
   contact: ContactCMS;
   process: ProcessCMS;
   testimonials: TestimonialsCMS;
@@ -137,6 +175,93 @@ export interface FullCMSData {
 }
 
 export const DEFAULT_CMS_DATA: FullCMSData = {
+  menu: {
+    headerSubtitle: "Roxan Policarpio Catering",
+    headerTitle: "Curated",
+    headerTitleItalic: "Selection",
+    description: "Explore our dynamic culinary offerings crafted with passion, artful presentation, and the finest ingredients.",
+    menuImages: {
+      "Roast Beef with Mushroom Gravy": "https://images.unsplash.com/photo-1544025162-d76694265947?auto=format&fit=crop&q=80&w=800",
+      "Grilled Salmon in Lemon Butter": "https://images.unsplash.com/photo-1467003909585-2f8a72700288?auto=format&fit=crop&q=80&w=800",
+      "Truffle Cream Penne": "https://images.unsplash.com/photo-1565299624946-b28f40a0ae38?auto=format&fit=crop&q=80&w=800",
+      "Artisan Charcuterie Board": "https://images.unsplash.com/photo-1504674900247-0877df9cc836?auto=format&fit=crop&q=80&w=800",
+      "Mango Panna Cotta": "https://images.unsplash.com/photo-1551024709-8f23befc6f87?auto=format&fit=crop&q=80&w=800",
+    },
+    items: [
+      {
+        id: "menu-roast-beef",
+        name: "Roast Beef with Mushroom Gravy",
+        category: "Main Course",
+        description: "Slow-roasted tender beef brisket served with savory wild mushroom gravy.",
+        image: "https://images.unsplash.com/photo-1544025162-d76694265947?auto=format&fit=crop&q=80&w=800",
+      },
+      {
+        id: "menu-salmon",
+        name: "Grilled Salmon in Lemon Butter",
+        category: "Main Course",
+        description: "Fresh Norwegian salmon fillet seared to perfection with caper-infused lemon butter.",
+        image: "https://images.unsplash.com/photo-1467003909585-2f8a72700288?auto=format&fit=crop&q=80&w=800",
+      },
+      {
+        id: "menu-truffle-penne",
+        name: "Truffle Cream Penne",
+        category: "Pasta",
+        description: "Al dente penne in a rich black truffle and parmesan cream sauce with wild mushrooms.",
+        image: "https://images.unsplash.com/photo-1565299624946-b28f40a0ae38?auto=format&fit=crop&q=80&w=800",
+      },
+      {
+        id: "menu-charcuterie",
+        name: "Artisan Charcuterie Board",
+        category: "Appetizers",
+        description: "Curated cheeses, cured meats, dried figs, honey, and gourmet crackers.",
+        image: "https://images.unsplash.com/photo-1504674900247-0877df9cc836?auto=format&fit=crop&q=80&w=800",
+      },
+      {
+        id: "menu-panna-cotta",
+        name: "Mango Panna Cotta",
+        category: "Desserts",
+        description: "Velvety vanilla bean panna cotta crowned with fresh ripe Philippine mango compote.",
+        image: "https://images.unsplash.com/photo-1551024709-8f23befc6f87?auto=format&fit=crop&q=80&w=800",
+      },
+    ],
+  },
+  packages: {
+    headerSubtitle: "Exclusive Collections",
+    headerTitle: "Catering",
+    headerTitleItalic: "Packages",
+    description: "From intimate gatherings to grand celebrations, find the perfect curation for your event's specific needs and scale.",
+    packageImages: {
+      "Basic Wedding Package": "https://images.unsplash.com/photo-1519741497674-611481863552?auto=format&fit=crop&q=80&w=1200",
+      "Classic Wedding Package": "https://images.unsplash.com/photo-1511578314322-379afb476865?auto=format&fit=crop&q=80&w=1200",
+      "Premium Wedding Package": "https://images.unsplash.com/photo-1547825407-2d060104b7f8?auto=format&fit=crop&q=80&w=1200",
+    },
+    items: [
+      {
+        id: "pkg-basic",
+        name: "Basic Wedding Package",
+        image: "https://images.unsplash.com/photo-1519741497674-611481863552?auto=format&fit=crop&q=80&w=1200",
+        tag: "Popular",
+        price: "59000",
+        pax: "50",
+      },
+      {
+        id: "pkg-classic",
+        name: "Classic Wedding Package",
+        image: "https://images.unsplash.com/photo-1511578314322-379afb476865?auto=format&fit=crop&q=80&w=1200",
+        tag: "",
+        price: "99000",
+        pax: "100",
+      },
+      {
+        id: "pkg-premium",
+        name: "Premium Wedding Package",
+        image: "https://images.unsplash.com/photo-1547825407-2d060104b7f8?auto=format&fit=crop&q=80&w=1200",
+        tag: "Premium",
+        price: "239000",
+        pax: "150",
+      },
+    ],
+  },
   hero: {
     tagline: "Exquisite Culinary Experiences",
     title: "Affordable Elegance,",

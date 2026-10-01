@@ -1,8 +1,9 @@
 import { motion } from "motion/react";
 import MenuSlider, { MenuItem } from "../components/MenuSlider";
 import { Link } from "react-router-dom";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { supabase } from "../utils/supabase";
+import { useCMS } from "../context/CMSContext";
 
 // Feature: Fallback images array for dishes without an image
 const fallbackImages = [
@@ -14,8 +15,11 @@ const fallbackImages = [
 ];
 
 export default function MenuPage() {
+  const { cms } = useCMS();
+  const menuCms = cms?.menu;
+
   // Feature: State variables to hold the dynamic menu data and manage loading UI
-  const [menuData, setMenuData] = useState<Record<string, MenuItem[]>>({});
+  const [rawItems, setRawItems] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
   // Feature: Triggers the database fetch the moment the customer navigates to the Menu page
@@ -30,28 +34,7 @@ export default function MenuPage() {
       if (error) {
         console.error("Error fetching menu data:", error.message);
       } else if (data) {
-        // Feature: Iterates through the flat database list and organizes items into categories (e.g., all 'Main Course' together)
-        const groupedData = data.reduce(
-          (acc: Record<string, any[]>, item, index) => {
-            if (!acc[item.category]) {
-              acc[item.category] = [];
-            }
-
-            acc[item.category].push({
-              id: item.id,
-              name: item.name,
-              status: item.status,
-              // Fallbacks: Since these were removed from the DB schema, we provide static fallbacks to prevent the UI from breaking
-              image:
-                item.image_url || fallbackImages[index % fallbackImages.length],
-            });
-
-            return acc;
-          },
-          {},
-        );
-
-        setMenuData(groupedData);
+        setRawItems(data);
       }
       setLoading(false);
     };
@@ -78,6 +61,50 @@ export default function MenuPage() {
     };
   }, []);
 
+  // Reactively compute grouped menuData with CMS image overrides
+  const menuData = useMemo(() => {
+    const grouped: Record<string, MenuItem[]> = {};
+
+    const sourceItems =
+      rawItems.length > 0
+        ? rawItems
+        : (menuCms?.items || []).map((item) => ({
+            id: item.id,
+            name: item.name,
+            category: item.category,
+            status: "Available",
+            description: item.description,
+            image_url: item.image,
+          }));
+
+    sourceItems.forEach((item, index) => {
+      const category = item.category || "Main Course";
+      if (!grouped[category]) {
+        grouped[category] = [];
+      }
+
+      const image =
+        menuCms?.menuImages?.[item.id] ||
+        menuCms?.menuImages?.[item.name] ||
+        menuCms?.items?.find(
+          (m) =>
+            m.id === item.id ||
+            m.name?.toLowerCase() === item.name?.toLowerCase()
+        )?.image ||
+        item.image_url ||
+        fallbackImages[index % fallbackImages.length];
+
+      grouped[category].push({
+        id: item.id,
+        name: item.name,
+        description: item.description || item.sub_category || "",
+        image,
+      });
+    });
+
+    return grouped;
+  }, [rawItems, menuCms]);
+
   return (
     <div className="min-h-screen bg-rich-black pt-24 font-sans">
       <header className="px-10 py-20 text-center border-b border-white/10">
@@ -86,7 +113,7 @@ export default function MenuPage() {
           animate={{ opacity: 1, y: 0 }}
           className="text-gold-400 text-[12px] tracking-[0.5em] font-bold uppercase mb-6 block"
         >
-          Roxan Policarpio Catering
+          {menuCms?.headerSubtitle || "Roxan Policarpio Catering"}
         </motion.span>
         <motion.h1
           initial={{ opacity: 0, y: 20 }}
@@ -94,7 +121,10 @@ export default function MenuPage() {
           transition={{ delay: 0.1 }}
           className="text-6xl md:text-8xl font-serif text-white mb-8"
         >
-          Curated <span className="italic gold-text-gradient">Selection</span>
+          {menuCms?.headerTitle || "Curated"}{" "}
+          <span className="italic gold-text-gradient">
+            {menuCms?.headerTitleItalic || "Selection"}
+          </span>
         </motion.h1>
         <motion.p
           initial={{ opacity: 0, y: 20 }}
@@ -102,7 +132,7 @@ export default function MenuPage() {
           transition={{ delay: 0.2 }}
           className="text-white/40 text-[11px] uppercase tracking-[0.4em] font-bold max-w-2xl mx-auto"
         >
-          Explore our dynamic culinary offerings
+          {menuCms?.description || "Explore our dynamic culinary offerings"}
         </motion.p>
       </header>
 

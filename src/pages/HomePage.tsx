@@ -25,7 +25,7 @@ const fallbackImages = [
 
 export default function HomePage() {
   const { cms } = useCMS();
-  const { hero, process: processData, testimonials, contact } = cms;
+  const { hero, process: processData, testimonials, contact, packages: packagesCms } = cms;
   const [packages, setPackages] = useState<CateringPackage[]>([]);
   const [inclusionCategories, setInclusionCategories] = useState<
     Record<string, string[]>
@@ -217,15 +217,32 @@ export default function HomePage() {
                 className={`p-10 flex flex-col justify-between group hover:bg-[#0F0F0F] transition-colors ${i < 2 ? "md:border-r border-white/10" : ""}`}
               >
                 <div>
-                  <div className="aspect-[16/9] mb-8 overflow-hidden relative">
+                  <div className="aspect-[16/9] mb-8 overflow-hidden relative bg-black/40">
                     {pkg.tag && pkg.tag.toLowerCase() !== "none" && (
                       <div className="absolute top-4 left-4 z-10 bg-gold-400 text-black px-3 py-1 text-[9px] font-bold uppercase tracking-widest rounded-sm">
                         {pkg.tag}
                       </div>
                     )}
                     <img
-                      src={fallbackImages[i % fallbackImages.length]}
+                      src={
+                        packagesCms?.packageImages?.[pkg.id] ||
+                        packagesCms?.packageImages?.[pkg.name] ||
+                        packagesCms?.items?.find(
+                          (item) =>
+                            item.name?.toLowerCase() === pkg.name?.toLowerCase() ||
+                            item.id === pkg.id
+                        )?.image ||
+                        (pkg as any).image_url ||
+                        fallbackImages[i % fallbackImages.length]
+                      }
                       alt={pkg.name}
+                      onError={(e) => {
+                        const target = e.currentTarget;
+                        const fallback = fallbackImages[i % fallbackImages.length];
+                        if (target.src !== fallback) {
+                          target.src = fallback;
+                        }
+                      }}
                       className="w-full h-full object-cover grayscale hover:grayscale-0 transition-all duration-700"
                     />
                   </div>
