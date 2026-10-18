@@ -124,15 +124,19 @@ export default function Navbar() {
     };
     fetchNotifications();
 
-    // Real-time subscription to catch instant status changes pushed by the admin
+    // Fallback polling to keep notifications synced if WebSockets drop
+    const intervalId = setInterval(fetchNotifications, 10000);
+
+    // Real-time subscription to catch instant status changes or deletions
     const channel = supabase
       .channel('user-bookings-changes')
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'bookings', filter: `user_id=eq.${user.id}` }, () => {
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'bookings', filter: `user_id=eq.${user.id}` }, () => {
         fetchNotifications();
       })
       .subscribe();
 
     return () => {
+      clearInterval(intervalId);
       supabase.removeChannel(channel);
     };
   }, [user]);

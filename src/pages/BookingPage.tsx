@@ -33,50 +33,7 @@ import {
 } from "lucide-react";
 import { supabase } from "../utils/supabase";
 import { CATERING_CONTRACT_TERMS } from "../data/cateringContractTerms";
-
-// Client-side image compression helper to ensure receipts upload quickly and reliably
-const compressImage = (file: File): Promise<string> => {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.readAsDataURL(file);
-    reader.onload = (event) => {
-      const img = new Image();
-      img.src = event.target?.result as string;
-      img.onload = () => {
-        const maxWidth = 1000;
-        const maxHeight = 1000;
-        let width = img.width;
-        let height = img.height;
-
-        if (width > height) {
-          if (width > maxWidth) {
-            height = Math.round((height * maxWidth) / width);
-            width = maxWidth;
-          }
-        } else {
-          if (height > maxHeight) {
-            width = Math.round((width * maxHeight) / height);
-            height = maxHeight;
-          }
-        }
-
-        const canvas = document.createElement("canvas");
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = canvas.getContext("2d");
-        if (!ctx) {
-          resolve(event.target?.result as string);
-          return;
-        }
-        ctx.drawImage(img, 0, 0, width, height);
-        const dataUrl = canvas.toDataURL("image/jpeg", 0.75);
-        resolve(dataUrl);
-      };
-      img.onerror = (err) => reject(err);
-    };
-    reader.onerror = (err) => reject(err);
-  });
-};
+import { compressReceiptImage, uploadReceiptImage } from "../utils/receiptUploader";
 
 interface FormData {
   packageId: string;
@@ -173,10 +130,10 @@ const categoryOrder = [
 ];
 
 export default function BookingPage() {
-  // Feature: Minimum selectable date (2 days from today to allow 1 day prep)
+  // Feature: Minimum selectable date (30 days from today to accommodate the 15-day billing balance schedule and event prep)
   const minSelectableDate = (() => {
     const d = new Date();
-    d.setDate(d.getDate() + 2);
+    d.setDate(d.getDate() + 30);
     const yyyy = d.getFullYear();
     const mm = String(d.getMonth() + 1).padStart(2, "0");
     const dd = String(d.getDate()).padStart(2, "0");
@@ -209,6 +166,7 @@ export default function BookingPage() {
   const [paymentScheme, setPaymentScheme] = useState<"Standard 50%" | "Installment 20%">("Standard 50%");
   const [paymentMethod, setPaymentMethod] = useState<"GCash" | "Bank Transfer">("GCash");
   const [receiptImage, setReceiptImage] = useState<string>("");
+  const [receiptBlob, setReceiptBlob] = useState<Blob | null>(null);
   const [receiptFileName, setReceiptFileName] = useState<string>("");
   const [referenceNumber, setReferenceNumber] = useState<string>("");
   const [paymentError, setPaymentError] = useState<string>("");
@@ -284,14 +242,17 @@ export default function BookingPage() {
       const [pkgRes, menuRes, bookingsRes, incRes] = await Promise.all([
         supabase
           .from("packages")
-          .select("*")
+          .select("id, name, price, pax, additional_pax_price, inclusions, status, tag, image_url, category_limits")
           .neq("status", "Archived")
           .neq("status", "none")
           .neq("status", "None"),
-        supabase.from("menu_items").select("*").neq("status", "Archived"),
+        supabase.from("menu_items").select("id, name, category, status").neq("status", "Archived"),
         // Fetch all existing bookings with their times to check for conflicts
         supabase.from("bookings").select("event_date, event_time, status"),
-        supabase.from("inclusions").select("*"),
+        supabase
+          .from("inclusions")
+          .select("id, category, items")
+          .not("category", "like", "__CMS_%"),
       ]);
 
       if (pkgRes.data) {
@@ -353,52 +314,13 @@ export default function BookingPage() {
 
     fetchBookingData();
 
-    // Fallback polling: Refresh packages and inclusions silently every 10 seconds to ensure updates sync even if Realtime is disabled
-    const intervalId = setInterval(() => {
-      supabase
-        .from("packages")
-        .select("*")
-        .neq("status", "Archived")
-        .neq("status", "none")
-        .neq("status", "None")
-        .then(({ data }) => {
-          if (data) {
-            const sortedPackages = data.sort((a: any, b: any) => {
-              const priceA = parseFloat(String(a.price || "0").replace(/[^0-9.-]+/g, ""));
-              const priceB = parseFloat(String(b.price || "0").replace(/[^0-9.-]+/g, ""));
-              return priceA - priceB;
-            });
-            setAvailablePackages(sortedPackages);
-          }
-        });
-
-      supabase.from("menu_items").select("*").neq("status", "Archived").then(({ data }) => {
-        if (data) setMenuOptions(data);
-      });
-
-      supabase.from("inclusions").select("*").then(({ data }) => {
-        if (data) {
-          const grouped: Record<string, string[]> = {};
-          data.forEach((row: any) => {
-            if (!grouped[row.category]) grouped[row.category] = [];
-            if (row.items && row.items.trim() !== "" && row.items !== "-") {
-              if (!grouped[row.category].includes(row.items)) {
-                grouped[row.category].push(row.items);
-              }
-            }
-          });
-          setInclusionCategories(grouped);
-        }
-      });
-    }, 10000);
-
     // Feature: Keep packages updated in real-time during the booking flow
     const channel = supabase
       .channel("packages-changes-booking")
       .on("postgres_changes", { event: "*", schema: "public", table: "packages" }, () => {
         supabase
           .from("packages")
-          .select("*")
+          .select("id, name, price, pax, additional_pax_price, inclusions, status, tag, image_url, category_limits")
           .neq("status", "Archived")
           .neq("status", "none")
           .neq("status", "None")
@@ -414,13 +336,17 @@ export default function BookingPage() {
           });
       })
       .on("postgres_changes", { event: "*", schema: "public", table: "menu_items" }, () => {
-        supabase.from("menu_items").select("*").neq("status", "Archived").then(({ data }) => {
+        supabase.from("menu_items").select("id, name, category, status").neq("status", "Archived").then(({ data }) => {
           if (data) setMenuOptions(data);
         });
       })
       .on("postgres_changes", { event: "*", schema: "public", table: "inclusions" }, () => {
-        supabase.from("inclusions").select("*").then(({ data }) => {
-          if (data) {
+        supabase
+          .from("inclusions")
+          .select("id, category, items")
+          .not("category", "like", "__CMS_%")
+          .then(({ data }) => {
+            if (data) {
             const grouped: Record<string, string[]> = {};
             data.forEach((row: any) => {
               if (!grouped[row.category]) grouped[row.category] = [];
@@ -437,7 +363,6 @@ export default function BookingPage() {
       .subscribe();
 
     return () => {
-      clearInterval(intervalId);
       supabase.removeChannel(channel);
     };
   }, [navigate]);
@@ -453,7 +378,7 @@ export default function BookingPage() {
       }
     } else if (currentStep === 2) {
       if (formData.date && formData.date < minSelectableDate) {
-        setStepError(`Event Date must be ${minSelectableDate} or later.`);
+        setStepError(`Event Date must be booked at least 30 days in advance (${minSelectableDate} or later) to comply with the 15-day billing schedule.`);
         return;
       }
       if (formData.date && formData.date > maxSelectableDate) {
@@ -495,10 +420,22 @@ export default function BookingPage() {
         return;
       }
 
-      // Validate that guest count is within limits
-      const guestCountNum = parseInt(formData.guestCount);
-      if (isNaN(guestCountNum) || guestCountNum < 10 || guestCountNum > maxGuests) {
-        setStepError(`Guest count must be between 10 and ${maxGuests} for this package.`);
+      // Validate that guest count is within limits and auto-allocate excess to additional pax
+      let guestCountNum = parseInt(formData.guestCount, 10);
+      if (!isNaN(guestCountNum) && guestCountNum > maxGuests) {
+        const excess = guestCountNum - maxGuests;
+        const currentAdd = parseInt(formData.additionalPax, 10) || 0;
+        const newAdd = String(currentAdd + excess);
+        setFormData((prev) => ({
+          ...prev,
+          guestCount: String(maxGuests),
+          additionalPax: newAdd,
+        }));
+        guestCountNum = maxGuests;
+      }
+
+      if (isNaN(guestCountNum) || guestCountNum < 10) {
+        setStepError("Guest count must be at least 10 for this package.");
         return;
       }
     } else if (currentStep === 3) {
@@ -670,8 +607,9 @@ export default function BookingPage() {
 
     try {
       setPaymentError("");
-      const compressed = await compressImage(file);
-      setReceiptImage(compressed);
+      const { dataUrl, blob } = await compressReceiptImage(file);
+      setReceiptImage(dataUrl);
+      setReceiptBlob(blob);
       setReceiptFileName(file.name);
     } catch (err) {
       console.error("Receipt compression error:", err);
@@ -695,6 +633,15 @@ export default function BookingPage() {
     setIsProcessingPayment(true);
     setPaymentError("");
 
+    // Attempt to upload receipt image to Supabase Storage bucket first (avoids base64 database bloat)
+    let finalReceiptUrl = receiptImage;
+    if (receiptBlob) {
+      const uploadedUrl = await uploadReceiptImage(receiptBlob, authData.user.id);
+      if (uploadedUrl) {
+        finalReceiptUrl = uploadedUrl;
+      }
+    }
+
     // Clean up any selected menu items that were archived or made unavailable before submission
     const validSelections = formData.menuSelections.filter(itemName => {
       const opt = menuOptions.find(o => o.name === itemName);
@@ -717,7 +664,7 @@ export default function BookingPage() {
       payment_scheme: paymentScheme,
       downpayment_amount: calculatedDownpayment,
       payment_status: "Pending Verification",
-      receipt_url: receiptImage,
+      receipt_url: finalReceiptUrl,
       reference_number: referenceNumber.trim(),
       terms_accepted: true,
       final_balance_amount: calculatedRemainingBalance,
@@ -739,7 +686,7 @@ export default function BookingPage() {
         finalBalanceStatus: "Unpaid",
         installments: paymentScheme === "Installment 20%" ? installmentMilestones : null,
         ref: referenceNumber.trim(),
-        receipt: receiptImage,
+        receipt: finalReceiptUrl,
         termsAccepted: true,
         submittedAt: new Date().toISOString(),
       });
@@ -1030,9 +977,11 @@ export default function BookingPage() {
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
                 <div className="space-y-2 text-white">
-                  <label className="text-base text-white/80 font-bold">
-                    Event Date <span className="text-red-400">*</span>
-                  </label>
+                  <div className="flex justify-between items-center">
+                    <label className="text-base text-white/80 font-bold">
+                      Event Date <span className="text-red-400">*</span>
+                    </label>
+                  </div>
                   <input
                     type="date"
                     min={minSelectableDate}
@@ -1041,7 +990,10 @@ export default function BookingPage() {
                     value={formData.date}
                     onChange={(e) => {
                       const selectedDate = e.target.value;
-                      if (bookedDates.includes(selectedDate)) {
+                      if (selectedDate && selectedDate < minSelectableDate) {
+                        setStepError(`Event Date must be booked at least 30 days in advance (${minSelectableDate} or later).`);
+                        setFormData({ ...formData, date: "", time: "" });
+                      } else if (bookedDates.includes(selectedDate)) {
                         setStepError(`The date ${selectedDate} is already fully booked. Please select another date.`);
                         setFormData({ ...formData, date: "", time: "" });
                       } else {
@@ -1050,6 +1002,9 @@ export default function BookingPage() {
                       }
                     }}
                   />
+                  <p className="text-[11px] text-white/50 leading-relaxed">
+                    Events must be scheduled at least 30 days in advance to allow for event preparation.
+                  </p>
                 </div>
                 <div className="space-y-2">
                   <label className="text-base text-white/80 font-bold">
@@ -1058,20 +1013,42 @@ export default function BookingPage() {
                   <input
                     type="number"
                     min="10"
-                    max={maxGuests}
-                    placeholder="e.g. 50"
+                    placeholder={`e.g. ${maxGuests || 50}`}
                     className="w-full bg-white/5 border border-white/10 px-6 py-4 text-lg focus:outline-none focus:border-gold-400/50 transition-all font-medium"
                     value={formData.guestCount}
                     onChange={(e) => {
                       setStepError("");
                       const val = e.target.value;
-                      if (val === "" || parseInt(val) >= 0) {
-                      const isUnderMax = !val || parseInt(val) < maxGuests;
-                      setFormData({
-                        ...formData,
-                        guestCount: val,
-                        additionalPax: isUnderMax ? "" : formData.additionalPax,
-                      });
+                      if (val === "") {
+                        setFormData({
+                          ...formData,
+                          guestCount: "",
+                          additionalPax: "",
+                        });
+                        return;
+                      }
+                      const num = parseInt(val, 10);
+                      if (!isNaN(num) && num >= 0) {
+                        if (num > maxGuests) {
+                          const currentAdd = parseInt(formData.additionalPax, 10) || 0;
+                          let newAdd: number;
+                          if (formData.guestCount === String(maxGuests) && num === maxGuests + 1 && currentAdd > 0) {
+                            newAdd = currentAdd + 1;
+                          } else {
+                            newAdd = num - maxGuests;
+                          }
+                          setFormData({
+                            ...formData,
+                            guestCount: String(maxGuests),
+                            additionalPax: String(newAdd),
+                          });
+                        } else {
+                          setFormData({
+                            ...formData,
+                            guestCount: val,
+                            additionalPax: num < maxGuests ? "" : formData.additionalPax,
+                          });
+                        }
                       }
                     }}
                     onKeyDown={(e) => {
@@ -1080,6 +1057,16 @@ export default function BookingPage() {
                       }
                     }}
                   />
+                  {parseInt(formData.guestCount, 10) >= maxGuests && parseInt(formData.additionalPax, 10) > 0 ? (
+                    <p className="text-xs text-gold-400 flex items-center gap-1.5 mt-1 font-medium">
+                      <CheckCircle size={14} className="text-gold-400 shrink-0" />
+                      Package capacity is {maxGuests} pax. {formData.additionalPax} additional pax automatically allocated.
+                    </p>
+                  ) : (
+                    <p className="text-[11px] text-white/40 leading-relaxed">
+                      Package covers up to {maxGuests} pax. Excess guests above {maxGuests} are automatically allocated to Additional Pax.
+                    </p>
+                  )}
                 </div>
                 <div className="space-y-2">
                   <label className="text-base text-white/80 font-bold">
@@ -1160,11 +1147,6 @@ export default function BookingPage() {
                       }
                     }}
                   />
-                  {(!formData.guestCount || parseInt(formData.guestCount) < maxGuests) && (
-                    <span className="text-xs font-normal text-white/40 italic block mt-1">
-                      Available at max capacity ({maxGuests} pax)
-                    </span>
-                  )}
                 </div>
                 <div className="col-span-full space-y-2">
                   <label className="text-base text-white/80 font-bold">
@@ -1894,9 +1876,6 @@ export default function BookingPage() {
                     <label className="text-xs font-bold uppercase tracking-wider text-white/90 block">
                       Choose Payment Scheme <span className="text-red-400">*</span>
                     </label>
-                    <span className="text-[10px] text-gold-400/80 uppercase tracking-wider font-semibold">
-                      Per Contract Clause 1
-                    </span>
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -2005,7 +1984,7 @@ export default function BookingPage() {
                       <p className="text-lg font-serif text-white/80 font-bold">
                         ₱{calculatedRemainingBalance.toLocaleString()}
                       </p>
-                      <span className="text-[10px] text-white/40">Strictly due 15 days before event</span>
+                      <span className="text-[10px] text-white/40">Due 15 days before event</span>
                     </div>
                   </div>
                 </div>
@@ -2016,9 +1995,6 @@ export default function BookingPage() {
                     <div className="flex items-center justify-between">
                       <span className="text-xs font-bold uppercase tracking-wider text-gold-300 flex items-center gap-1.5">
                         <Clock size={14} /> Estimated Milestone Billing Schedule
-                      </span>
-                      <span className="text-[10px] text-white/40 font-mono">
-                        Clause 1 Schedule
                       </span>
                     </div>
                     <div className="space-y-2">
@@ -2063,7 +2039,6 @@ export default function BookingPage() {
                       </div>
                       <div>
                         <p className="font-bold text-sm text-white">GCash QR & Transfer</p>
-                        <p className="text-[10px] text-white/50">Instant mobile wallet payment</p>
                       </div>
                     </button>
 
@@ -2081,7 +2056,6 @@ export default function BookingPage() {
                       </div>
                       <div>
                         <p className="font-bold text-sm text-white">Bank Transfer</p>
-                        <p className="text-[10px] text-white/50">BDO / BPI Online Banking</p>
                       </div>
                     </button>
                   </div>
@@ -2162,9 +2136,6 @@ export default function BookingPage() {
                           <span className="text-xs font-bold text-gold-400 uppercase tracking-wider">
                             BDO Unibank
                           </span>
-                          <span className="text-[9px] bg-gold-400/20 text-gold-300 px-2 py-0.5 rounded font-bold">
-                            Current Account
-                          </span>
                         </div>
                         <div>
                           <p className="text-[10px] text-white/50 uppercase font-semibold">Account Name</p>
@@ -2193,9 +2164,6 @@ export default function BookingPage() {
                         <div className="flex justify-between items-center">
                           <span className="text-xs font-bold text-gold-400 uppercase tracking-wider">
                             BPI (Bank of the Phil. Islands)
-                          </span>
-                          <span className="text-[9px] bg-gold-400/20 text-gold-300 px-2 py-0.5 rounded font-bold">
-                            Savings Account
                           </span>
                         </div>
                         <div>
@@ -2246,7 +2214,7 @@ export default function BookingPage() {
                             {receiptFileName || "payment_receipt.jpg"}
                           </p>
                           <p className="text-[11px] text-green-400 font-semibold flex items-center gap-1 mt-0.5">
-                            <CheckCircle size={12} /> Receipt Image Attached & Verified
+                            <CheckCircle size={12} /> Receipt Image Attached
                           </p>
                         </div>
                       </div>
@@ -2254,6 +2222,7 @@ export default function BookingPage() {
                         type="button"
                         onClick={() => {
                           setReceiptImage("");
+                          setReceiptBlob(null);
                           setReceiptFileName("");
                         }}
                         className="px-3 py-1.5 border border-red-500/40 text-red-400 hover:bg-red-500/10 text-xs font-bold rounded transition-colors shrink-0"
@@ -2292,9 +2261,6 @@ export default function BookingPage() {
                     placeholder="e.g. 9012 3456 7890 or Trace ID"
                     className="w-full bg-white/5 border border-white/10 px-4 py-3 text-sm focus:outline-none focus:border-gold-400/50 rounded-lg font-medium text-white"
                   />
-                  <span className="text-[10px] text-white/50 block">
-                    Helps our admin staff match and confirm your booking faster.
-                  </span>
                 </div>
               </div>
 

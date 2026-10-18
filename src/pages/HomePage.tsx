@@ -4,6 +4,7 @@ import { Link } from "react-router-dom";
 import { useState, useEffect } from "react";
 import { supabase } from "../utils/supabase";
 import { useCMS } from "../context/CMSContext";
+import { catalogCache } from "../utils/catalogCache";
 
 export interface CateringPackage {
   id: string;
@@ -42,10 +43,21 @@ export default function HomePage() {
       : [];
 
   useEffect(() => {
-    const fetchPackages = async () => {
+    const fetchPackages = async (forceRefresh = false) => {
+      // 1. Read from in-memory cache if available (0 egress)
+      if (!forceRefresh) {
+        const cachedPkgs = catalogCache.getPackages();
+        const cachedInc = catalogCache.getInclusions();
+        if (cachedPkgs && cachedInc) {
+          setPackages(cachedPkgs.slice(0, 3));
+          setInclusionCategories(cachedInc);
+          return;
+        }
+      }
+
       const { data } = await supabase
         .from("packages")
-        .select("*")
+        .select("id, name, price, pax, additional_pax_price, inclusions, status, tag, image_url, category_limits")
         .neq("status", "Archived")
         .neq("status", "none")
         .neq("status", "None");
@@ -61,10 +73,14 @@ export default function HomePage() {
           );
           return priceA - priceB;
         });
+        catalogCache.setPackages(sortedPackages);
         setPackages(sortedPackages.slice(0, 3));
       }
 
-      const incResponse = await supabase.from("inclusions").select("*");
+      const incResponse = await supabase
+        .from("inclusions")
+        .select("id, category, items")
+        .not("category", "like", "__CMS_%");
       if (incResponse.data) {
         const grouped: Record<string, string[]> = {};
         incResponse.data.forEach((row: any) => {
@@ -77,13 +93,11 @@ export default function HomePage() {
             }
           }
         });
+        catalogCache.setInclusions(grouped);
         setInclusionCategories(grouped);
       }
     };
     fetchPackages();
-
-    // Fallback polling: Refresh packages silently every 10 seconds to ensure updates sync even if Realtime is disabled
-    const intervalId = setInterval(() => fetchPackages(), 10000);
 
     // Feature: Subscribe to real-time changes so package updates reflect instantly on the Home Page
     const channel = supabase
@@ -92,42 +106,21 @@ export default function HomePage() {
         "postgres_changes",
         { event: "*", schema: "public", table: "packages" },
         () => {
-          fetchPackages();
+          catalogCache.invalidate("packages");
+          fetchPackages(true);
         },
       )
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "inclusions" },
         () => {
-          supabase
-            .from("inclusions")
-            .select("*")
-            .then(({ data }) => {
-              if (data) {
-                const grouped: Record<string, string[]> = {};
-                data.forEach((row: any) => {
-                  if (row.category && !row.category.startsWith("__CMS_")) {
-                    if (!grouped[row.category]) grouped[row.category] = [];
-                    if (
-                      row.items &&
-                      row.items.trim() !== "" &&
-                      row.items !== "-"
-                    ) {
-                      if (!grouped[row.category].includes(row.items)) {
-                        grouped[row.category].push(row.items);
-                      }
-                    }
-                  }
-                });
-                setInclusionCategories(grouped);
-              }
-            });
+          catalogCache.invalidate("inclusions");
+          fetchPackages(true);
         },
       )
       .subscribe();
 
     return () => {
-      clearInterval(intervalId);
       supabase.removeChannel(channel);
     };
   }, []);

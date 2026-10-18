@@ -4,6 +4,7 @@ import { Link } from "react-router-dom";
 import { useEffect, useState, useMemo } from "react";
 import { supabase } from "../utils/supabase";
 import { useCMS } from "../context/CMSContext";
+import { catalogCache } from "../utils/catalogCache";
 
 // Feature: Fallback images array for dishes without an image
 const fallbackImages = [
@@ -24,16 +25,26 @@ export default function MenuPage() {
 
   // Feature: Triggers the database fetch the moment the customer navigates to the Menu page
   useEffect(() => {
-    const fetchMenu = async () => {
-      // Queries the 'menu_items' table and explicitly filters out any dishes marked as 'Archived' by the admin
+    const fetchMenu = async (forceRefresh = false) => {
+      if (!forceRefresh) {
+        const cached = catalogCache.getMenuItems();
+        if (cached) {
+          setRawItems(cached);
+          setLoading(false);
+          return;
+        }
+      }
+
+      // Queries the 'menu_items' table with pruned columns
       const { data, error } = await supabase
         .from("menu_items")
-        .select("*")
+        .select("id, name, category, status, sub_category, image_url")
         .neq("status", "Archived");
 
       if (error) {
         console.error("Error fetching menu data:", error.message);
       } else if (data) {
+        catalogCache.setMenuItems(data);
         setRawItems(data);
       }
       setLoading(false);
@@ -41,22 +52,19 @@ export default function MenuPage() {
 
     fetchMenu();
 
-    // Fallback polling and real-time subscription for immediate menu updates
-    const intervalId = setInterval(() => fetchMenu(), 10000);
-
     const channel = supabase
       .channel("menu-changes")
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "menu_items" },
         () => {
-          fetchMenu();
+          catalogCache.invalidate("menu");
+          fetchMenu(true);
         },
       )
       .subscribe();
 
     return () => {
-      clearInterval(intervalId);
       supabase.removeChannel(channel);
     };
   }, []);

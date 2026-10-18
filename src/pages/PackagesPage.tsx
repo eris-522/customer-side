@@ -2,8 +2,9 @@ import { motion } from "motion/react";
 import { ChevronRight, Check } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useState, useEffect } from "react";
-import { supabase } from "../utils/supabase"; // Feature: Imports the Supabase client for database communication
+import { supabase } from "../utils/supabase";
 import { useCMS } from "../context/CMSContext";
+import { catalogCache } from "../utils/catalogCache";
 
 // Feature: Defines the TypeScript interfaces mapping to your Supabase tables
 export interface CateringPackage {
@@ -39,103 +40,91 @@ export default function PackagesPage() {
 
   // Feature: Executes the database query as soon as the user navigates to this page
   useEffect(() => {
-    const fetchOfferings = async () => {
-      // It explicitly filters out any packages that the admin marked as 'Archived'
-      const pkgResponse = await supabase
-        .from("packages")
-        .select("*")
-        .neq("status", "Archived")
-        .neq("status", "none")
-        .neq("status", "None");
+    const fetchOfferings = async (forceRefresh = false) => {
+      // 1. Check in-memory catalogCache first
+      let currentPackages = catalogCache.getPackages();
+      if (!currentPackages || forceRefresh) {
+        const pkgResponse = await supabase
+          .from("packages")
+          .select("id, name, price, pax, additional_pax_price, inclusions, status, tag, image_url, category_limits")
+          .neq("status", "Archived")
+          .neq("status", "none")
+          .neq("status", "None");
 
-      if (pkgResponse.error) {
-        console.error("Error fetching packages:", pkgResponse.error.message);
-      } else if (pkgResponse.data) {
-        // Parse the formatted price string (e.g. "₱ 10,000") into a number and sort from lowest to highest
-        const sortedPackages = (pkgResponse.data as CateringPackage[]).sort(
-          (a, b) => {
-            const priceA = parseFloat(
-              String(a.price || "0").replace(/[^0-9.-]+/g, ""),
-            );
-            const priceB = parseFloat(
-              String(b.price || "0").replace(/[^0-9.-]+/g, ""),
-            );
-            return priceA - priceB;
-          },
-        );
-        setPackages(sortedPackages);
+        if (pkgResponse.error) {
+          console.error("Error fetching packages:", pkgResponse.error.message);
+        } else if (pkgResponse.data) {
+          const sortedPackages = (pkgResponse.data as CateringPackage[]).sort(
+            (a, b) => {
+              const priceA = parseFloat(
+                String(a.price || "0").replace(/[^0-9.-]+/g, ""),
+              );
+              const priceB = parseFloat(
+                String(b.price || "0").replace(/[^0-9.-]+/g, ""),
+              );
+              return priceA - priceB;
+            },
+          );
+          currentPackages = sortedPackages;
+          catalogCache.setPackages(sortedPackages);
+        }
       }
+      if (currentPackages) setPackages(currentPackages);
 
-      // Fetch inclusions for categorization
-      const incResponse = await supabase.from("inclusions").select("*");
-      if (incResponse.error) {
-        console.error("Error fetching inclusions:", incResponse.error.message);
-      } else if (incResponse.data) {
-        const grouped: Record<string, string[]> = {};
-        incResponse.data.forEach((row: any) => {
-          if (row.category && !row.category.startsWith("__CMS_")) {
-            if (!grouped[row.category]) grouped[row.category] = [];
-            if (row.items && row.items.trim() !== "" && row.items !== "-") {
-              if (!grouped[row.category].includes(row.items)) {
-                grouped[row.category].push(row.items);
+      // 2. Check inclusions cache
+      let currentInclusions = catalogCache.getInclusions();
+      if (!currentInclusions || forceRefresh) {
+        const incResponse = await supabase
+          .from("inclusions")
+          .select("id, category, items")
+          .not("category", "like", "__CMS_%");
+        if (incResponse.error) {
+          console.error("Error fetching inclusions:", incResponse.error.message);
+        } else if (incResponse.data) {
+          const grouped: Record<string, string[]> = {};
+          incResponse.data.forEach((row: any) => {
+            if (row.category && !row.category.startsWith("__CMS_")) {
+              if (!grouped[row.category]) grouped[row.category] = [];
+              if (row.items && row.items.trim() !== "" && row.items !== "-") {
+                if (!grouped[row.category].includes(row.items)) {
+                  grouped[row.category].push(row.items);
+                }
               }
             }
-          }
-        });
-        setInclusionCategories(grouped);
+          });
+          currentInclusions = grouped;
+          catalogCache.setInclusions(grouped);
+        }
       }
+      if (currentInclusions) setInclusionCategories(currentInclusions);
 
       setLoading(false);
     };
 
     fetchOfferings();
 
-    // Fallback polling: Refresh offerings silently every 10 seconds to ensure updates sync even if Realtime is disabled
-    const intervalId = setInterval(() => fetchOfferings(), 10000);
-
-    // Feature: Subscribe to real-time changes so package updates (like removed inclusions) reflect instantly
+    // Feature: Subscribe to real-time changes so package updates reflect instantly
     const channel = supabase
       .channel("packages-changes")
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "packages" },
         () => {
-          fetchOfferings();
+          catalogCache.invalidate("packages");
+          fetchOfferings(true);
         },
       )
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "inclusions" },
         () => {
-          supabase
-            .from("inclusions")
-            .select("*")
-            .then(({ data }) => {
-              if (data) {
-                const grouped: Record<string, string[]> = {};
-                data.forEach((row: any) => {
-                  if (row.category && !row.category.startsWith("__CMS_")) {
-                    if (!grouped[row.category]) grouped[row.category] = [];
-                    if (
-                      row.items &&
-                      row.items.trim() !== "" &&
-                      row.items !== "-"
-                    ) {
-                      if (!grouped[row.category].includes(row.items)) {
-                        grouped[row.category].push(row.items);
-                      }
-                    }
-                  }
-                });
-                setInclusionCategories(grouped);
-              }
-            });
+          catalogCache.invalidate("inclusions");
+          fetchOfferings(true);
         },
       )
       .subscribe();
 
     return () => {
-      clearInterval(intervalId);
       supabase.removeChannel(channel);
     };
   }, []);

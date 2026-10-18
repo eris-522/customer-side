@@ -484,29 +484,31 @@ export function CMSProvider({ children }: { children: ReactNode }) {
         }
       } catch (e) {}
 
-      // 2. Dual-layer fallback: Check `inclusions` table under '__CMS_%'
-      try {
-        const { data, error } = await supabase
-          .from("inclusions")
-          .select("*")
-          .like("category", "__CMS_%");
+      // 2. Dual-layer fallback: Only check `inclusions` table if primary table returned no rows
+      if (!hasData) {
+        try {
+          const { data, error } = await supabase
+            .from("inclusions")
+            .select("category, items")
+            .like("category", "__CMS_%");
 
-        if (!error && data && data.length > 0) {
-          data.forEach((row: any) => {
-            const sectionKey = row.category.replace("__CMS_", "");
-            if (sectionKey && (merged as any)[sectionKey] !== undefined) {
-              try {
-                const parsed = JSON.parse(row.items);
-                (merged as any)[sectionKey] = {
-                  ...(DEFAULT_CMS_DATA as any)[sectionKey],
-                  ...parsed,
-                };
-                hasData = true;
-              } catch (err) {}
-            }
-          });
-        }
-      } catch (e) {}
+          if (!error && data && data.length > 0) {
+            data.forEach((row: any) => {
+              const sectionKey = row.category.replace("__CMS_", "");
+              if (sectionKey && (merged as any)[sectionKey] !== undefined) {
+                try {
+                  const parsed = JSON.parse(row.items);
+                  (merged as any)[sectionKey] = {
+                    ...(DEFAULT_CMS_DATA as any)[sectionKey],
+                    ...parsed,
+                  };
+                  hasData = true;
+                } catch (err) {}
+              }
+            });
+          }
+        } catch (e) {}
+      }
 
       if (hasData) {
         setCms(merged);
@@ -521,9 +523,6 @@ export function CMSProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     fetchContent();
-
-    // Polling interval (every 3 seconds for instant reaction)
-    const interval = setInterval(fetchContent, 3000);
 
     // Cross-tab custom event listener
     const handleLocalUpdate = (e: any) => {
@@ -562,7 +561,6 @@ export function CMSProvider({ children }: { children: ReactNode }) {
       .subscribe();
 
     return () => {
-      clearInterval(interval);
       window.removeEventListener("cms_section_updated", handleLocalUpdate);
       supabase.removeChannel(channel);
     };

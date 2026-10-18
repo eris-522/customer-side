@@ -18,52 +18,11 @@ import {
   UploadCloud,
   Copy,
   ShieldAlert,
+  Lock,
 } from "lucide-react";
 import { Link } from "react-router-dom";
 
-// Client-side image compression helper to ensure balance receipts upload quickly and reliably
-const compressImage = (file: File): Promise<string> => {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.readAsDataURL(file);
-    reader.onload = (event) => {
-      const img = new Image();
-      img.src = event.target?.result as string;
-      img.onload = () => {
-        const maxWidth = 1000;
-        const maxHeight = 1000;
-        let width = img.width;
-        let height = img.height;
-
-        if (width > height) {
-          if (width > maxWidth) {
-            height = Math.round((height * maxWidth) / width);
-            width = maxWidth;
-          }
-        } else {
-          if (height > maxHeight) {
-            width = Math.round((width * maxHeight) / height);
-            height = maxHeight;
-          }
-        }
-
-        const canvas = document.createElement("canvas");
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = canvas.getContext("2d");
-        if (!ctx) {
-          resolve(event.target?.result as string);
-          return;
-        }
-        ctx.drawImage(img, 0, 0, width, height);
-        const dataUrl = canvas.toDataURL("image/jpeg", 0.75);
-        resolve(dataUrl);
-      };
-      img.onerror = (err) => reject(err);
-    };
-    reader.onerror = (err) => reject(err);
-  });
-};
+import { compressReceiptImage, uploadReceiptImage } from "../utils/receiptUploader";
 
 export default function MyInquiriesPage() {
   const [bookings, setBookings] = useState<any[]>([]);
@@ -76,11 +35,18 @@ export default function MyInquiriesPage() {
   const [cancelReasonError, setCancelReasonError] = useState("");
   const [viewingReceiptUrl, setViewingReceiptUrl] = useState<string | null>(null);
 
-  // 15-Day Final Balance Payment Modal State
+  // 15-Day Final Balance & Installment Payment Modal State
   const [payingBalanceBooking, setPayingBalanceBooking] = useState<any | null>(null);
+  const [payingMilestone, setPayingMilestone] = useState<{
+    index: number;
+    title: string;
+    amount: number;
+    dueDate?: string;
+  } | null>(null);
   const [balancePaymentMethod, setBalancePaymentMethod] = useState<"GCash" | "Bank Transfer">("GCash");
   const [balanceRef, setBalanceRef] = useState<string>("");
   const [balanceReceiptImage, setBalanceReceiptImage] = useState<string>("");
+  const [balanceReceiptBlob, setBalanceReceiptBlob] = useState<Blob | null>(null);
   const [balanceReceiptName, setBalanceReceiptName] = useState<string>("");
   const [balanceError, setBalanceError] = useState<string>("");
   const [isSubmittingBalance, setIsSubmittingBalance] = useState<boolean>(false);
@@ -202,11 +168,25 @@ export default function MyInquiriesPage() {
     }
   };
 
-  const handleOpenBalanceModal = (booking: any) => {
+  const handleOpenBalanceModal = (booking: any, milestoneIndex?: number, milestone?: any) => {
     setPayingBalanceBooking(booking);
-    setBalancePaymentMethod("GCash");
-    setBalanceRef("");
-    setBalanceReceiptImage("");
+    if (milestoneIndex !== undefined && milestone) {
+      setPayingMilestone({
+        index: milestoneIndex,
+        title: milestone.title || `Installment #${milestoneIndex + 1}`,
+        amount: Number(milestone.amount) || 0,
+        dueDate: milestone.dueDate || "",
+      });
+      setBalancePaymentMethod(milestone.payment_method === "Bank Transfer" ? "Bank Transfer" : "GCash");
+      setBalanceRef(milestone.reference_number || "");
+      setBalanceReceiptImage(milestone.receipt_url || "");
+    } else {
+      setPayingMilestone(null);
+      setBalancePaymentMethod("GCash");
+      setBalanceRef(booking.paymentData?.balanceRef || "");
+      setBalanceReceiptImage(booking.paymentData?.balanceReceipt || "");
+    }
+    setBalanceReceiptBlob(null);
     setBalanceReceiptName("");
     setBalanceError("");
     setCopiedBalanceAccount("");
@@ -223,8 +203,9 @@ export default function MyInquiriesPage() {
 
     try {
       setBalanceError("");
-      const compressed = await compressImage(file);
-      setBalanceReceiptImage(compressed);
+      const { dataUrl, blob } = await compressReceiptImage(file);
+      setBalanceReceiptImage(dataUrl);
+      setBalanceReceiptBlob(blob);
       setBalanceReceiptName(file.name);
     } catch (err) {
       console.error("Receipt compression error:", err);
@@ -243,22 +224,47 @@ export default function MyInquiriesPage() {
     setBalanceError("");
 
     try {
-      // 1. Attempt direct update
-      let { error } = await supabase
-        .from("bookings")
-        .update({
-          final_balance_status: "Pending Verification",
-          final_balance_method: balancePaymentMethod,
-          final_balance_reference: balanceRef.trim(),
-          final_balance_receipt: balanceReceiptImage,
-        })
-        .eq("id", payingBalanceBooking.id);
+      // Attempt to upload receipt image to Supabase Storage bucket first (avoids base64 database bloat)
+      let finalReceiptUrl = balanceReceiptImage;
+      if (balanceReceiptBlob) {
+        const uploadedUrl = await uploadReceiptImage(balanceReceiptBlob, payingBalanceBooking.user_id);
+        if (uploadedUrl) {
+          finalReceiptUrl = uploadedUrl;
+        }
+      }
 
-      // 2. Resilient fallback if columns not yet in DB
-      if (error && error.message.toLowerCase().includes("column")) {
-        console.warn("Direct balance columns not yet in DB. Using fallback metadata sync.", error.message);
-        let currentMeta: any = {};
+      if (payingMilestone !== null) {
+        // === SUBMITTING PAYMENT PROOF FOR AN INDIVIDUAL INSTALLMENT MILESTONE ===
+        const currentSchedule: any[] =
+          payingBalanceBooking.installment_schedule ||
+          payingBalanceBooking.paymentData?.installments ||
+          [];
+
+        const updatedSchedule = currentSchedule.map((item: any, idx: number) => {
+          if (idx === payingMilestone.index) {
+            return {
+              ...item,
+              status: "Pending Verification",
+              payment_method: balancePaymentMethod,
+              reference_number: balanceRef.trim(),
+              receipt_url: finalReceiptUrl,
+              submitted_at: new Date().toISOString(),
+            };
+          }
+          return item;
+        });
+
+        // Update database with new installment schedule
+        let { error } = await supabase
+          .from("bookings")
+          .update({
+            installment_schedule: updatedSchedule,
+          })
+          .eq("id", payingBalanceBooking.id);
+
+        // Fallback / sync metadata in food_allergies if used
         let baseAllergies = payingBalanceBooking.food_allergies || "";
+        let currentMeta: any = {};
         if (baseAllergies.includes("__PAYMENT_METADATA__:")) {
           const parts = baseAllergies.split("__PAYMENT_METADATA__:");
           baseAllergies = parts[0].trim();
@@ -266,55 +272,132 @@ export default function MyInquiriesPage() {
             currentMeta = JSON.parse(parts[1]);
           } catch (e) {}
         }
-        currentMeta.finalBalanceStatus = "Pending Verification";
-        currentMeta.finalBalanceMethod = balancePaymentMethod;
-        currentMeta.finalBalanceRef = balanceRef.trim();
-        currentMeta.finalBalanceReceipt = balanceReceiptImage;
+        currentMeta.installments = updatedSchedule;
         const updatedAllergies = `${baseAllergies ? baseAllergies + "\n" : ""}__PAYMENT_METADATA__:${JSON.stringify(currentMeta)}`;
 
         const fb = await supabase
           .from("bookings")
           .update({ food_allergies: updatedAllergies })
           .eq("id", payingBalanceBooking.id);
-        error = fb.error;
+
+        if (error && fb.error) throw error || fb.error;
+
+        // Update local React state
+        setBookings((prev) =>
+          prev.map((b) =>
+            b.id === payingBalanceBooking.id
+              ? {
+                  ...b,
+                  installment_schedule: updatedSchedule,
+                  food_allergies: updatedAllergies,
+                }
+              : b,
+          ),
+        );
+      } else {
+        // === SUBMITTING FULL FINAL BALANCE ===
+        const currentSchedule: any[] =
+          payingBalanceBooking.installment_schedule ||
+          payingBalanceBooking.paymentData?.installments ||
+          [];
+
+        const updatedSchedule = currentSchedule.map((item: any) => {
+          if (item.status === "Verified" || item.status === "Paid") return item;
+          return {
+            ...item,
+            status: "Pending Verification",
+            payment_method: balancePaymentMethod,
+            reference_number: balanceRef.trim(),
+            receipt_url: finalReceiptUrl,
+            submitted_at: new Date().toISOString(),
+          };
+        });
+
+        const updatePayload: any = {
+          final_balance_status: "Pending Verification",
+          final_balance_method: balancePaymentMethod,
+          final_balance_reference: balanceRef.trim(),
+          final_balance_receipt: finalReceiptUrl,
+        };
+        if (updatedSchedule.length > 0) {
+          updatePayload.installment_schedule = updatedSchedule;
+        }
+
+        let { error } = await supabase
+          .from("bookings")
+          .update(updatePayload)
+          .eq("id", payingBalanceBooking.id);
+
+        // Resilient fallback if columns not yet in DB
+        if (error && error.message.toLowerCase().includes("column")) {
+          console.warn("Direct balance columns not yet in DB. Using fallback metadata sync.", error.message);
+          let currentMeta: any = {};
+          let baseAllergies = payingBalanceBooking.food_allergies || "";
+          if (baseAllergies.includes("__PAYMENT_METADATA__:")) {
+            const parts = baseAllergies.split("__PAYMENT_METADATA__:");
+            baseAllergies = parts[0].trim();
+            try {
+              currentMeta = JSON.parse(parts[1]);
+            } catch (e) {}
+          }
+          currentMeta.finalBalanceStatus = "Pending Verification";
+          currentMeta.finalBalanceMethod = balancePaymentMethod;
+          currentMeta.finalBalanceRef = balanceRef.trim();
+          currentMeta.finalBalanceReceipt = finalReceiptUrl;
+          if (updatedSchedule.length > 0) {
+            currentMeta.installments = updatedSchedule;
+          }
+          const updatedAllergies = `${baseAllergies ? baseAllergies + "\n" : ""}__PAYMENT_METADATA__:${JSON.stringify(currentMeta)}`;
+
+          const fb = await supabase
+            .from("bookings")
+            .update({ food_allergies: updatedAllergies })
+            .eq("id", payingBalanceBooking.id);
+          error = fb.error;
+        }
+
+        if (error) throw error;
+
+        // Update state locally
+        setBookings((prev) =>
+          prev.map((b) =>
+            b.id === payingBalanceBooking.id
+              ? {
+                  ...b,
+                  final_balance_status: "Pending Verification",
+                  final_balance_method: balancePaymentMethod,
+                  final_balance_reference: balanceRef.trim(),
+                  final_balance_receipt: finalReceiptUrl,
+                  installment_schedule: updatedSchedule.length > 0 ? updatedSchedule : b.installment_schedule,
+                  food_allergies:
+                    b.food_allergies && b.food_allergies.includes("__PAYMENT_METADATA__:")
+                      ? (() => {
+                          const parts = b.food_allergies.split("__PAYMENT_METADATA__:");
+                          let m: any = {};
+                          try {
+                            m = JSON.parse(parts[1]);
+                          } catch (e) {}
+                          m.finalBalanceStatus = "Pending Verification";
+                          m.finalBalanceMethod = balancePaymentMethod;
+                          m.finalBalanceRef = balanceRef.trim();
+                          m.finalBalanceReceipt = finalReceiptUrl;
+                          if (updatedSchedule.length > 0) {
+                            m.installments = updatedSchedule;
+                          }
+                          return `${parts[0].trim() ? parts[0].trim() + "\n" : ""}__PAYMENT_METADATA__:${JSON.stringify(m)}`;
+                        })()
+                      : b.food_allergies,
+                }
+              : b,
+          ),
+        );
       }
 
-      if (error) throw error;
-
-      // Update state locally
-      setBookings((prev) =>
-        prev.map((b) =>
-          b.id === payingBalanceBooking.id
-            ? {
-                ...b,
-                final_balance_status: "Pending Verification",
-                final_balance_method: balancePaymentMethod,
-                final_balance_reference: balanceRef.trim(),
-                final_balance_receipt: balanceReceiptImage,
-                food_allergies:
-                  b.food_allergies && b.food_allergies.includes("__PAYMENT_METADATA__:")
-                    ? (() => {
-                        const parts = b.food_allergies.split("__PAYMENT_METADATA__:");
-                        let m: any = {};
-                        try {
-                          m = JSON.parse(parts[1]);
-                        } catch (e) {}
-                        m.finalBalanceStatus = "Pending Verification";
-                        m.finalBalanceMethod = balancePaymentMethod;
-                        m.finalBalanceRef = balanceRef.trim();
-                        m.finalBalanceReceipt = balanceReceiptImage;
-                        return `${parts[0].trim() ? parts[0].trim() + "\n" : ""}__PAYMENT_METADATA__:${JSON.stringify(m)}`;
-                      })()
-                    : b.food_allergies,
-              }
-            : b,
-        ),
-      );
-
       setPayingBalanceBooking(null);
+      setPayingMilestone(null);
     } catch (err: any) {
-      console.error("Error submitting final balance:", err);
-      setBalanceError(err.message || "Failed to submit final balance payment.");
+      console.error("Error submitting payment proof:", err);
+      setBalanceError(err.message || "Failed to submit payment receipt.");
     } finally {
       setIsSubmittingBalance(false);
     }
@@ -679,7 +762,11 @@ export default function MyInquiriesPage() {
                                     className="px-4 py-2 gold-gradient text-black hover:brightness-110 text-xs font-bold uppercase tracking-wider rounded transition-all shadow-md flex items-center gap-1.5"
                                   >
                                     <CreditCard size={13} />
-                                    {paymentData.balanceStatus === "Pending Verification" ? "Re-upload Balance Slip" : "Pay Final Balance"}
+                                    {paymentData.balanceStatus === "Pending Verification"
+                                      ? "Re-upload Balance Slip"
+                                      : paymentData.installments && paymentData.installments.length > 0
+                                      ? "Pay Full Balance at Once"
+                                      : "Pay Final Balance"}
                                   </button>
                                 )}
                               </div>
@@ -687,17 +774,167 @@ export default function MyInquiriesPage() {
 
                             {/* Monthly installment milestone list if 20% scheme was selected */}
                             {paymentData.installments && paymentData.installments.length > 0 && (
-                              <div className="pt-2 border-t border-white/5 space-y-1.5">
-                                <p className="text-[10px] uppercase font-bold text-white/40 tracking-wider">
-                                  Scheduled Installment Milestones (Clause 1)
-                                </p>
-                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
-                                  {paymentData.installments.map((inst: any, idx: number) => (
-                                    <div key={idx} className="flex justify-between items-center px-2.5 py-1.5 bg-black/40 rounded border border-white/5 text-[11px]">
-                                      <span className="text-white/70">{inst.title}</span>
-                                      <span className="font-bold text-gold-400 font-serif">₱{Number(inst.amount).toLocaleString()}</span>
-                                    </div>
-                                  ))}
+                              <div className="pt-3 border-t border-white/10 space-y-2.5">
+                                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+                                  <p className="text-[10px] uppercase font-bold text-white/50 tracking-wider flex items-center gap-1.5">
+                                    <Clock size={12} className="text-gold-400" />
+                                    Scheduled Installment Milestones (Clause 1)
+                                  </p>
+                                  <span className="text-[10px] text-white/40">
+                                    Upload payment receipts milestone by milestone
+                                  </span>
+                                </div>
+                                <div className="space-y-2">
+                                  {(() => {
+                                    const isFullBalancePending =
+                                      paymentData.balanceStatus === "Pending Verification" ||
+                                      Boolean(paymentData.balanceReceipt && paymentData.balanceStatus !== "Verified");
+                                    const isFullBalanceVerified = paymentData.balanceStatus === "Verified";
+
+                                    return paymentData.installments.map((inst: any, idx: number) => {
+                                      const isIndividuallyPaid = inst.status === "Verified" || inst.status === "Paid";
+                                      const isPaid = isIndividuallyPaid || isFullBalanceVerified;
+                                      const isPending = !isIndividuallyPaid && (inst.status === "Pending Verification" || isFullBalancePending);
+                                      const hasReceipt = Boolean(inst.receipt_url) || (isFullBalancePending && Boolean(paymentData.balanceReceipt));
+                                      const receiptToShow = inst.receipt_url || paymentData.balanceReceipt;
+
+                                      // Check if all previous installments have been paid/submitted
+                                      const isPreviousPaid =
+                                        idx === 0 ||
+                                        isFullBalancePending ||
+                                        isFullBalanceVerified ||
+                                        paymentData.installments
+                                          .slice(0, idx)
+                                          .every((prev: any) => prev.status === "Verified" || prev.status === "Paid" || Boolean(prev.receipt_url));
+
+                                      const isLocked = !isPreviousPaid && !isPaid && !isPending;
+                                      const previousMilestone = idx > 0 ? paymentData.installments[idx - 1] : null;
+
+                                      return (
+                                        <div
+                                          key={idx}
+                                          className={`p-3 rounded-lg border transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
+                                            isPaid
+                                              ? "bg-green-500/5 border-green-500/30"
+                                              : isPending
+                                              ? "bg-amber-500/5 border-amber-500/30"
+                                              : isLocked
+                                              ? "bg-white/[0.02] border-white/5 opacity-60"
+                                              : "bg-black/40 border-white/5 hover:border-white/15"
+                                          }`}
+                                        >
+                                          <div className="flex items-center gap-3">
+                                            <div
+                                              className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 font-bold text-xs ${
+                                                isPaid
+                                                  ? "bg-green-500/20 text-green-400 border border-green-500/40"
+                                                  : isPending
+                                                  ? "bg-amber-500/20 text-amber-300 border border-amber-500/40"
+                                                  : isLocked
+                                                  ? "bg-white/5 text-white/30 border border-white/5"
+                                                  : "bg-white/10 text-white/70 border border-white/10"
+                                              }`}
+                                            >
+                                              {isPaid ? (
+                                                <CheckCircle size={14} />
+                                              ) : isPending ? (
+                                                <Clock size={13} className="text-amber-300" />
+                                              ) : isLocked ? (
+                                                <Lock size={12} className="text-white/40" />
+                                              ) : (
+                                                idx + 1
+                                              )}
+                                            </div>
+                                            <div>
+                                              <div className="flex items-center gap-2">
+                                                <span className="font-bold text-white text-xs">{inst.title}</span>
+                                                {isPaid ? (
+                                                  <span className="px-2 py-0.5 rounded-full text-[9px] font-bold uppercase bg-green-500/20 text-green-400 border border-green-500/40 flex items-center gap-1">
+                                                    <CheckCircle size={10} /> Paid
+                                                  </span>
+                                                ) : isPending ? (
+                                                  <span className="px-2 py-0.5 rounded-full text-[9px] font-bold uppercase bg-amber-500/20 text-amber-300 border border-amber-500/40 flex items-center gap-1">
+                                                    <Clock size={10} /> {isFullBalancePending && !inst.receipt_url ? "Pending Approval" : "Under Review"}
+                                                  </span>
+                                                ) : isLocked ? (
+                                                  <span className="px-2 py-0.5 rounded-full text-[9px] font-bold uppercase bg-white/5 text-white/30 border border-white/5 flex items-center gap-1">
+                                                    <Lock size={9} /> Locked
+                                                  </span>
+                                                ) : (
+                                                  <span className="px-2 py-0.5 rounded-full text-[9px] font-bold uppercase bg-white/10 text-white/50 border border-white/10">
+                                                    {inst.status || "Upcoming"}
+                                                  </span>
+                                                )}
+                                              </div>
+                                              <p className="text-[11px] text-white/50 mt-0.5">
+                                                Due Date: <span className="text-white/80 font-medium">{inst.dueDate}</span>
+                                              </p>
+                                              {isFullBalancePending && !isIndividuallyPaid && (
+                                                <p className="text-[10px] text-amber-300/80 italic flex items-center gap-1 mt-0.5">
+                                                  <Clock size={10} className="text-amber-400" /> Covered by Full Balance payment (Pending Approval)
+                                                </p>
+                                              )}
+                                              {isLocked && (
+                                                <p className="text-[10px] text-white/40 italic flex items-center gap-1 mt-0.5">
+                                                  <Lock size={10} className="text-white/30" /> Settle {previousMilestone?.title || `Installment #${idx}`} first to unlock
+                                                </p>
+                                              )}
+                                            </div>
+                                          </div>
+
+                                          <div className="flex items-center justify-between sm:justify-end gap-3 self-stretch sm:self-auto pt-2 sm:pt-0 border-t sm:border-t-0 border-white/5">
+                                            <span className="font-serif font-bold text-gold-400 text-sm">
+                                              ₱{Number(inst.amount).toLocaleString()}
+                                            </span>
+
+                                            <div className="flex items-center gap-1.5">
+                                              {hasReceipt && (
+                                                <button
+                                                  type="button"
+                                                  onClick={() => setViewingReceiptUrl(receiptToShow)}
+                                                  className="px-2.5 py-1.5 border border-white/20 hover:border-gold-400/50 text-white/80 hover:text-white text-[10px] font-bold uppercase tracking-wider rounded transition-colors flex items-center gap-1 cursor-pointer"
+                                                >
+                                                  <Eye size={12} /> View Slip
+                                                </button>
+                                              )}
+
+                                              {!isPaid && (
+                                                isFullBalancePending ? (
+                                                  <button
+                                                    type="button"
+                                                    disabled
+                                                    className="px-3 py-1.5 bg-amber-500/10 border border-amber-500/30 text-amber-300 text-[10px] font-bold uppercase tracking-wider rounded flex items-center gap-1.5 cursor-not-allowed select-none"
+                                                  >
+                                                    <Clock size={11} className="text-amber-400" />
+                                                    Pending Approval
+                                                  </button>
+                                                ) : isLocked ? (
+                                                  <button
+                                                    type="button"
+                                                    disabled
+                                                    title={`Please settle ${previousMilestone?.title || `Installment #${idx}`} first`}
+                                                    className="px-3 py-1.5 bg-white/5 border border-white/10 text-white/30 text-[10px] font-bold uppercase tracking-wider rounded flex items-center gap-1.5 cursor-not-allowed select-none opacity-60"
+                                                  >
+                                                    <Lock size={11} className="text-white/30" />
+                                                    Pay Installment
+                                                  </button>
+                                                ) : (
+                                                  <button
+                                                    type="button"
+                                                    onClick={() => handleOpenBalanceModal({ ...booking, paymentData }, idx, inst)}
+                                                    className="px-3 py-1.5 gold-gradient text-black hover:brightness-110 text-[10px] font-bold uppercase tracking-wider rounded transition-all shadow-sm flex items-center gap-1 cursor-pointer"
+                                                  >
+                                                    <UploadCloud size={12} />
+                                                    {isPending ? "Re-upload Slip" : "Pay Installment"}
+                                                  </button>
+                                                )
+                                              )}
+                                            </div>
+                                          </div>
+                                        </div>
+                                      );
+                                    });
+                                  })()}
                                 </div>
                               </div>
                             )}
@@ -950,15 +1187,18 @@ export default function MyInquiriesPage() {
                   </div>
                   <div>
                     <h3 className="text-xl sm:text-2xl font-serif text-white italic">
-                      Pay <span className="gold-text-gradient font-bold not-italic">Final Balance</span>
+                      Pay <span className="gold-text-gradient font-bold not-italic">{payingMilestone ? payingMilestone.title : "Final Balance"}</span>
                     </h3>
                     <p className="text-xs text-white/60 uppercase tracking-widest font-semibold mt-0.5">
-                      Strictly Due 15 Days Before Event Date (Clause 1)
+                      {payingMilestone ? `Milestone Installment • Due: ${payingMilestone.dueDate || "As scheduled"}` : "Strictly Due 15 Days Before Event Date (Clause 1)"}
                     </p>
                   </div>
                 </div>
                 <button
-                  onClick={() => setPayingBalanceBooking(null)}
+                  onClick={() => {
+                    setPayingBalanceBooking(null);
+                    setPayingMilestone(null);
+                  }}
                   className="text-white/40 hover:text-white p-2 rounded-lg hover:bg-white/5 transition-colors"
                 >
                   <X size={20} />
@@ -979,10 +1219,10 @@ export default function MyInquiriesPage() {
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
                       <p className="text-[10px] uppercase font-bold tracking-widest text-gold-400 mb-1">
-                        Final Balance Amount Due
+                        {payingMilestone ? `${payingMilestone.title} Amount Due` : "Final Balance Amount Due"}
                       </p>
                       <p className="text-3xl font-serif text-gold-400 font-bold">
-                        ₱{Number(payingBalanceBooking.paymentData?.balanceAmount || payingBalanceBooking.final_balance_amount || 0).toLocaleString()}
+                        ₱{Number(payingMilestone ? payingMilestone.amount : (payingBalanceBooking.paymentData?.balanceAmount || payingBalanceBooking.final_balance_amount || 0)).toLocaleString()}
                       </p>
                       <span className="text-[11px] text-white/60">
                         {payingBalanceBooking.packages?.name || "Catering Event Package"}
@@ -990,13 +1230,13 @@ export default function MyInquiriesPage() {
                     </div>
                     <div className="sm:border-l sm:border-white/10 sm:pl-4">
                       <p className="text-[10px] uppercase font-bold tracking-widest text-white/50 mb-1">
-                        Event Date & Settlement Deadline
+                        {payingMilestone ? "Milestone Scheduled Due Date" : "Event Date & Settlement Deadline"}
                       </p>
                       <p className="text-sm font-bold text-white">
-                        {payingBalanceBooking.event_date || "Event Date"}
+                        {payingMilestone ? payingMilestone.dueDate : (payingBalanceBooking.event_date || "Event Date")}
                       </p>
                       <span className="text-[10px] text-amber-300 font-semibold block mt-1">
-                        Strictly due at least 15 days before event
+                        {payingMilestone ? "Installment Payment (Clause 1)" : "Strictly due at least 15 days before event"}
                       </span>
                     </div>
                   </div>
@@ -1144,7 +1384,7 @@ export default function MyInquiriesPage() {
                 {/* Upload Receipt */}
                 <div className="space-y-3 text-left">
                   <label className="text-xs font-bold uppercase tracking-wider text-white/90 block">
-                    Upload Final Balance Receipt <span className="text-red-400">*</span>
+                    Upload {payingMilestone ? `${payingMilestone.title} Receipt` : "Final Balance Receipt"} <span className="text-red-400">*</span>
                   </label>
                   {balanceReceiptImage ? (
                     <div className="p-4 bg-white/5 border border-gold-400/40 rounded-xl flex items-center justify-between gap-4">
@@ -1156,7 +1396,7 @@ export default function MyInquiriesPage() {
                         />
                         <div className="min-w-0">
                           <p className="text-sm font-bold text-white truncate">
-                            {balanceReceiptName || "balance_receipt.jpg"}
+                            {balanceReceiptName || "payment_receipt.jpg"}
                           </p>
                           <p className="text-[11px] text-green-400 font-semibold flex items-center gap-1 mt-0.5">
                             <CheckCircle size={12} /> Receipt Ready for Verification
@@ -1167,6 +1407,7 @@ export default function MyInquiriesPage() {
                         type="button"
                         onClick={() => {
                           setBalanceReceiptImage("");
+                          setBalanceReceiptBlob(null);
                           setBalanceReceiptName("");
                         }}
                         className="px-3 py-1.5 border border-red-500/40 text-red-400 hover:bg-red-500/10 text-xs font-bold rounded transition-colors shrink-0"
@@ -1177,7 +1418,7 @@ export default function MyInquiriesPage() {
                   ) : (
                     <label className="border-2 border-dashed border-white/20 hover:border-gold-400/60 transition-colors p-6 rounded-xl flex flex-col items-center justify-center cursor-pointer bg-white/[0.02] hover:bg-white/[0.04]">
                       <UploadCloud size={32} className="text-gold-400 mb-2" />
-                      <p className="text-sm font-bold text-white">Click to upload balance receipt slip</p>
+                      <p className="text-sm font-bold text-white">Click to upload {payingMilestone ? `${payingMilestone.title} slip` : "balance receipt slip"}</p>
                       <p className="text-xs text-white/50 mt-1">PNG, JPG, or WEBP transaction confirmation</p>
                       <input
                         type="file"
@@ -1208,7 +1449,10 @@ export default function MyInquiriesPage() {
               <div className="p-6 border-t border-white/10 bg-black/60 flex flex-col sm:flex-row items-center justify-between gap-4">
                 <button
                   type="button"
-                  onClick={() => setPayingBalanceBooking(null)}
+                  onClick={() => {
+                    setPayingBalanceBooking(null);
+                    setPayingMilestone(null);
+                  }}
                   className="w-full sm:w-auto px-6 py-3 border border-white/20 text-white/70 text-xs font-bold uppercase tracking-wider hover:bg-white/5 transition-colors rounded-sm"
                 >
                   Cancel
@@ -1219,7 +1463,11 @@ export default function MyInquiriesPage() {
                   disabled={isSubmittingBalance || !balanceReceiptImage}
                   className="w-full sm:w-auto px-8 py-3 gold-gradient text-black text-xs font-bold uppercase tracking-wider hover:brightness-110 transition-all disabled:opacity-40 disabled:cursor-not-allowed rounded-sm flex items-center justify-center gap-2 shadow-lg shadow-gold-400/10"
                 >
-                  {isSubmittingBalance ? "Submitting Balance..." : "Submit Proof of Final Balance"}
+                  {isSubmittingBalance
+                    ? "Submitting Receipt..."
+                    : payingMilestone
+                    ? `Submit Proof for ${payingMilestone.title}`
+                    : "Submit Proof of Final Balance"}
                   {!isSubmittingBalance && <ChevronRight size={14} />}
                 </button>
               </div>
