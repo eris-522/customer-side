@@ -11,8 +11,8 @@ export interface CompressedImageResult {
  */
 export async function compressReceiptImage(
   file: File,
-  maxDimension = 1200,
-  quality = 0.8
+  maxDimension = 900,
+  quality = 0.7
 ): Promise<CompressedImageResult> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();

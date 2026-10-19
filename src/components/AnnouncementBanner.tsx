@@ -17,7 +17,7 @@ export function AnnouncementBanner() {
       <div className="max-w-7xl mx-auto flex items-center justify-between gap-4">
         <div className="flex-1 flex items-center justify-center gap-2 text-center flex-wrap">
           <Sparkles className="w-3.5 h-3.5 shrink-0" />
-          <span className="font-bold text-[11px] sm:text-xs tracking-tight sm:tracking-normal">{announcement.message}</span>
+          <span className="font-bold text-xs tracking-wide">{announcement.message}</span>
           {announcement.linkText && announcement.linkUrl && (
             <Link
               to={announcement.linkUrl}

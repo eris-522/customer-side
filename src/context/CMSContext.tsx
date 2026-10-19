@@ -442,6 +442,8 @@ export const DEFAULT_CMS_DATA: FullCMSData = {
 };
 
 const LOCAL_STORAGE_CMS_KEY = "rp_cms_content_cache";
+const LOCAL_STORAGE_CMS_TIME_KEY = "rp_cms_content_timestamp";
+const CMS_CACHE_TTL = 15 * 60 * 1000; // 15 minutes TTL
 
 interface CMSContextType {
   cms: FullCMSData;
@@ -463,7 +465,17 @@ export function CMSProvider({ children }: { children: ReactNode }) {
   });
   const [isLoading, setIsLoading] = useState(false);
 
-  const fetchContent = async () => {
+  const fetchContent = async (forceRefresh = false) => {
+    // Check if local cache is fresh to avoid unnecessary PostgREST egress
+    if (!forceRefresh) {
+      try {
+        const lastSaved = localStorage.getItem(LOCAL_STORAGE_CMS_TIME_KEY);
+        if (lastSaved && Date.now() - Number(lastSaved) < CMS_CACHE_TTL) {
+          return;
+        }
+      } catch (e) {}
+    }
+
     try {
       const merged: FullCMSData = { ...DEFAULT_CMS_DATA };
       let hasData = false;
@@ -514,6 +526,7 @@ export function CMSProvider({ children }: { children: ReactNode }) {
         setCms(merged);
         try {
           localStorage.setItem(LOCAL_STORAGE_CMS_KEY, JSON.stringify(merged));
+          localStorage.setItem(LOCAL_STORAGE_CMS_TIME_KEY, String(Date.now()));
         } catch (e) {}
       }
     } catch (err) {
@@ -533,21 +546,14 @@ export function CMSProvider({ children }: { children: ReactNode }) {
     };
     window.addEventListener("cms_section_updated", handleLocalUpdate);
 
-    // Realtime postgres changes on `cms_content` and `inclusions`
+    // Realtime postgres changes on `cms_content` and instant broadcast events
     const channel = supabase
       .channel("customer-cms-sync")
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "cms_content" },
         () => {
-          fetchContent();
-        }
-      )
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "inclusions" },
-        () => {
-          fetchContent();
+          fetchContent(true);
         }
       )
       .on("broadcast", { event: "cms_update" }, (payload: any) => {

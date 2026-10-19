@@ -19,6 +19,14 @@ export interface CateringPackage {
   image_url?: string;
 }
 
+export const formatPrice = (price?: string | number) => {
+  if (price === undefined || price === null || price === "") return "₱0";
+  const clean = String(price).replace(/[^0-9.-]+/g, "");
+  const num = parseFloat(clean);
+  if (isNaN(num)) return String(price).startsWith("₱") ? String(price) : `₱${price}`;
+  return `₱${num.toLocaleString("en-US")}`;
+};
+
 // Feature: Fallback images array since the image column was removed from the database schema to simplify the backend
 const fallbackImages = [
   "https://images.unsplash.com/photo-1547825407-2d060104b7f8?auto=format&fit=crop&q=80&w=800",
@@ -229,7 +237,7 @@ export default function PackagesPage() {
                           {pkg.name}
                         </h3>
                         <span className="text-gold-400 font-serif text-lg shrink-0">
-                          {pkg.price}
+                          {formatPrice(pkg.price)}
                         </span>
                       </div>
 
@@ -242,7 +250,7 @@ export default function PackagesPage() {
                           <>
                             <span className="w-1 h-1 rounded-full bg-white/20"></span>
                             <span className="text-[10px] text-gold-400/80 uppercase tracking-widest font-bold">
-                              +₱{pkg.additional_pax_price} / Extra Pax
+                              +{formatPrice(pkg.additional_pax_price)} / Extra Pax
                             </span>
                           </>
                         )}

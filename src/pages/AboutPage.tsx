@@ -89,7 +89,7 @@ export default function AboutPage() {
             <span className="text-gold-400 text-[10px] tracking-[0.4em] font-bold uppercase mb-4 block italic">
               {about.valuesSubtitle || "Our Foundations"}
             </span>
-            <h2 className="text-4xl md:text-6xl font-serif tracking-tight text-white uppercase">
+            <h2 className="text-4xl md:text-6xl font-serif tracking-normal text-white uppercase">
               {about.valuesTitle || "The Pillars of"} <span className="italic">{about.valuesTitleItalic || "Excellence"}</span>
             </h2>
           </div>

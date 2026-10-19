@@ -4,6 +4,11 @@
 @theme {
   --font-sans: "Montserrat", ui-sans-serif, system-ui, sans-serif;
   --font-serif: "Playfair Display", ui-serif, Georgia, serif;
+
+  --tracking-normal: 0.02em;
+  --tracking-wide: 0.04em;
+  --tracking-wider: 0.06em;
+  --tracking-widest: 0.12em;
   
   --color-gold-50: #fbf9f4;
   --color-gold-100: #f4efdf;
@@ -23,10 +28,16 @@
 @layer base {
   body {
     @apply bg-rich-black text-[#E5E5E5] font-sans antialiased selection:bg-gold-400/30 selection:text-gold-100;
+    letter-spacing: 0.02em;
+  }
+
+  input, button, select, textarea, table {
+    letter-spacing: inherit;
   }
   
   h1, h2, h3, h4, h5, h6 {
     @apply font-serif;
+    letter-spacing: 0.015em;
   }
 }
 

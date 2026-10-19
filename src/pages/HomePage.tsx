@@ -17,6 +17,14 @@ export interface CateringPackage {
   status: string;
 }
 
+const formatPrice = (price?: string | number) => {
+  if (price === undefined || price === null || price === "") return "₱0";
+  const clean = String(price).replace(/[^0-9.-]+/g, "");
+  const num = parseFloat(clean);
+  if (isNaN(num)) return String(price).startsWith("₱") ? String(price) : `₱${price}`;
+  return `₱${num.toLocaleString("en-US")}`;
+};
+
 const fallbackImages = [
   "https://images.unsplash.com/photo-1547825407-2d060104b7f8?auto=format&fit=crop&q=80&w=800",
   "https://images.unsplash.com/photo-1555244162-803834f70033?auto=format&fit=crop&q=80&w=800",
@@ -193,7 +201,7 @@ export default function HomePage() {
               <span className="text-gold-400 text-[10px] tracking-[0.4em] font-bold uppercase mb-4 block italic">
                 Featured Packages
               </span>
-              <h2 className="text-4xl md:text-6xl font-serif tracking-tight">
+              <h2 className="text-4xl md:text-6xl font-serif tracking-normal">
                 Roxan <span className="italic">Catering</span> Collections
               </h2>
             </div>
@@ -243,11 +251,11 @@ export default function HomePage() {
                     {pkg.name}
                   </h3>
                   <p className="text-[10px] text-white/50 uppercase tracking-widest mb-6">
-                    {pkg.price} • {pkg.pax} Guests
+                    {formatPrice(pkg.price)} • {pkg.pax} Guests
                     {pkg.additional_pax_price && (
                       <>
                         {" "}•{" "}
-                        <span className="text-gold-400/80 font-bold">+₱{pkg.additional_pax_price} / Extra Pax</span>
+                        <span className="text-gold-400/80 font-bold">+{formatPrice(pkg.additional_pax_price)} / Extra Pax</span>
                       </>
                     )}
                   </p>

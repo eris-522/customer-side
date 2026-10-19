@@ -64,36 +64,18 @@ export default function MyInquiriesPage() {
 
         const { data: bookingsData, error } = await supabase
           .from("bookings")
-          .select("*")
+          .select("*, packages (id, name)")
           .eq("user_id", authData.user.id);
 
         if (error) throw error;
 
-        // Debugging log to see exactly what Supabase returns in the browser console
-        console.log("Database Bookings Fetch:", bookingsData);
-
         if (bookingsData && bookingsData.length > 0) {
-          const { data: pkgData } = await supabase
-            .from("packages")
-            .select("id, name");
-
-          const merged = bookingsData
-            .map((b) => ({
-              ...b,
-              packages:
-                pkgData?.find((p) => String(p.id) === String(b.package_id)) ||
-                null,
-            }))
-            .sort((a, b) => {
-              const dateA = new Date(
-                a.created_at || a.event_date || 0,
-              ).getTime();
-              const dateB = new Date(
-                b.created_at || b.event_date || 0,
-              ).getTime();
-              return (isNaN(dateB) ? 0 : dateB) - (isNaN(dateA) ? 0 : dateA);
-            });
-          setBookings(merged);
+          const sorted = [...bookingsData].sort((a, b) => {
+            const dateA = new Date(a.created_at || a.event_date || 0).getTime();
+            const dateB = new Date(b.created_at || b.event_date || 0).getTime();
+            return (isNaN(dateB) ? 0 : dateB) - (isNaN(dateA) ? 0 : dateA);
+          });
+          setBookings(sorted);
         } else {
           setBookings([]);
         }
@@ -1293,11 +1275,11 @@ export default function MyInquiriesPage() {
                       <div className="bg-white p-3 rounded-lg shadow-xl shrink-0 flex flex-col items-center">
                         <div className="w-32 h-32 bg-gray-100 border-2 border-dashed border-[#007DFE]/40 rounded flex flex-col items-center justify-center p-2 relative overflow-hidden">
                           <QrCode className="text-[#007DFE] opacity-70" size={44} />
-                          <span className="text-[9px] font-bold text-[#007DFE] mt-1 uppercase tracking-tighter">
+                          <span className="text-xs font-bold text-[#007DFE] mt-1 uppercase tracking-wider">
                             GCash QR
                           </span>
                         </div>
-                        <span className="text-[10px] text-gray-700 font-bold uppercase tracking-wider mt-2">
+                        <span className="text-xs text-gray-700 font-bold uppercase tracking-wider mt-2">
                           Scan to Pay
                         </span>
                       </div>

@@ -34,6 +34,7 @@ import {
 import { supabase } from "../utils/supabase";
 import { CATERING_CONTRACT_TERMS } from "../data/cateringContractTerms";
 import { compressReceiptImage, uploadReceiptImage } from "../utils/receiptUploader";
+import { catalogCache } from "../utils/catalogCache";
 
 interface FormData {
   packageId: string;
@@ -238,32 +239,55 @@ export default function BookingPage() {
 
       setUserProfile(profile);
 
-      // Fetch active packages, menu items, and add-ons
-      const [pkgRes, menuRes, bookingsRes, incRes] = await Promise.all([
+      // Feature: Check in-memory catalogCache first to reduce Supabase PostgREST egress
+      const cachedPkgs = catalogCache.getPackages();
+      const cachedMenu = catalogCache.getMenuItems();
+      const cachedInclusions = catalogCache.getInclusions();
+      const todayStr = new Date().toISOString().split("T")[0];
+
+      // Fetch active packages, menu items, and add-ons (using cache when available)
+      const [bookingsRes, pkgRes, menuRes, incRes] = await Promise.all([
+        // Only fetch active bookings from today onwards to check for slot conflicts (cuts 90%+ of transferred rows)
         supabase
-          .from("packages")
-          .select("id, name, price, pax, additional_pax_price, inclusions, status, tag, image_url, category_limits")
-          .neq("status", "Archived")
-          .neq("status", "none")
-          .neq("status", "None"),
-        supabase.from("menu_items").select("id, name, category, status").neq("status", "Archived"),
-        // Fetch all existing bookings with their times to check for conflicts
-        supabase.from("bookings").select("event_date, event_time, status"),
-        supabase
-          .from("inclusions")
-          .select("id, category, items")
-          .not("category", "like", "__CMS_%"),
+          .from("bookings")
+          .select("event_date, event_time, status")
+          .gte("event_date", todayStr)
+          .not("status", "in", '("Cancelled","Rejected","Declined","Archived")'),
+        cachedPkgs
+          ? Promise.resolve({ data: cachedPkgs, cached: true })
+          : supabase
+              .from("packages")
+              .select("id, name, price, pax, additional_pax_price, inclusions, status, tag, image_url, category_limits")
+              .neq("status", "Archived")
+              .neq("status", "none")
+              .neq("status", "None"),
+        cachedMenu
+          ? Promise.resolve({ data: cachedMenu, cached: true })
+          : supabase.from("menu_items").select("id, name, category, status").neq("status", "Archived"),
+        cachedInclusions
+          ? Promise.resolve({ data: cachedInclusions, cached: true })
+          : supabase
+              .from("inclusions")
+              .select("id, category, items")
+              .not("category", "like", "__CMS_%"),
       ]);
 
       if (pkgRes.data) {
-        const sortedPackages = pkgRes.data.sort((a: any, b: any) => {
-          const priceA = parseFloat(String(a.price || "0").replace(/[^0-9.-]+/g, ""));
-          const priceB = parseFloat(String(b.price || "0").replace(/[^0-9.-]+/g, ""));
-          return priceA - priceB;
-        });
+        let sortedPackages = pkgRes.data;
+        if (!(pkgRes as any).cached) {
+          sortedPackages = [...pkgRes.data].sort((a: any, b: any) => {
+            const priceA = parseFloat(String(a.price || "0").replace(/[^0-9.-]+/g, ""));
+            const priceB = parseFloat(String(b.price || "0").replace(/[^0-9.-]+/g, ""));
+            return priceA - priceB;
+          });
+          catalogCache.setPackages(sortedPackages);
+        }
         setAvailablePackages(sortedPackages);
       }
-      if (menuRes.data) setMenuOptions(menuRes.data);
+      if (menuRes.data) {
+        if (!(menuRes as any).cached) catalogCache.setMenuItems(menuRes.data);
+        setMenuOptions(menuRes.data);
+      }
       if (bookingsRes.data) {
         // Keep only active bookings to calculate gaps against
         const validBookings = bookingsRes.data.filter(
@@ -297,16 +321,21 @@ export default function BookingPage() {
         setBookedDates(fullyBooked);
       }
       if (incRes.data) {
-        const grouped: Record<string, string[]> = {};
-        incRes.data.forEach((row: any) => {
-          if (!grouped[row.category]) grouped[row.category] = [];
-          if (row.items && row.items.trim() !== "" && row.items !== "-") {
-            if (!grouped[row.category].includes(row.items)) {
-              grouped[row.category].push(row.items);
+        if ((incRes as any).cached) {
+          setInclusionCategories(incRes.data);
+        } else {
+          const grouped: Record<string, string[]> = {};
+          incRes.data.forEach((row: any) => {
+            if (!grouped[row.category]) grouped[row.category] = [];
+            if (row.items && row.items.trim() !== "" && row.items !== "-") {
+              if (!grouped[row.category].includes(row.items)) {
+                grouped[row.category].push(row.items);
+              }
             }
-          }
-        });
-        setInclusionCategories(grouped);
+          });
+          catalogCache.setInclusions(grouped);
+          setInclusionCategories(grouped);
+        }
       }
 
       setLoadingData(false);
@@ -318,6 +347,7 @@ export default function BookingPage() {
     const channel = supabase
       .channel("packages-changes-booking")
       .on("postgres_changes", { event: "*", schema: "public", table: "packages" }, () => {
+        catalogCache.invalidate("packages");
         supabase
           .from("packages")
           .select("id, name, price, pax, additional_pax_price, inclusions, status, tag, image_url, category_limits")
@@ -331,16 +361,22 @@ export default function BookingPage() {
                 const priceB = parseFloat(String(b.price || "0").replace(/[^0-9.-]+/g, ""));
                 return priceA - priceB;
               });
+              catalogCache.setPackages(sortedPackages);
               setAvailablePackages(sortedPackages);
             }
           });
       })
       .on("postgres_changes", { event: "*", schema: "public", table: "menu_items" }, () => {
+        catalogCache.invalidate("menu");
         supabase.from("menu_items").select("id, name, category, status").neq("status", "Archived").then(({ data }) => {
-          if (data) setMenuOptions(data);
+          if (data) {
+            catalogCache.setMenuItems(data);
+            setMenuOptions(data);
+          }
         });
       })
       .on("postgres_changes", { event: "*", schema: "public", table: "inclusions" }, () => {
+        catalogCache.invalidate("inclusions");
         supabase
           .from("inclusions")
           .select("id, category, items")
@@ -356,6 +392,7 @@ export default function BookingPage() {
                 }
               }
             });
+            catalogCache.setInclusions(grouped);
             setInclusionCategories(grouped);
           }
         });
@@ -2079,11 +2116,11 @@ export default function BookingPage() {
                             <div className="w-3 h-3 bg-[#007DFE]"></div>
                           </div>
                           <QrCode className="text-[#007DFE] opacity-70" size={48} />
-                          <span className="text-[9px] font-bold text-[#007DFE] mt-1 uppercase tracking-tighter">
+                          <span className="text-xs font-bold text-[#007DFE] mt-1 uppercase tracking-wider">
                             GCash QR Code
                           </span>
                         </div>
-                        <span className="text-[10px] text-gray-700 font-bold uppercase tracking-wider mt-2">
+                        <span className="text-xs text-gray-700 font-bold uppercase tracking-wider mt-2">
                           Scan to Pay ₱{calculatedDownpayment.toLocaleString()}
                         </span>
                       </div>
