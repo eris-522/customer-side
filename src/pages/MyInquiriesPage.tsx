@@ -151,6 +151,20 @@ export default function MyInquiriesPage() {
   };
 
   const handleOpenBalanceModal = (booking: any, milestoneIndex?: number, milestone?: any) => {
+    // If attempting to pay full balance, check if client already started paying in installments
+    if (milestoneIndex === undefined && !milestone) {
+      const schedule = booking.installment_schedule || booking.paymentData?.installments || [];
+      const hasStarted = schedule.some(
+        (inst: any) =>
+          inst.status === "Verified" ||
+          inst.status === "Paid" ||
+          (Boolean(inst.receipt_url) && !booking.paymentData?.balanceReceipt) ||
+          (inst.status === "Pending Verification" && !booking.paymentData?.balanceReceipt)
+      );
+      if (hasStarted && !booking.paymentData?.balanceReceipt) {
+        return;
+      }
+    }
     setPayingBalanceBooking(booking);
     if (milestoneIndex !== undefined && milestone) {
       setPayingMilestone({
@@ -278,6 +292,24 @@ export default function MyInquiriesPage() {
         );
       } else {
         // === SUBMITTING FULL FINAL BALANCE ===
+        const checkSchedule: any[] =
+          payingBalanceBooking.installment_schedule ||
+          payingBalanceBooking.paymentData?.installments ||
+          [];
+
+        const hasStarted = checkSchedule.some(
+          (inst: any) =>
+            inst.status === "Verified" ||
+            inst.status === "Paid" ||
+            (Boolean(inst.receipt_url) && !payingBalanceBooking.paymentData?.balanceReceipt) ||
+            (inst.status === "Pending Verification" && !payingBalanceBooking.paymentData?.balanceReceipt)
+        );
+
+        if (hasStarted && !payingBalanceBooking.paymentData?.balanceReceipt) {
+          setBalanceError("You have already started paying via installment milestones. Full balance payment is no longer allowed.");
+          setIsSubmittingBalance(false);
+          return;
+        }
         const currentSchedule: any[] =
           payingBalanceBooking.installment_schedule ||
           payingBalanceBooking.paymentData?.installments ||
@@ -675,8 +707,21 @@ export default function MyInquiriesPage() {
                         </div>
 
                         {/* 15-Day Final Balance Settlement Tracker (Clause 1) */}
-                        {!isCancelled && (
-                          <div className="p-4 bg-gradient-to-r from-gold-400/[0.07] via-white/[0.03] to-transparent border border-gold-400/25 rounded-sm space-y-3">
+                        {!isCancelled && (() => {
+                          const hasStartedInstallments = Boolean(
+                            paymentData.installments &&
+                            paymentData.installments.length > 0 &&
+                            paymentData.installments.some(
+                              (inst: any) =>
+                                inst.status === "Verified" ||
+                                inst.status === "Paid" ||
+                                (Boolean(inst.receipt_url) && !paymentData.balanceReceipt) ||
+                                (inst.status === "Pending Verification" && !paymentData.balanceReceipt)
+                            )
+                          );
+
+                          return (
+                            <div className="p-4 bg-gradient-to-r from-gold-400/[0.07] via-white/[0.03] to-transparent border border-gold-400/25 rounded-sm space-y-3">
                             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-white/10 pb-2">
                               <div className="flex items-center gap-2">
                                 <Clock size={15} className="text-gold-400 shrink-0" />
@@ -695,6 +740,10 @@ export default function MyInquiriesPage() {
                                 ) : paymentData.balanceStatus === "Pending Verification" ? (
                                   <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-amber-500/20 text-amber-300 border border-amber-500/40 flex items-center gap-1">
                                     <Clock size={12} /> Balance Under Review
+                                  </span>
+                                ) : hasStartedInstallments ? (
+                                  <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-purple-500/20 text-purple-300 border border-purple-500/40 flex items-center gap-1">
+                                    <Clock size={12} /> Installment Plan Active
                                   </span>
                                 ) : (
                                   <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-yellow-500/20 text-yellow-300 border border-yellow-500/40">
@@ -738,18 +787,42 @@ export default function MyInquiriesPage() {
                                 )}
 
                                 {paymentData.balanceStatus !== "Verified" && (
-                                  <button
-                                    type="button"
-                                    onClick={() => handleOpenBalanceModal({ ...booking, paymentData })}
-                                    className="px-4 py-2 gold-gradient text-black hover:brightness-110 text-xs font-bold uppercase tracking-wider rounded transition-all shadow-md flex items-center gap-1.5"
-                                  >
-                                    <CreditCard size={13} />
-                                    {paymentData.balanceStatus === "Pending Verification"
-                                      ? "Re-upload Balance Slip"
-                                      : paymentData.installments && paymentData.installments.length > 0
-                                      ? "Pay Full Balance at Once"
-                                      : "Pay Final Balance"}
-                                  </button>
+                                  paymentData.balanceStatus === "Pending Verification" ? (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleOpenBalanceModal({ ...booking, paymentData })}
+                                      className="px-4 py-2 gold-gradient text-black hover:brightness-110 text-xs font-bold uppercase tracking-wider rounded transition-all shadow-md flex items-center gap-1.5"
+                                    >
+                                      <CreditCard size={13} />
+                                      Re-upload Balance Slip
+                                    </button>
+                                  ) : hasStartedInstallments ? (
+                                    <div className="flex flex-col items-end gap-1">
+                                      <button
+                                        type="button"
+                                        disabled
+                                        className="px-4 py-2 bg-white/5 border border-white/10 text-white/30 text-xs font-bold uppercase tracking-wider rounded cursor-not-allowed flex items-center gap-1.5 select-none"
+                                        title="Installment payments have already been made. Paying full balance at once is disabled."
+                                      >
+                                        <Lock size={13} className="text-white/30" />
+                                        Pay Full Balance at Once
+                                      </button>
+                                      <span className="text-[10px] text-white/40">
+                                        Installment plan active • Pay via milestones below
+                                      </span>
+                                    </div>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleOpenBalanceModal({ ...booking, paymentData })}
+                                      className="px-4 py-2 gold-gradient text-black hover:brightness-110 text-xs font-bold uppercase tracking-wider rounded transition-all shadow-md flex items-center gap-1.5"
+                                    >
+                                      <CreditCard size={13} />
+                                      {paymentData.installments && paymentData.installments.length > 0
+                                        ? "Pay Full Balance at Once"
+                                        : "Pay Final Balance"}
+                                    </button>
+                                  )
                                 )}
                               </div>
                             </div>
@@ -921,7 +994,8 @@ export default function MyInquiriesPage() {
                               </div>
                             )}
                           </div>
-                        )}
+                        );
+                      })()}
                       </div>
                     )}
 
