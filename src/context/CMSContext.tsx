@@ -443,7 +443,111 @@ export const DEFAULT_CMS_DATA: FullCMSData = {
 
 const LOCAL_STORAGE_CMS_KEY = "rp_cms_content_cache";
 const LOCAL_STORAGE_CMS_TIME_KEY = "rp_cms_content_timestamp";
-const CMS_CACHE_TTL = 15 * 60 * 1000; // 15 minutes TTL
+export const CMS_SYNC_CHANNEL_NAME = "cms-live-sync";
+
+/**
+ * Deeply merges a section's incoming data with DEFAULT_CMS_DATA[sectionKey],
+ * ensuring that cleared/empty strings ("") or emptied arrays revert to default values.
+ */
+export function mergeSectionWithDefaults<K extends keyof FullCMSData>(
+  sectionKey: K,
+  incoming: any
+): FullCMSData[K] {
+  const defaults = DEFAULT_CMS_DATA[sectionKey];
+  if (!defaults || typeof incoming !== "object" || incoming === null) {
+    return JSON.parse(JSON.stringify(defaults));
+  }
+
+  const result: any = { ...defaults, ...incoming };
+
+  for (const key of Object.keys(defaults)) {
+    const defVal = (defaults as any)[key];
+    const incVal = incoming[key];
+
+    if (typeof defVal === "string") {
+      if (
+        defVal.trim() !== "" &&
+        (typeof incVal !== "string" || incVal.trim() === "")
+      ) {
+        result[key] = defVal;
+      }
+    } else if (typeof defVal === "boolean") {
+      if (typeof incVal !== "boolean") {
+        result[key] = defVal;
+      }
+    } else if (Array.isArray(defVal)) {
+      if (Array.isArray(incVal) && incVal.length > 0) {
+        if (
+          (sectionKey === "packages" || sectionKey === "menu") &&
+          key === "items"
+        ) {
+          const itemMap = new Map<string, any>();
+          defVal.forEach((dItem: any) => {
+            const k = dItem.id || dItem.name;
+            if (k) itemMap.set(k, { ...dItem });
+          });
+          incVal.forEach((iItem: any) => {
+            if (!iItem) return;
+            const k = iItem.id || iItem.name;
+            if (!k) return;
+            const existing = itemMap.get(k);
+            const resolvedImage =
+              typeof iItem.image === "string" && iItem.image.trim() !== ""
+                ? iItem.image
+                : existing?.image || "";
+            if (resolvedImage || existing) {
+              itemMap.set(k, {
+                ...(existing || {}),
+                ...iItem,
+                image: resolvedImage,
+              });
+            }
+          });
+          result[key] = Array.from(itemMap.values());
+        } else {
+          result[key] = incVal.map((item: any, idx: number) => {
+            const defItem =
+              defVal.find((d: any) => d?.id && item?.id && d.id === item.id) ||
+              defVal[idx];
+            if (!defItem || typeof item !== "object" || item === null) {
+              return item;
+            }
+            const mergedItem: any = { ...defItem, ...item };
+            for (const field of Object.keys(defItem)) {
+              if (
+                typeof defItem[field] === "string" &&
+                defItem[field].trim() !== "" &&
+                typeof item[field] === "string" &&
+                item[field].trim() === ""
+              ) {
+                mergedItem[field] = defItem[field];
+              }
+            }
+            return mergedItem;
+          });
+        }
+      } else {
+        result[key] = defVal;
+      }
+    } else if (typeof defVal === "object" && defVal !== null) {
+      const mergedMap: Record<string, string> = { ...defVal };
+      if (typeof incVal === "object" && incVal !== null) {
+        for (const [mapKey, mapVal] of Object.entries(incVal)) {
+          if (typeof mapVal === "string" && mapVal.trim() !== "") {
+            mergedMap[mapKey] = mapVal;
+          } else if (defVal[mapKey]) {
+            mergedMap[mapKey] = defVal[mapKey];
+          } else {
+            delete mergedMap[mapKey];
+          }
+        }
+      }
+      result[key] = mergedMap;
+    }
+  }
+
+  return result as FullCMSData[K];
+}
 
 interface CMSContextType {
   cms: FullCMSData;
@@ -458,38 +562,38 @@ export function CMSProvider({ children }: { children: ReactNode }) {
     try {
       const cached = localStorage.getItem(LOCAL_STORAGE_CMS_KEY);
       if (cached) {
-        return { ...DEFAULT_CMS_DATA, ...JSON.parse(cached) };
+        const parsed = JSON.parse(cached);
+        const initial: FullCMSData = JSON.parse(JSON.stringify(DEFAULT_CMS_DATA));
+        (Object.keys(DEFAULT_CMS_DATA) as Array<keyof FullCMSData>).forEach(
+          (key) => {
+            if (parsed?.[key]) {
+              (initial as any)[key] = mergeSectionWithDefaults(key, parsed[key]);
+            }
+          }
+        );
+        return initial;
       }
     } catch (e) {}
     return DEFAULT_CMS_DATA;
   });
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading] = useState(false);
 
-  const fetchContent = async (forceRefresh = false) => {
-    // Check if local cache is fresh to avoid unnecessary PostgREST egress
-    if (!forceRefresh) {
-      try {
-        const lastSaved = localStorage.getItem(LOCAL_STORAGE_CMS_TIME_KEY);
-        if (lastSaved && Date.now() - Number(lastSaved) < CMS_CACHE_TTL) {
-          return;
-        }
-      } catch (e) {}
-    }
-
+  const fetchContent = async (_forceRefresh = false) => {
     try {
-      const merged: FullCMSData = { ...DEFAULT_CMS_DATA };
+      const merged: FullCMSData = JSON.parse(JSON.stringify(DEFAULT_CMS_DATA));
       let hasData = false;
 
-      // 1. Try primary table `cms_content`
+      // 1. Always query primary table `cms_content` so remote/port-forwarded/Vercel deployments stay in sync
       try {
         const { data, error } = await supabase.from("cms_content").select("*");
         if (!error && data && data.length > 0) {
           data.forEach((row: any) => {
-            if (row.id && row.data && (merged as any)[row.id] !== undefined) {
-              (merged as any)[row.id] = {
-                ...(DEFAULT_CMS_DATA as any)[row.id],
-                ...row.data,
-              };
+            const sectionKey = (row.id || row.section) as keyof FullCMSData;
+            if (sectionKey && row.data && (merged as any)[sectionKey] !== undefined) {
+              (merged as any)[sectionKey] = mergeSectionWithDefaults(
+                sectionKey,
+                row.data
+              );
               hasData = true;
             }
           });
@@ -506,14 +610,17 @@ export function CMSProvider({ children }: { children: ReactNode }) {
 
           if (!error && data && data.length > 0) {
             data.forEach((row: any) => {
-              const sectionKey = row.category.replace("__CMS_", "");
+              const sectionKey = row.category.replace(
+                "__CMS_",
+                ""
+              ) as keyof FullCMSData;
               if (sectionKey && (merged as any)[sectionKey] !== undefined) {
                 try {
                   const parsed = JSON.parse(row.items);
-                  (merged as any)[sectionKey] = {
-                    ...(DEFAULT_CMS_DATA as any)[sectionKey],
-                    ...parsed,
-                  };
+                  (merged as any)[sectionKey] = mergeSectionWithDefaults(
+                    sectionKey,
+                    parsed
+                  );
                   hasData = true;
                 } catch (err) {}
               }
@@ -535,20 +642,41 @@ export function CMSProvider({ children }: { children: ReactNode }) {
   };
 
   useEffect(() => {
-    fetchContent();
+    fetchContent(true);
 
-    // Cross-tab custom event listener
+    // Cross-tab custom event listener (when on same origin)
     const handleLocalUpdate = (e: any) => {
       const { section, data } = e.detail || {};
-      if (section && data) {
-        setCms((prev) => ({ ...prev, [section]: data }));
+      if (section && data && (DEFAULT_CMS_DATA as any)[section] !== undefined) {
+        const normalized = mergeSectionWithDefaults(
+          section as keyof FullCMSData,
+          data
+        );
+        setCms((prev) => {
+          const updated = { ...prev, [section]: normalized };
+          try {
+            localStorage.setItem(LOCAL_STORAGE_CMS_KEY, JSON.stringify(updated));
+          } catch (err) {}
+          return updated;
+        });
       }
     };
     window.addEventListener("cms_section_updated", handleLocalUpdate);
 
-    // Realtime postgres changes on `cms_content` and instant broadcast events
+    // Refresh when user switches back to the customer portal tab/window
+    const handleVisibilityOrFocus = () => {
+      if (document.visibilityState === "visible") {
+        fetchContent(true);
+      }
+    };
+    window.addEventListener("focus", handleVisibilityOrFocus);
+    document.addEventListener("visibilitychange", handleVisibilityOrFocus);
+
+    // Realtime postgres changes on `cms_content` and instant broadcast events across any domain (local, VS Code tunnel, Vercel)
     const channel = supabase
-      .channel("customer-cms-sync")
+      .channel(CMS_SYNC_CHANNEL_NAME, {
+        config: { broadcast: { self: true } },
+      })
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "cms_content" },
@@ -557,23 +685,39 @@ export function CMSProvider({ children }: { children: ReactNode }) {
         }
       )
       .on("broadcast", { event: "cms_update" }, (payload: any) => {
-        if (payload?.payload?.section && payload?.payload?.data) {
-          setCms((prev) => ({
-            ...prev,
-            [payload.payload.section]: payload.payload.data,
-          }));
+        const section = payload?.payload?.section as keyof FullCMSData | undefined;
+        const rawData = payload?.payload?.data;
+        if (section && rawData && (DEFAULT_CMS_DATA as any)[section] !== undefined) {
+          const normalized = mergeSectionWithDefaults(section, rawData);
+          setCms((prev) => {
+            const updated = {
+              ...prev,
+              [section]: normalized,
+            };
+            try {
+              localStorage.setItem(
+                LOCAL_STORAGE_CMS_KEY,
+                JSON.stringify(updated)
+              );
+            } catch (err) {}
+            return updated;
+          });
         }
       })
       .subscribe();
 
     return () => {
       window.removeEventListener("cms_section_updated", handleLocalUpdate);
+      window.removeEventListener("focus", handleVisibilityOrFocus);
+      document.removeEventListener("visibilitychange", handleVisibilityOrFocus);
       supabase.removeChannel(channel);
     };
   }, []);
 
   return (
-    <CMSContext.Provider value={{ cms, isLoading, refreshCMS: fetchContent }}>
+    <CMSContext.Provider
+      value={{ cms, isLoading, refreshCMS: () => fetchContent(true) }}
+    >
       {children}
     </CMSContext.Provider>
   );

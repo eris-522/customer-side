@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { useCMS } from "../context/CMSContext";
 import { Sparkles, ArrowRight, X } from "lucide-react";
@@ -7,6 +7,10 @@ export function AnnouncementBanner() {
   const { cms } = useCMS();
   const { announcement } = cms;
   const [isDismissed, setIsDismissed] = useState(false);
+
+  useEffect(() => {
+    setIsDismissed(false);
+  }, [announcement?.enabled, announcement?.message, announcement?.linkText]);
 
   if (!announcement || !announcement.enabled || !announcement.message || isDismissed) {
     return null;
