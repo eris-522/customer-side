@@ -109,7 +109,7 @@ export default function HomePage() {
 
     // Feature: Subscribe to real-time changes so package updates reflect instantly on the Home Page
     const channel = supabase
-      .channel("packages-changes-home")
+      .channel(`packages-home-${Date.now()}-${Math.random().toString(36).slice(2)}`)
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "packages" },

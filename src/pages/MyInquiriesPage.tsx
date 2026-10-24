@@ -1205,6 +1205,9 @@ export default function MyInquiriesPage() {
                   src={viewingReceiptUrl}
                   alt="Proof of Payment"
                   className="max-h-[60vh] w-auto object-contain rounded"
+                  onError={(e) => {
+                    (e.target as HTMLImageElement).src = "https://images.unsplash.com/photo-1554415707-9e4c07d3882d?auto=format&fit=crop&q=80&w=800";
+                  }}
                 />
               </div>
               <div className="mt-4 flex justify-end">
@@ -1449,6 +1452,9 @@ export default function MyInquiriesPage() {
                           src={balanceReceiptImage}
                           alt="Receipt Preview"
                           className="w-16 h-16 object-cover rounded border border-white/20 shrink-0"
+                          onError={(e) => {
+                            (e.target as HTMLImageElement).src = "https://images.unsplash.com/photo-1554415707-9e4c07d3882d?auto=format&fit=crop&q=80&w=800";
+                          }}
                         />
                         <div className="min-w-0">
                           <p className="text-sm font-bold text-white truncate">

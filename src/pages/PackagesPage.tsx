@@ -113,7 +113,7 @@ export default function PackagesPage() {
 
     // Feature: Subscribe to real-time changes so package updates reflect instantly
     const channel = supabase
-      .channel("packages-changes")
+      .channel(`packages-changes-${Date.now()}-${Math.random().toString(36).slice(2)}`)
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "packages" },

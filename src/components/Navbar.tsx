@@ -105,7 +105,7 @@ export default function Navbar() {
     const fetchNotifications = async () => {
       const { data } = await supabase
         .from('bookings')
-        .select('*')
+        .select('id, status, cancelled_by, cancellation_reason, event_date, updated_at, created_at')
         .eq('user_id', user.id)
         .in('status', ['Confirmed', 'Accepted', 'Approved', 'Cancelled', 'Declined', 'Rejected']);
       
@@ -124,12 +124,24 @@ export default function Navbar() {
     };
     fetchNotifications();
 
-    // Fallback polling to keep notifications synced if WebSockets drop
-    const intervalId = setInterval(fetchNotifications, 10000);
+    // Fallback polling (60s) to conserve database connections and PostgREST egress; only polls when tab is visible
+    const intervalId = setInterval(() => {
+      if (document.visibilityState === 'visible') {
+        fetchNotifications();
+      }
+    }, 60000);
 
-    // Real-time subscription to catch instant status changes or deletions
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        fetchNotifications();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    // Real-time subscription to catch instant status changes or deletions with unique channel topic
+    const channelName = `user-bookings-${user.id}-${Date.now()}`;
     const channel = supabase
-      .channel('user-bookings-changes')
+      .channel(channelName)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'bookings', filter: `user_id=eq.${user.id}` }, () => {
         fetchNotifications();
       })
@@ -137,6 +149,7 @@ export default function Navbar() {
 
     return () => {
       clearInterval(intervalId);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
       supabase.removeChannel(channel);
     };
   }, [user]);

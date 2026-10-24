@@ -53,7 +53,7 @@ export default function MenuPage() {
     fetchMenu();
 
     const channel = supabase
-      .channel("menu-changes")
+      .channel(`menu-changes-${Date.now()}-${Math.random().toString(36).slice(2)}`)
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "menu_items" },

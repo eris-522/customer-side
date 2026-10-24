@@ -345,7 +345,7 @@ export default function BookingPage() {
 
     // Feature: Keep packages updated in real-time during the booking flow
     const channel = supabase
-      .channel("packages-changes-booking")
+      .channel(`packages-booking-${Date.now()}-${Math.random().toString(36).slice(2)}`)
       .on("postgres_changes", { event: "*", schema: "public", table: "packages" }, () => {
         catalogCache.invalidate("packages");
         supabase
