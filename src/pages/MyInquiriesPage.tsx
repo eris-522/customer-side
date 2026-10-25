@@ -667,7 +667,7 @@ export default function MyInquiriesPage() {
                             <div className="flex flex-wrap items-center gap-2">
                               <span className="text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 border border-gold-400/40 bg-gold-400/20 text-gold-300 rounded">
                                 {hasAdminUpdate
-                                  ? "Coordinator Update"
+                                  ? "Update"
                                   : travelFee > 0
                                   ? "Travel Fee Confirmed"
                                   : haulingFee > 0
