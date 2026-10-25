@@ -35,6 +35,7 @@ import { supabase } from "../utils/supabase";
 import { CATERING_CONTRACT_TERMS } from "../data/cateringContractTerms";
 import { compressReceiptImage, uploadReceiptImage } from "../utils/receiptUploader";
 import { catalogCache } from "../utils/catalogCache";
+import VenueMapPicker from "../components/VenueMapPicker";
 
 interface FormData {
   packageId: string;
@@ -118,6 +119,14 @@ const steps = [
   { id: 3, title: "Menu", icon: Utensils },
   { id: 4, title: "Review", icon: ClipboardCheck },
 ];
+
+export const formatPrice = (price?: string | number) => {
+  if (price === undefined || price === null || price === "") return "₱0";
+  const clean = String(price).replace(/[^0-9.-]+/g, "");
+  const num = parseFloat(clean);
+  if (isNaN(num)) return String(price).startsWith("₱") ? String(price) : `₱${price}`;
+  return `₱${num.toLocaleString("en-US")}`;
+};
 
 const categoryOrder = [
   "Appetizer",
@@ -205,6 +214,16 @@ export default function BookingPage() {
     foodAllergies: "",
     menuSelections: [],
   });
+  const [venueCoords, setVenueCoords] = useState<{ lat: number; lng: number }>({
+    lat: 14.57231,
+    lng: 121.13233,
+  });
+  const [hasPinnedVenue, setHasPinnedVenue] = useState<boolean>(false);
+
+  // Feature: Venue Accessibility & Coverage Questionnaire State
+  const [isSecondFloorOrHigher, setIsSecondFloorOrHigher] = useState<boolean>(false);
+  const [floorLevel, setFloorLevel] = useState<number>(2);
+  const [hasElevator, setHasElevator] = useState<boolean>(false);
 
   // Derived variables dynamically calculated from the user's selected package
   const selectedPkgForMenu = availablePackages.find((p) => p.id === formData.packageId);
@@ -321,7 +340,7 @@ export default function BookingPage() {
         setBookedDates(fullyBooked);
       }
       if (incRes.data) {
-        if ((incRes as any).cached) {
+        if (!Array.isArray(incRes.data)) {
           setInclusionCategories(incRes.data);
         } else {
           const grouped: Record<string, string[]> = {};
@@ -608,7 +627,17 @@ export default function BookingPage() {
   const basePriceCalc = selectedPkgForPayment && selectedPkgForPayment.price ? parseFloat(String(selectedPkgForPayment.price).replace(/[^0-9.-]+/g, "")) || 0 : 0;
   const addPriceCalc = selectedPkgForPayment && selectedPkgForPayment.additional_pax_price ? parseFloat(String(selectedPkgForPayment.additional_pax_price).replace(/[^0-9.-]+/g, "")) || 0 : 0;
   const extraPaxCalc = parseInt(formData.additionalPax) || 0;
-  const calculatedTotalBudget = basePriceCalc + (addPriceCalc * extraPaxCalc);
+  // Feature: Taytay Coverage Detection & Venue Accessibility Hauling Fee Calculation
+  const hasVenueInput = Boolean(formData.venueName.trim() || formData.venueAddress.trim());
+  const combinedVenueText = `${formData.venueName} ${formData.venueAddress}`.toLowerCase();
+  const isOutsideTaytay = hasVenueInput && !combinedVenueText.includes("taytay");
+  const totalGuestPaxCalc = (parseInt(formData.guestCount, 10) || 0) + (parseInt(formData.additionalPax, 10) || 0);
+  const waiterCountCalc = Math.max(2, Math.ceil((totalGuestPaxCalc || maxGuests || 50) / 25));
+  const floorsAboveGround = isSecondFloorOrHigher ? Math.max(1, floorLevel - 1) : 0;
+  const requiresStairsIngress = isSecondFloorOrHigher && !hasElevator;
+  const calculatedHaulingFee = requiresStairsIngress ? 150 * floorsAboveGround * waiterCountCalc : 0;
+
+  const calculatedTotalBudget = basePriceCalc + (addPriceCalc * extraPaxCalc) + calculatedHaulingFee;
   const downpaymentPercentage = paymentScheme === "Standard 50%" ? 0.50 : 0.20;
   const calculatedDownpayment = Math.round(calculatedTotalBudget * downpaymentPercentage);
   const calculatedRemainingBalance = calculatedTotalBudget - calculatedDownpayment;
@@ -707,6 +736,17 @@ export default function BookingPage() {
       final_balance_amount: calculatedRemainingBalance,
       final_balance_status: "Unpaid",
       installment_schedule: paymentScheme === "Installment 20%" ? installmentMilestones : null,
+      logistics_info: {
+        isOutsideTaytay,
+        isSecondFloorOrHigher,
+        floorLevel: isSecondFloorOrHigher ? floorLevel : 1,
+        hasElevator,
+        requiresStairsIngress,
+        waiterCount: waiterCountCalc,
+        haulingFee: calculatedHaulingFee,
+        travelFee: 0,
+        coords: hasPinnedVenue ? venueCoords : null,
+      },
     };
 
     let { error } = await supabase.from("bookings").insert([primaryPayload]);
@@ -725,6 +765,17 @@ export default function BookingPage() {
         ref: referenceNumber.trim(),
         receipt: finalReceiptUrl,
         termsAccepted: true,
+        logistics: {
+          isOutsideTaytay,
+          isSecondFloorOrHigher,
+          floorLevel: isSecondFloorOrHigher ? floorLevel : 1,
+          hasElevator,
+          requiresStairsIngress,
+          waiterCount: waiterCountCalc,
+          haulingFee: calculatedHaulingFee,
+          travelFee: 0,
+          coords: hasPinnedVenue ? venueCoords : null,
+        },
         submittedAt: new Date().toISOString(),
       });
 
@@ -904,21 +955,18 @@ export default function BookingPage() {
                         {pkg.name}
                       </h3>
                       <span className="text-gold-400 font-serif text-lg shrink-0">
-                        {pkg.price}
+                        {formatPrice(pkg.price)}
                       </span>
                     </div>
 
-                    <div className="flex items-center gap-4 mb-6 pb-6 border-b border-white/10">
+                    <div className="flex justify-between items-center mb-6 pb-6 border-b border-white/10">
                       <span className="text-sm text-white/80 font-bold">
                         {pkg.pax} Guests
                       </span>
                       {pkg.additional_pax_price && (
-                        <>
-                          <span className="w-1.5 h-1.5 rounded-full bg-white/20"></span>
-                          <span className="text-[10px] text-gold-400/80 uppercase tracking-widest font-bold">
-                            +₱{pkg.additional_pax_price} / Extra Pax
-                          </span>
-                        </>
+                        <span className="text-[11px] text-gold-400/80 uppercase tracking-widest font-bold text-right shrink-0">
+                          +{formatPrice(pkg.additional_pax_price)} / Extra Pax
+                        </span>
                       )}
                     </div>
 
@@ -1185,38 +1233,199 @@ export default function BookingPage() {
                     }}
                   />
                 </div>
-                <div className="col-span-full space-y-2">
-                  <label className="text-base text-white/80 font-bold">
-                    Venue Name <span className="text-red-400">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="Grand Ballroom, Private Residence..."
-                    className="w-full bg-white/5 border border-white/10 px-6 py-4 text-lg focus:outline-none focus:border-gold-400/50 transition-all font-medium"
-                    value={formData.venueName}
-                    onChange={(e) => {
-                      setStepError("");
-                      setFormData({ ...formData, venueName: e.target.value });
-                    }}
-                  />
-                </div>
-                <div className="col-span-full space-y-2">
-                  <label className="text-base text-white/80 font-bold">
-                    Venue Address <span className="text-red-400">*</span>
-                  </label>
-                  <textarea
-                    placeholder="Full street address..."
-                    rows={3}
-                    className="w-full bg-white/5 border border-white/10 px-6 py-4 text-lg focus:outline-none focus:border-gold-400/50 transition-all font-medium resize-none"
-                    value={formData.venueAddress}
-                    onChange={(e) => {
-                      setStepError("");
-                      setFormData({
-                        ...formData,
-                        venueAddress: e.target.value,
-                      });
-                    }}
-                  />
+                <VenueMapPicker
+                  venueName={formData.venueName}
+                  venueAddress={formData.venueAddress}
+                  coords={venueCoords}
+                  hasPinnedVenue={hasPinnedVenue}
+                  onCoordsChange={(newCoords, pinned = true) => {
+                    setVenueCoords(newCoords);
+                    setHasPinnedVenue(pinned);
+                  }}
+                  onChange={(updates) => {
+                    setStepError("");
+                    setFormData((prev) => ({
+                      ...prev,
+                      ...(updates.venueName !== undefined ? { venueName: updates.venueName } : {}),
+                      ...(updates.venueAddress !== undefined ? { venueAddress: updates.venueAddress } : {}),
+                    }));
+                  }}
+                />
+                {/* Taytay Coverage Detector & Venue Accessibility Questionnaire */}
+                <div className="col-span-full space-y-5 pt-2">
+                  {hasVenueInput && (
+                    <div
+                      className={`p-4 border transition-all flex items-start gap-3.5 ${
+                        isOutsideTaytay
+                          ? "bg-amber-500/10 border-amber-500/40 text-amber-200"
+                          : "bg-emerald-500/10 border-emerald-500/30 text-emerald-200"
+                      }`}
+                    >
+                      {isOutsideTaytay ? (
+                        <AlertTriangle className="text-amber-400 shrink-0 mt-0.5" size={20} />
+                      ) : (
+                        <CheckCircle className="text-emerald-400 shrink-0 mt-0.5" size={20} />
+                      )}
+                      <div className="space-y-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="text-sm font-bold uppercase tracking-wider">
+                            {isOutsideTaytay
+                              ? "Out-of-Town Venue Detected (Outside Taytay, Rizal)"
+                              : "Within Standard Coverage (Taytay, Rizal)"}
+                          </p>
+                        </div>
+                        {isOutsideTaytay ? (
+                          <p className="text-xs text-white/80 leading-relaxed">
+                            Events located outside <span className="text-white font-semibold">Taytay, Rizal</span> are subject to an additional{" "}
+                            <span className="text-amber-300 font-semibold">Out-of-Town Travel &amp; Logistics Surcharge</span>{""}.
+                            Our coordinators will assess the exact travel distance or conduct a venue ocular and update your final logistics fee accordingly.
+                          </p>
+                        ) : (
+                          <p className="text-xs text-white/75 leading-relaxed">
+                            Your venue is located within Taytay, Rizal, no out-of-town travel surcharge applies.
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="p-6 bg-white/[0.03] border border-white/10 space-y-5">
+                    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/10 pb-3">
+                      <div className="flex items-center gap-2.5">
+                        <Building2 className="text-gold-400" size={18} />
+                        <h4 className="text-base font-bold text-white tracking-wide">
+                          Venue Accessibility
+                        </h4>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      <div className="space-y-3">
+                        <label className="block text-sm font-bold text-white/90">
+                          1. Is the venue on the 2nd floor or higher?
+                        </label>
+                        <div className="grid grid-cols-2 gap-3">
+                          <button
+                            type="button"
+                            onClick={() => setIsSecondFloorOrHigher(false)}
+                            className={`py-3 px-4 text-sm font-bold border transition-all flex items-center justify-center gap-2 ${
+                              !isSecondFloorOrHigher
+                                ? "bg-gold-400 text-obsidian border-gold-400"
+                                : "bg-white/5 text-white/70 border-white/10 hover:border-white/30"
+                            }`}
+                          >
+                            {!isSecondFloorOrHigher && <Check size={15} />}
+                            No (Ground Floor)
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setIsSecondFloorOrHigher(true);
+                              if (floorLevel < 2) setFloorLevel(2);
+                            }}
+                            className={`py-3 px-4 text-sm font-bold border transition-all flex items-center justify-center gap-2 ${
+                              isSecondFloorOrHigher
+                                ? "bg-gold-400 text-obsidian border-gold-400"
+                                : "bg-white/5 text-white/70 border-white/10 hover:border-white/30"
+                            }`}
+                          >
+                            {isSecondFloorOrHigher && <Check size={15} />}
+                            Yes (2nd Floor+)
+                          </button>
+                        </div>
+
+                        {isSecondFloorOrHigher && (
+                          <div className="pt-2 space-y-1.5">
+                            <label className="block text-xs text-white/70 font-semibold uppercase tracking-wider">
+                              Select Venue Floor Level
+                            </label>
+                            <select
+                              value={floorLevel}
+                              onChange={(e) => setFloorLevel(parseInt(e.target.value, 10) || 2)}
+                              className="w-full bg-obsidian border border-gold-400/40 px-4 py-2.5 text-sm text-white font-semibold focus:outline-none focus:border-gold-400"
+                            >
+                              <option value={2} className="bg-obsidian text-black dark:text-black">2nd Floor</option>
+                              <option value={3} className="bg-obsidian text-black dark:text-black">3rd Floor</option>
+                              <option value={4} className="bg-obsidian text-black dark:text-black">4th Floor</option>
+                              <option value={5} className="bg-obsidian text-black dark:text-black">5th Floor</option>
+                              <option value={6} className="bg-obsidian text-black dark:text-black">6th Floor or Higher</option>
+                            </select>
+                          </div>
+                        )}
+                      </div>
+
+                      <div className={`space-y-3 transition-all duration-200 ${!isSecondFloorOrHigher ? "opacity-35 select-none pointer-events-none" : ""}`}>
+                        <div className="flex items-center justify-between">
+                          <label className="block text-sm font-bold text-white/90">
+                            2. Is there an elevator available?
+                          </label>
+                        </div>
+                        <div className="grid grid-cols-2 gap-3">
+                          <button
+                            type="button"
+                            disabled={!isSecondFloorOrHigher}
+                            onClick={() => setHasElevator(true)}
+                            className={`py-3 px-4 text-sm font-bold border transition-all flex items-center justify-center gap-2 ${
+                              !isSecondFloorOrHigher
+                                ? "bg-white/[0.02] text-white/30 border-white/10 cursor-not-allowed"
+                                : hasElevator
+                                ? "bg-gold-400 text-obsidian border-gold-400"
+                                : "bg-white/5 text-white/70 border-white/10 hover:border-white/30"
+                            }`}
+                          >
+                            {isSecondFloorOrHigher && hasElevator && <Check size={15} />}
+                            Yes (With Elevator)
+                          </button>
+                          <button
+                            type="button"
+                            disabled={!isSecondFloorOrHigher}
+                            onClick={() => setHasElevator(false)}
+                            className={`py-3 px-4 text-sm font-bold border transition-all flex items-center justify-center gap-2 ${
+                              !isSecondFloorOrHigher
+                                ? "bg-white/[0.02] text-white/30 border-white/10 cursor-not-allowed"
+                                : !hasElevator
+                                ? "bg-gold-400 text-obsidian border-gold-400"
+                                : "bg-white/5 text-white/70 border-white/10 hover:border-white/30"
+                            }`}
+                          >
+                            {isSecondFloorOrHigher && !hasElevator && <Check size={15} />}
+                            No (Stairs Only)
+                          </button>
+                        </div>
+                        <p className="text-xs text-white/50 leading-relaxed">
+                          {!isSecondFloorOrHigher
+                            ? "Ground floor venues do not require elevator ingress/egress."
+                            : "Service or freight elevator must be accessible for catering equipment and banquet tables during ingress/egress."}
+                        </p>
+                      </div>
+                    </div>
+
+                    {requiresStairsIngress && (
+                      <div className="p-4 bg-gold-400/10 border border-gold-400/40 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-2">
+                            <span className="text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 bg-amber-500/20 text-amber-300 border border-amber-400/40">
+                              Stairs Ingress Required
+                            </span>
+                            <span className="text-sm font-bold text-gold-400">
+                              Hauling Fee
+                            </span>
+                          </div>
+                          <p className="text-xs text-white/80">
+                            ₱150 × {floorsAboveGround} floor{floorsAboveGround > 1 ? "s" : ""} above ground (Floor {floorLevel}) × {waiterCountCalc} assigned waiter{waiterCountCalc > 1 ? "s" : ""} ({totalGuestPaxCalc || maxGuests} pax)
+                          </p>
+                        </div>
+                        <div className="text-left sm:text-right shrink-0">
+                          <p className="text-[10px] uppercase tracking-widest text-white/50 font-bold">
+                            Hauling Surcharge
+                          </p>
+                          <p className="text-xl font-serif font-bold text-gold-400">
+                            +₱{calculatedHaulingFee.toLocaleString()}
+                          </p>
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 </div>
                 <div className="col-span-full space-y-2">
                   <label className="text-base text-white/80 font-bold">
@@ -1415,18 +1624,24 @@ export default function BookingPage() {
                           const addPrice = pkg && pkg.additional_pax_price ? parseFloat(String(pkg.additional_pax_price).replace(/[^0-9.-]+/g, "")) || 0 : 0;
                           const extraPax = parseInt(formData.additionalPax) || 0;
                           const additionalPaxTotal = addPrice * extraPax;
-                          const totalBudget = basePrice + additionalPaxTotal;
+                          const totalBudget = basePrice + additionalPaxTotal + calculatedHaulingFee;
 
                           return (
                             <div className="space-y-2 w-full max-w-sm">
                               <div className="flex justify-between text-sm text-white/90 font-medium">
-                                <span>Base Package ({formData.guestCount || "0"} Pax)</span>
+                                <span>Base Package</span>
                                 <span>₱{basePrice.toLocaleString()}</span>
                               </div>
                               {extraPax > 0 && (
                                 <div className="flex justify-between text-sm text-white/90 font-medium">
-                                  <span>Extra Pax ({extraPax} @ ₱{addPrice.toLocaleString()})</span>
+                                  <span>Extra Pax</span>
                                   <span>₱{additionalPaxTotal.toLocaleString()}</span>
+                                </div>
+                              )}
+                              {calculatedHaulingFee > 0 && (
+                                <div className="flex justify-between text-sm text-gold-400 font-medium">
+                                  <span>Hauling Fee</span>
+                                  <span>₱{calculatedHaulingFee.toLocaleString()}</span>
                                 </div>
                               )}
                               <div className="flex justify-between items-center pt-3 mt-3 border-t border-white/10">
@@ -1442,15 +1657,50 @@ export default function BookingPage() {
                     </div>
                       <div className="col-span-full flex gap-4 border-t border-white/5 pt-8">
                         <MapPin className="text-gold-400 shrink-0" size={18} />
-                        <div>
-                          <p className="text-sm tracking-wide text-white/70 font-bold mb-1">
-                            Venue Details
-                          </p>
+                        <div className="w-full">
+                          <div className="flex flex-wrap items-center justify-between gap-2 mb-1">
+                            <p className="text-sm tracking-wide text-white/70 font-bold">
+                              Venue Details
+                            </p>
+                            {hasPinnedVenue && (
+                              <a
+                                href={`https://www.google.com/maps/search/?api=1&query=${venueCoords.lat},${venueCoords.lng}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-1.5 text-xs text-gold-400 hover:underline font-semibold"
+                              >
+                                <ExternalLink size={12} /> View Pinned Location on Google Maps
+                              </a>
+                            )}
+                          </div>
                           <p className="text-lg font-serif tracking-wider mb-1">
                             {formData.venueName || "Private Venue"}
                           </p>
                           <p className="text-base text-white/80 tracking-wide leading-relaxed">
                             {formData.venueAddress || "Address not provided"}
+                          </p>
+                          <div className="flex flex-wrap items-center gap-2 mt-2.5">
+                            <span
+                              className={`text-[10px] font-bold uppercase tracking-widest px-2.5 py-1 border ${
+                                isOutsideTaytay
+                                  ? "bg-amber-500/15 border-amber-400/40 text-amber-300"
+                                  : "bg-emerald-500/15 border-emerald-400/40 text-emerald-300"
+                              }`}
+                            >
+                              {isOutsideTaytay ? "Outside Taytay" : "Within Taytay"}
+                            </span>
+                            {requiresStairsIngress && (
+                              <span className="text-[10px] font-bold uppercase tracking-widest px-2.5 py-1 bg-gold-400/15 border border-gold-400/40 text-gold-400">
+                                Stairs Ingress Required (Floor {floorLevel} • +₱{calculatedHaulingFee.toLocaleString()})
+                              </span>
+                            )}
+                            {isSecondFloorOrHigher && hasElevator && (
+                              <span className="text-[10px] font-bold uppercase tracking-widest px-2.5 py-1 bg-white/10 border border-white/20 text-white/80">
+                                Floor {floorLevel} (Elevator Available)
+                              </span>
+                            )}
+                          </div>
+                          <p className="hidden">
                           </p>
                         </div>
                       </div>

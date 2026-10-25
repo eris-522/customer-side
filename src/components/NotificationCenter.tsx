@@ -17,6 +17,16 @@ export function NotificationCenter({ isOpen, onClose, notifications, unreadCount
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const [readDuringSession, setReadDuringSession] = useState<string[]>([]);
 
+  const getNotifKey = (item: any) => {
+    const travel = Number(item.logistics_info?.travelFee) || 0;
+    const hauling = Number(item.logistics_info?.haulingFee) || 0;
+    const logTimestamp = item.logistics_info?.updated_at || "";
+    if (travel > 0 || hauling > 0) {
+      return `${item.id}-logistics-${travel}-${hauling}${logTimestamp ? `-${logTimestamp}` : ""}`;
+    }
+    return `${item.id}-${item.status}`;
+  };
+
   useEffect(() => {
     if (!isOpen) {
       setTimeout(() => {
@@ -32,16 +42,16 @@ export function NotificationCenter({ isOpen, onClose, notifications, unreadCount
   };
 
   const sortedNotifications = [...notifications].sort((a, b) => {
-    const keyA = `${a.id}-${a.status}`;
-    const keyB = `${b.id}-${b.status}`;
+    const keyA = getNotifKey(a);
+    const keyB = getNotifKey(b);
     const isUnreadA = !readIds.includes(keyA) || readDuringSession.includes(keyA);
     const isUnreadB = !readIds.includes(keyB) || readDuringSession.includes(keyB);
 
     if (isUnreadA && !isUnreadB) return -1;
     if (!isUnreadA && isUnreadB) return 1;
 
-    const timeA = new Date(a.updated_at || a.created_at || 0).getTime();
-    const timeB = new Date(b.updated_at || b.created_at || 0).getTime();
+    const timeA = new Date(a.logistics_info?.updated_at || a.created_at || 0).getTime();
+    const timeB = new Date(b.logistics_info?.updated_at || b.created_at || 0).getTime();
     return timeB - timeA;
   });
 
@@ -63,7 +73,7 @@ export function NotificationCenter({ isOpen, onClose, notifications, unreadCount
                   onClick={() => {
                     const newlyRead: string[] = [];
                     notifications.forEach(n => {
-                      const key = `${n.id}-${n.status}`;
+                      const key = getNotifKey(n);
                       if (!readIds.includes(key)) newlyRead.push(key);
                     });
                     setReadDuringSession(prev => [...prev, ...newlyRead]);
@@ -92,7 +102,10 @@ export function NotificationCenter({ isOpen, onClose, notifications, unreadCount
                 const isConfirmed = ['Confirmed', 'Accepted', 'Approved'].includes(notif.status);
                 const reason = notif.reason || notif.reject_reason || notif.cancellation_reason || notif.admin_notes;
                 const isExpanded = expandedId === notif.id;
-                const notifKey = `${notif.id}-${notif.status}`;
+                const notifKey = getNotifKey(notif);
+                const travelFeeVal = Number(notif.logistics_info?.travelFee) || 0;
+                const haulingFeeVal = Number(notif.logistics_info?.haulingFee) || 0;
+                const isLogisticsUpdate = travelFeeVal > 0 || haulingFeeVal > 0;
                 const isUnreadNotif = !readIds.includes(notifKey);
 
                 return (
@@ -111,13 +124,26 @@ export function NotificationCenter({ isOpen, onClose, notifications, unreadCount
                     <div className="flex justify-between items-start mb-1 gap-2">
                       <div>
                         <p className="text-sm text-white/90 font-semibold">
-                          Booking for {notif.event_date} was <span className={isCancelled ? "text-red-400" : "text-green-400"}>{notif.status}</span>.
+                          {isLogisticsUpdate ? (
+                            <>
+                              Logistics fees updated for {notif.event_date}:{" "}
+                              <span className="text-gold-400 font-bold">
+                                {travelFeeVal > 0 && `Travel: ₱${travelFeeVal.toLocaleString()}`}
+                                {travelFeeVal > 0 && haulingFeeVal > 0 && " • "}
+                                {haulingFeeVal > 0 && `Hauling: ₱${haulingFeeVal.toLocaleString()}`}
+                              </span>
+                            </>
+                          ) : (
+                            <>
+                              Booking for {notif.event_date} was <span className={isCancelled ? "text-red-400" : "text-green-400"}>{notif.status}</span>.
+                            </>
+                          )}
                           {isUnreadNotif && (
                             <span className="inline-block ml-2 w-2 h-2 rounded-full bg-gold-400 animate-pulse"></span>
                           )}
                         </p>
                         <span className="text-[10px] text-white/40 mt-1 block">
-                          {formatNotifDate(notif.updated_at || notif.created_at)}
+                          {formatNotifDate(notif.logistics_info?.updated_at || notif.created_at)}
                         </span>
                       </div>
                       <span className="text-[10px] font-medium bg-gold-400/10 text-gold-400 px-2 py-0.5 rounded shrink-0">
@@ -133,7 +159,19 @@ export function NotificationCenter({ isOpen, onClose, notifications, unreadCount
                             <p className="text-xs text-white/80 italic">"{reason}"</p>
                           </div>
                         )}
-                        {!isCancelled && isConfirmed && (
+                        {isLogisticsUpdate && (
+                          <div className="mb-3 p-2.5 bg-gold-400/10 border border-gold-400/30 rounded-md text-xs space-y-1">
+                            <p className="text-gold-300 font-semibold">
+                              {travelFeeVal > 0 && `Out-of-Town Travel Fee: ₱${travelFeeVal.toLocaleString()}`}
+                              {travelFeeVal > 0 && haulingFeeVal > 0 && " • "}
+                              {haulingFeeVal > 0 && `Hauling Fee: ₱${haulingFeeVal.toLocaleString()}`}
+                            </p>
+                            <p className="text-white/70 text-[11px]">
+                              Coordinator updated your logistics surcharges. The balance has been recalculated in My Inquiries.
+                            </p>
+                          </div>
+                        )}
+                        {!isCancelled && isConfirmed && !isLogisticsUpdate && (
                           <p className="text-xs text-white/60 mb-3">
                             We're excited to host your event! We will be in touch shortly.
                           </p>

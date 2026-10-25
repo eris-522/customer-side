@@ -57,7 +57,16 @@ export default function Navbar() {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [isNotifOpen]);
 
-  const unreadCount = notifications.filter((b: any) => !readIds.includes(`${b.id}-${b.status}`)).length;
+  const getNotifKey = (b: any) => {
+    const travelFee = Number(b.logistics_info?.travelFee) || 0;
+    const haulingFee = Number(b.logistics_info?.haulingFee) || 0;
+    const logTimestamp = b.logistics_info?.updated_at || "";
+    if (travelFee > 0 || haulingFee > 0) {
+      return `${b.id}-logistics-${travelFee}-${haulingFee}${logTimestamp ? `-${logTimestamp}` : ""}`;
+    }
+    return `${b.id}-${b.status}`;
+  };
+  const unreadCount = notifications.filter((b: any) => !readIds.includes(getNotifKey(b))).length;
 
   // Determine which button should have the "active" (gold) style.
   // On the auth page, the active button matches the current mode (login vs signup).
@@ -105,20 +114,41 @@ export default function Navbar() {
     const fetchNotifications = async () => {
       const { data } = await supabase
         .from('bookings')
-        .select('id, status, cancelled_by, cancellation_reason, event_date, updated_at, created_at')
+        .select('id, status, cancelled_by, cancellation_reason, event_date, created_at, logistics_info, food_allergies')
         .eq('user_id', user.id)
-        .in('status', ['Confirmed', 'Accepted', 'Approved', 'Cancelled', 'Declined', 'Rejected']);
+        ; // Fetch all bookings to support status and logistics travel fee notifications
       
       if (data) {
         // Filter out bookings cancelled by the customer so they don't receive a notification for their own action
-        const validNotifications = data.filter((b: any) => {
-          // Hide if explicitly cancelled by Customer. If cancelled_by is empty/null, show it so Admin cancellations are never missed.
+        const normalizedData = data.map((b: any) => {
+          let logInfo = b.logistics_info;
+          if ((!logInfo || Object.keys(logInfo).length === 0) && typeof b.food_allergies === 'string' && b.food_allergies.includes('__PAYMENT_METADATA__:')) {
+            try {
+              const parsed = JSON.parse(b.food_allergies.split('__PAYMENT_METADATA__:')[1]);
+              if (parsed?.logistics) logInfo = parsed.logistics;
+              else if (parsed?.logistics_info) logInfo = parsed.logistics_info;
+            } catch {}
+          }
+          return { ...b, logistics_info: logInfo };
+        });
+
+        const validNotifications = normalizedData.filter((b: any) => {
           if (b.status === 'Cancelled' && b.cancelled_by === 'Customer') return false;
-          return true;
+          const isStatusNotif = ['Confirmed', 'Accepted', 'Approved', 'Cancelled', 'Declined', 'Rejected'].includes(b.status);
+          const hasLogisticsUpdate = Boolean(
+            b.logistics_info?.updated_at ||
+            Number(b.logistics_info?.travelFee) > 0 ||
+            Number(b.logistics_info?.haulingFee) > 0
+          );
+          return isStatusNotif || hasLogisticsUpdate;
         });
 
         // Sort primarily by the most recent update so new confirmations sit at the top
-        const sorted = validNotifications.sort((a: any, b: any) => new Date(b.updated_at || b.created_at).getTime() - new Date(a.updated_at || a.created_at).getTime());
+        const sorted = validNotifications.sort((a: any, b: any) => {
+          const timeA = new Date(a.logistics_info?.updated_at || a.created_at || 0).getTime();
+          const timeB = new Date(b.logistics_info?.updated_at || b.created_at || 0).getTime();
+          return timeB - timeA;
+        });
         setNotifications(sorted);
       }
     };

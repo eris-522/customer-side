@@ -64,7 +64,7 @@ export default function MyInquiriesPage() {
 
         const { data: bookingsData, error } = await supabase
           .from("bookings")
-          .select("*, packages (id, name)")
+          .select("*, packages (id, name, price, additional_pax_price)")
           .eq("user_id", authData.user.id);
 
         if (error) throw error;
@@ -635,6 +635,152 @@ export default function MyInquiriesPage() {
                       </span>
                     </div>
 
+                    {/* Logistics & Out-of-Town Notification Banner */}
+                    {(() => {
+                      let logData = booking.logistics_info || null;
+                      if ((!logData || Object.keys(logData).length === 0) && typeof booking.food_allergies === "string" && booking.food_allergies.includes("__PAYMENT_METADATA__:")) {
+                        try {
+                          const meta = JSON.parse(booking.food_allergies.split("__PAYMENT_METADATA__:")[1]);
+                          if (meta?.logistics) logData = meta.logistics;
+                        } catch (e) {}
+                      }
+
+                      const travelFee = Number(logData?.travelFee) || 0;
+                      const haulingFee = Number(logData?.haulingFee) || 0;
+                      const hasAdminUpdate = Boolean(logData?.updated_at);
+                      const hasLogisticsFee = travelFee > 0 || haulingFee > 0;
+                      const isOutsideTaytay = Boolean(
+                        logData?.isOutsideTaytay !== undefined
+                          ? logData.isOutsideTaytay
+                          : (booking.event_location || "").toLowerCase().includes("taytay") === false
+                      );
+
+                      if (!hasLogisticsFee && !isOutsideTaytay && !hasAdminUpdate) return null;
+
+                      return (
+                        <div className={`p-4 rounded-sm border flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
+                          hasLogisticsFee || hasAdminUpdate
+                            ? "bg-gold-400/10 border-gold-400/40 text-gold-300"
+                            : "bg-amber-500/10 border-amber-500/30 text-amber-200"
+                        }`}>
+                          <div className="space-y-1">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 border border-gold-400/40 bg-gold-400/20 text-gold-300 rounded">
+                                {hasAdminUpdate
+                                  ? "Coordinator Update"
+                                  : travelFee > 0
+                                  ? "Travel Fee Confirmed"
+                                  : haulingFee > 0
+                                  ? "Hauling Fee Applied"
+                                  : "Outside Taytay Coverage"}
+                              </span>
+                              <p className="text-xs font-bold text-white uppercase tracking-wider">
+                                {hasAdminUpdate || travelFee > 0
+                                  ? "Logistics & Travel Fees Updated by Coordinator"
+                                  : haulingFee > 0
+                                  ? "Stairs Ingress Hauling Fee Applied"
+                                  : "Out-of-Town Venue Assessment in Progress"}
+                              </p>
+                            </div>
+                            <p className="text-xs text-white/80 leading-relaxed">
+                              {hasLogisticsFee
+                                ? `Logistics fees applied to your booking: ${[
+                                    travelFee > 0 ? `Out-of-Town Travel Fee ₱${travelFee.toLocaleString()}` : "",
+                                    haulingFee > 0 ? `Hauling / Stairs Fee ₱${haulingFee.toLocaleString()}` : "",
+                                  ]
+                                    .filter(Boolean)
+                                    .join(" • ")}. Your total balance has been updated accordingly.`
+                                : "Your venue is outside Taytay, Rizal. Our coordinators are assessing distance & logistics to set your travel fee."}
+                            </p>
+                          </div>
+                          {hasLogisticsFee && (
+                            <div className="text-left sm:text-right shrink-0">
+                              <p className="text-[10px] uppercase font-bold tracking-widest text-white/50">Total Logistics Surcharge</p>
+                              <p className="text-lg font-serif font-bold text-gold-400">+₱{(travelFee + haulingFee).toLocaleString()}</p>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })()}
+
+                    {/* Total Fees & Detailed Cost Breakdown */}
+                    {(() => {
+                      const pkg = booking.packages;
+                      const basePrice = pkg && pkg.price ? parseFloat(String(pkg.price).replace(/[^0-9.-]+/g, "")) || 0 : 0;
+                      const addPrice = pkg && pkg.additional_pax_price ? parseFloat(String(pkg.additional_pax_price).replace(/[^0-9.-]+/g, "")) || 0 : 0;
+                      const extraPax = parseInt(booking.additional_pax) || 0;
+                      const additionalPaxTotal = addPrice * extraPax;
+
+                      let logData = booking.logistics_info || null;
+                      if ((!logData || Object.keys(logData).length === 0) && typeof booking.food_allergies === "string" && booking.food_allergies.includes("__PAYMENT_METADATA__:")) {
+                        try {
+                          const meta = JSON.parse(booking.food_allergies.split("__PAYMENT_METADATA__:")[1]);
+                          if (meta?.logistics) logData = meta.logistics;
+                        } catch (e) {}
+                      }
+
+                      const travelFee = Number(logData?.travelFee) || 0;
+                      const haulingFee = Number(logData?.haulingFee) || 0;
+                      const totalAdditionalFees = travelFee + haulingFee;
+                      const totalEventCost = basePrice + additionalPaxTotal + totalAdditionalFees;
+
+                      return (
+                        <div className="p-4 bg-white/[0.03] border border-white/10 rounded-sm space-y-3">
+                          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/10 pb-2">
+                            <span className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-1.5">
+                              <CreditCard size={14} className="text-gold-400" />
+                              Total Fees &amp; Additional Charges Breakdown
+                            </span>
+                            <span className="text-xs text-white/60 font-medium">
+                              Estimated Total: <strong className="text-gold-400 font-serif text-sm">₱{totalEventCost.toLocaleString()}</strong>
+                            </span>
+                          </div>
+
+                          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs pt-1">
+                            <div className="p-2.5 bg-white/5 rounded border border-white/5">
+                              <p className="text-[10px] uppercase font-bold text-white/50 tracking-wider">Base Package</p>
+                              <p className="font-semibold text-white mt-0.5">₱{basePrice.toLocaleString()}</p>
+                              <p className="text-[10px] text-white/40">{booking.guest_count || 0} Standard Guests</p>
+                            </div>
+
+                            <div className="p-2.5 bg-white/5 rounded border border-white/5">
+                              <p className="text-[10px] uppercase font-bold text-white/50 tracking-wider">Additional Pax</p>
+                              <p className="font-semibold text-white mt-0.5">₱{additionalPaxTotal.toLocaleString()}</p>
+                              <p className="text-[10px] text-white/40">
+                                {extraPax > 0 ? `${extraPax} Extra Pax @ ₱${addPrice.toLocaleString()}` : "None"}
+                              </p>
+                            </div>
+
+                            <div className={`p-2.5 rounded border ${haulingFee > 0 ? "bg-gold-400/10 border-gold-400/30 text-gold-300" : "bg-white/5 border-white/5"}`}>
+                              <p className="text-[10px] uppercase font-bold text-white/50 tracking-wider">Hauling / Stairs Fee</p>
+                              <p className="font-semibold text-white mt-0.5">
+                                {haulingFee > 0 ? `+₱${haulingFee.toLocaleString()}` : "₱0"}
+                              </p>
+                              <p className="text-[10px] text-white/40">
+                                {logData?.isSecondFloorOrHigher && !logData?.hasElevator
+                                  ? `Floor ${logData.floorLevel || 2} (Stairs Ingress)`
+                                  : "Ground floor or with elevator"}
+                              </p>
+                            </div>
+
+                            <div className={`p-2.5 rounded border ${travelFee > 0 ? "bg-gold-400/10 border-gold-400/30 text-gold-300" : "bg-white/5 border-white/5"}`}>
+                              <p className="text-[10px] uppercase font-bold text-white/50 tracking-wider">Out-of-Town Travel Fee</p>
+                              <p className="font-semibold text-white mt-0.5">
+                                {travelFee > 0 ? (
+                                  <span className="text-gold-400 font-bold">+₱{travelFee.toLocaleString()}</span>
+                                ) : (
+                                  <span className="text-white/60">₱0 (Pending/Taytay)</span>
+                                )}
+                              </p>
+                              <p className="text-[10px] text-white/40">
+                                {travelFee > 0 ? "Assessed by coordinator" : "Pending assessment"}
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })()}
+
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-y-4 gap-x-8">
                       <div className="flex items-start gap-3 text-sm text-white/80">
                         <Calendar
@@ -728,9 +874,6 @@ export default function MyInquiriesPage() {
                                 <span className="text-xs font-bold uppercase tracking-wider text-white">
                                   15-Day Balance Settlement Tracker
                                 </span>
-                                <span className="text-[10px] text-gold-400/70 font-mono">
-                                  Clause 1
-                                </span>
                               </div>
                               <div className="flex items-center gap-2">
                                 {paymentData.balanceStatus === "Verified" ? (
@@ -763,14 +906,14 @@ export default function MyInquiriesPage() {
                                 </p>
                                 {formattedDeadline && (
                                   <p className="text-[11px] text-white/60 mt-0.5">
-                                    Strict Deadline: <strong className="text-white/90">{formattedDeadline}</strong> (15 days before event)
+                                    Deadline: <strong className="text-white/90">{formattedDeadline}</strong>
                                   </p>
                                 )}
                                 {daysUntilDeadline !== null && paymentData.balanceStatus !== "Verified" && (
                                   <p className={`text-[11px] font-bold mt-1 ${daysUntilDeadline <= 0 ? "text-red-400" : daysUntilDeadline <= 7 ? "text-amber-400" : "text-gold-300"}`}>
                                     {daysUntilDeadline > 0
-                                      ? `⏳ Final Balance due in ${daysUntilDeadline} day${daysUntilDeadline === 1 ? "" : "s"} (Strictly 15 days before event date)`
-                                      : `⚠️ Final Balance is strictly overdue (${Math.abs(daysUntilDeadline)} days past 15-day deadline)`}
+                                      ? `Final Balance due in ${daysUntilDeadline} day${daysUntilDeadline === 1 ? "" : "s"}`
+                                      : `Final Balance is strictly overdue (${Math.abs(daysUntilDeadline)} days past deadline)`}
                                   </p>
                                 )}
                               </div>
@@ -833,7 +976,7 @@ export default function MyInquiriesPage() {
                                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
                                   <p className="text-[10px] uppercase font-bold text-white/50 tracking-wider flex items-center gap-1.5">
                                     <Clock size={12} className="text-gold-400" />
-                                    Scheduled Installment Milestones (Clause 1)
+                                    Scheduled Installment
                                   </p>
                                   <span className="text-[10px] text-white/40">
                                     Upload payment receipts milestone by milestone
@@ -1115,7 +1258,7 @@ export default function MyInquiriesPage() {
                 undone.
                 <span className="block mt-3 p-3 bg-red-500/10 border border-red-500/30 text-red-400 rounded-sm text-xs leading-relaxed text-left">
                   <strong className="block font-bold mb-1">
-                    Strict Non-Refundable Policy (Contract Clauses 1 & 16):
+                    Strict Non-Refundable Policy:
                   </strong>
                   All down payments, reservation fees, and prior installment settlements are strictly non-refundable and will be forfeited upon cancellation. No date transfers or refunds apply.
                 </span>
@@ -1249,7 +1392,7 @@ export default function MyInquiriesPage() {
                       Pay <span className="gold-text-gradient font-bold not-italic">{payingMilestone ? payingMilestone.title : "Final Balance"}</span>
                     </h3>
                     <p className="text-xs text-white/60 uppercase tracking-widest font-semibold mt-0.5">
-                      {payingMilestone ? `Milestone Installment • Due: ${payingMilestone.dueDate || "As scheduled"}` : "Strictly Due 15 Days Before Event Date (Clause 1)"}
+                      {payingMilestone ? `Milestone Installment • Due: ${payingMilestone.dueDate || "As scheduled"}` : "Due 15 Days Before Event Date"}
                     </p>
                   </div>
                 </div>
@@ -1295,7 +1438,7 @@ export default function MyInquiriesPage() {
                         {payingMilestone ? payingMilestone.dueDate : (payingBalanceBooking.event_date || "Event Date")}
                       </p>
                       <span className="text-[10px] text-amber-300 font-semibold block mt-1">
-                        {payingMilestone ? "Installment Payment (Clause 1)" : "Strictly due at least 15 days before event"}
+                        {payingMilestone ? "Installment Payment" : "Due at least 15 days before event"}
                       </span>
                     </div>
                   </div>

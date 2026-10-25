@@ -242,17 +242,14 @@ export default function PackagesPage() {
                       </div>
 
                       {/* Feature: Displays pax limitations clearly to the customer */}
-                      <div className="flex items-center gap-4 mb-6 pb-6 border-b border-white/10">
+                      <div className="flex justify-between items-center mb-6 pb-6 border-b border-white/10">
                         <span className="text-[10px] text-white/60 uppercase tracking-widest">
                           {pkg.pax} Guests
                         </span>
                         {pkg.additional_pax_price && (
-                          <>
-                            <span className="w-1 h-1 rounded-full bg-white/20"></span>
-                            <span className="text-[10px] text-gold-400/80 uppercase tracking-widest font-bold">
-                              +{formatPrice(pkg.additional_pax_price)} / Extra Pax
-                            </span>
-                          </>
+                          <span className="text-[10px] text-gold-400/80 uppercase tracking-widest font-bold text-right shrink-0">
+                            +{formatPrice(pkg.additional_pax_price)} / Extra Pax
+                          </span>
                         )}
                       </div>
 
