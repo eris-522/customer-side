@@ -107,6 +107,7 @@ export interface FAQItem {
   answer: string;
   category: string;
   active: boolean;
+  termId?: string;
 }
 
 export interface FAQsCMS {
@@ -153,6 +154,10 @@ export interface MenuCMS {
   description: string;
   menuImages: Record<string, string>;
   items: MenuCMSItem[];
+  ctaSubtitle?: string;
+  ctaTitle?: string;
+  ctaTitleItalic?: string;
+  ctaBtnText?: string;
 }
 
 export interface FooterCMS {
@@ -224,6 +229,10 @@ export const DEFAULT_CMS_DATA: FullCMSData = {
         image: "https://images.unsplash.com/photo-1551024709-8f23befc6f87?auto=format&fit=crop&q=80&w=800",
       },
     ],
+    ctaSubtitle: "Reserve Your Experience",
+    ctaTitle: "Ready to taste",
+    ctaTitleItalic: "extraordinary",
+    ctaBtnText: "Inquire Now",
   },
   packages: {
     headerSubtitle: "Exclusive Collections",
@@ -405,27 +414,62 @@ export const DEFAULT_CMS_DATA: FullCMSData = {
     ],
   },
   faqs: {
-    subtitle: "Common Inquiries",
+    subtitle: "Common Inquiries & Service Policies",
     items: [
       {
-        id: "faq-1",
-        question: "How early should we reserve our catering date?",
-        answer: "We recommend reserving at least 1 to 3 months in advance for peak wedding and holiday seasons to guarantee date availability.",
-        category: "Booking",
+        id: "faq-cancellation",
+        question: "What is your cancellation and refund policy?",
+        answer: "Under our official Service Agreement (**Terms 1 & 16**), all reservation fees, down payments, and settled amounts are **strictly non-refundable, non-transferable, and non-consumable** upon execution of the agreement.",
+        category: "Payment & Billing",
+        termId: "cancellation",
         active: true,
       },
       {
-        id: "faq-2",
-        question: "Can we customize or taste the menu before finalizing?",
-        answer: "Yes! Food tastings can be scheduled for confirmed inquiries and packages, allowing you to select and adjust dish options to your taste.",
-        category: "Menu",
+        id: "faq-down-payment",
+        question: "What is the down payment and billing schedule?",
+        answer: "A **50% down payment** is due at the time of booking or **within 7 days** of reservation. The remaining balance must be settled strictly **15 days before your event date**. An installment plan (**20% deposit**) is also available upon request (**Terms 3, 4 & 5**).",
+        category: "Payment & Billing",
+        termId: "down-payment",
         active: true,
       },
       {
-        id: "faq-3",
-        question: "Do you cater outside Rizal and Metro Manila?",
-        answer: "Yes, we cater across neighboring provinces such as Cavite, Laguna, Batangas, and Bulacan subject to out-of-town logistics fees.",
-        category: "Logistics",
+        id: "faq-changes",
+        question: "Can we adjust our menu, guest count, or details before the event?",
+        answer: "Yes, final changes and adjustments regarding menu selections, guest counts, and package inclusions must be communicated at least **fourteen (14) days prior to the event** (**Term 6**). Excess guests beyond the guaranteed count are charged at **₱500/pax** (**Term 11**).",
+        category: "Changes & Location",
+        termId: "changes",
+        active: true,
+      },
+      {
+        id: "faq-corkage",
+        question: "Can we bring our own outside food, lechon, or drinks?",
+        answer: "Yes, subject to standard service corkage fees (**Term 8**): **Lechon table** with dedicated waiter/chopper (**₱1,500**), **outside alcoholic beverages** (**₱400/bottle**), and **outside food** requiring extra chafing dishes/warmers (**₱400/dish**). Health waivers apply for outside food (**Term 15**).",
+        category: "Corkage & Services",
+        termId: "corkage-fees",
+        active: true,
+      },
+      {
+        id: "faq-hours",
+        question: "How long is the catering service duration and what are overtime fees?",
+        answer: "All package services are scheduled for a standard **4-hour duration** (**Term 14**). Time extensions incur an overtime fee of **₱4,000/hour** for catering service.",
+        category: "Hours & Overtime",
+        termId: "exceeding-hours",
+        active: true,
+      },
+      {
+        id: "faq-logistics",
+        question: "Do you cater outside Taytay, Rizal, and are there hauling fees?",
+        answer: "Yes! Out-of-town charges apply for events **outside Taytay, Rizal** (**Term 7**). Venues located on the 2nd floor or higher without elevator access incur a hauling fee of **₱150 per floor per waiter** (**Term 9**).",
+        category: "Changes & Location",
+        termId: "out-of-town-charges",
+        active: true,
+      },
+      {
+        id: "faq-spoilage",
+        question: "Can we take home leftover food after the event?",
+        answer: "Yes, but per our Food Spoilage Policy (**Term 18**), food exposed to room temperature for **more than 3 hours** risks spoilage. The caterer is relieved from liability once leftover food is packed and taken out of the venue.",
+        category: "Liability & Spoilage",
+        termId: "food-spoilage",
         active: true,
       },
     ],
@@ -436,6 +480,8 @@ export const DEFAULT_CMS_DATA: FullCMSData = {
     quickLinks: [
       { name: "Facebook", url: "https://facebook.com" },
       { name: "Instagram", url: "https://instagram.com" },
+      { name: "Terms & Conditions", url: "/terms" },
+      { name: "FAQs", url: "/faqs" },
       { name: "Inquire Now", url: "/booking" },
     ],
   },

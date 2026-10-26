@@ -15,6 +15,7 @@ import {
   AlertTriangle,
   ArrowLeft,
   Calendar,
+  HelpCircle,
 } from "lucide-react";
 import { CATERING_CONTRACT_TERMS, ContractTermItem } from "../data/cateringContractTerms";
 
@@ -109,39 +110,35 @@ export default function TermsPage() {
             <span className="flex items-center gap-1.5">
               <MapPin size={14} className="text-gold-400" /> Base Location: Taytay, Rizal
             </span>
+            <span>•</span>
+            <Link
+              to="/faqs"
+              className="flex items-center gap-1.5 text-gold-400 hover:text-white transition-colors underline font-semibold"
+            >
+              <HelpCircle size={14} /> View Common FAQs
+            </Link>
           </div>
         </div>
       </header>
 
-      {/* Main Content Area */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-8 py-12 sm:py-16">
-        {/* Controls: Search and Categories */}
-        <div className="space-y-6 mb-12">
-          {/* Search bar */}
+      {/* Main Content */}
+      <main className="max-w-6xl mx-auto px-6 sm:px-10 py-12">
+        {/* Search & Categories Bar */}
+        <div className="mb-12 space-y-6">
+          {/* Search Bar */}
           <div className="relative max-w-xl mx-auto">
-            <Search
-              size={18}
-              className="absolute left-4 top-1/2 -translate-y-1/2 text-white/40"
-            />
+            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-white/40" size={18} />
             <input
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search terms, corkage fees, cancellation policy..."
-              className="w-full bg-white/5 border border-white/10 rounded-full pl-11 pr-5 py-3 text-sm text-white placeholder-white/40 focus:outline-none focus:border-gold-400/50 transition-colors"
+              placeholder="Search terms, corkage rates, policies, or keywords..."
+              className="w-full pl-11 pr-4 py-3 bg-white/5 border border-white/10 rounded-lg text-sm text-white placeholder-white/40 focus:outline-none focus:border-gold-400 transition-colors"
             />
-            {searchQuery && (
-              <button
-                onClick={() => setSearchQuery("")}
-                className="absolute right-4 top-1/2 -translate-y-1/2 text-xs text-white/40 hover:text-white"
-              >
-                Clear
-              </button>
-            )}
           </div>
 
-          {/* Category Tabs */}
-          <div className="flex items-center justify-center gap-2 overflow-x-auto pb-2 scrollbar-none">
+          {/* Category Filter Pills */}
+          <div className="flex flex-wrap items-center justify-center gap-2">
             {CATEGORIES.map((cat) => {
               const Icon = cat.icon;
               const isActive = activeCategory === cat.id;
@@ -149,60 +146,45 @@ export default function TermsPage() {
                 <button
                   key={cat.id}
                   onClick={() => setActiveCategory(cat.id)}
-                  className={`flex items-center gap-2 px-4 py-2 rounded-full text-xs font-semibold whitespace-nowrap transition-all ${
+                  className={`flex items-center gap-2 px-3.5 py-1.5 rounded-full text-xs font-semibold tracking-wider uppercase transition-all ${
                     isActive
-                      ? "bg-gold-400 text-black shadow-[0_0_20px_rgba(197,160,89,0.3)]"
-                      : "bg-white/5 border border-white/10 text-white/70 hover:text-white hover:bg-white/10"
+                      ? "gold-gradient text-black font-bold shadow-lg"
+                      : "bg-white/5 text-white/60 hover:text-white hover:bg-white/10 border border-white/10"
                   }`}
                 >
                   <Icon size={14} />
-                  {cat.label}
+                  <span>{cat.label}</span>
                 </button>
               );
             })}
           </div>
         </div>
 
-        {/* Highlight Callout */}
-        <div className="mb-10 p-5 bg-gold-400/5 border border-gold-400/20 rounded-xl flex items-start gap-4">
-          <Info className="text-gold-400 shrink-0 mt-0.5" size={20} />
-          <div className="space-y-1 text-xs sm:text-sm text-white/80 leading-relaxed">
-            <p className="font-bold text-gold-300 uppercase tracking-wider">
-              Important Summary of Core Requirements
-            </p>
-            <p>
-              Down payment or reservation amounts are strictly <strong>non-refundable</strong>.
-              Standard event service duration is <strong>4 hours</strong> (7:00 PM – 11:00 PM).
-              All final headcount adjustments and menu changes must be submitted at least{" "}
-              <strong>14 days</strong> prior to the event date.
-            </p>
-          </div>
-        </div>
-
         {/* Terms List */}
         {filteredTerms.length === 0 ? (
-          <div className="text-center py-20 bg-white/5 rounded-xl border border-white/10">
-            <FileText size={40} className="mx-auto text-white/20 mb-4" />
-            <p className="text-white/60 text-base">No contractual terms match your search.</p>
+          <div className="py-20 text-center space-y-4">
+            <Info size={40} className="mx-auto text-white/20" />
+            <p className="text-white/60 font-serif text-lg">No terms found matching your query.</p>
             <button
               onClick={() => {
-                setSearchQuery("");
                 setActiveCategory("all");
+                setSearchQuery("");
               }}
-              className="mt-4 px-6 py-2 bg-gold-400/20 text-gold-300 text-xs font-bold uppercase rounded-lg hover:bg-gold-400/30 transition-colors"
+              className="px-4 py-2 text-xs uppercase tracking-wider text-gold-400 hover:underline"
             >
-              Reset Filters
+              Clear filters
             </button>
           </div>
         ) : (
           <div className="grid grid-cols-1 gap-6">
             {filteredTerms.map((term) => (
               <motion.article
+                id={term.id}
                 key={term.id}
                 initial={{ opacity: 0, y: 15 }}
                 whileInView={{ opacity: 1, y: 0 }}
                 viewport={{ once: true }}
-                className="p-6 sm:p-8 bg-black/40 border border-white/10 rounded-xl hover:border-gold-400/30 transition-all space-y-4"
+                className="scroll-mt-28 p-6 sm:p-8 bg-black/40 border border-white/10 rounded-xl hover:border-gold-400/30 transition-all space-y-4 target:border-gold-400 target:bg-gold-400/5 target:ring-1 target:ring-gold-400"
               >
                 {/* Header */}
                 <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 pb-4">
@@ -283,7 +265,14 @@ export default function TermsPage() {
             <ArrowLeft size={16} /> Return to Home
           </Link>
 
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-4 flex-wrap">
+            <Link
+              to="/faqs"
+              className="px-6 py-3.5 border border-white/20 hover:border-gold-400 text-white hover:text-gold-400 text-xs font-bold uppercase tracking-wider transition-all rounded-sm flex items-center gap-2 bg-white/5"
+            >
+              <HelpCircle size={14} className="text-gold-400" /> Browse FAQs
+            </Link>
+
             <Link
               to="/booking"
               className="px-8 py-3.5 gold-gradient text-black text-xs font-bold uppercase tracking-wider hover:brightness-110 transition-all rounded-sm flex items-center gap-2 shadow-lg"
@@ -296,4 +285,3 @@ export default function TermsPage() {
     </div>
   );
 }
-

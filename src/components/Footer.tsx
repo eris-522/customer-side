@@ -10,6 +10,7 @@ export default function Footer() {
         { name: "Facebook", url: contact.facebookUrl || "https://facebook.com" },
         { name: "Instagram", url: contact.instagramUrl || "https://instagram.com" },
         { name: "Terms & Conditions", url: "/terms" },
+        { name: "FAQs", url: "/faqs" },
         { name: "Inquire Now", url: "/booking" },
       ];
 

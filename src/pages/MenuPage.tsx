@@ -169,17 +169,20 @@ export default function MenuPage() {
       <section className="py-32 px-10 border-t border-white/10">
         <div className="max-w-7xl mx-auto flex flex-col items-center text-center">
           <span className="text-gold-400 text-[10px] tracking-[0.4em] font-bold uppercase mb-8 block italic">
-            Reserve Your Experience
+            {menuCms?.ctaSubtitle || "Reserve Your Experience"}
           </span>
           <h2 className="text-4xl md:text-7xl font-serif text-white mb-12 leading-tight">
-            Ready to taste <br /> <span className="italic">extraordinary</span>{" "}
+            {menuCms?.ctaTitle || "Ready to taste"} <br />{" "}
+            <span className="italic">
+              {menuCms?.ctaTitleItalic || "extraordinary"}
+            </span>{" "}
             service?
           </h2>
           <Link
             to="/booking"
             className="gold-gradient text-black px-16 py-5 font-bold tracking-widest uppercase text-xs hover:brightness-110 transition-all inline-block text-center"
           >
-            Inquire Now
+            {menuCms?.ctaBtnText || "Inquire Now"}
           </Link>
           <div className="mt-12 flex items-center gap-4">
             <div className="w-12 h-[1px] bg-white/10"></div>

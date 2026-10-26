@@ -188,12 +188,20 @@ export default function ContactPage() {
         <div className="max-w-7xl mx-auto flex flex-col items-center text-center">
             <span className="text-gold-400 text-[10px] tracking-[0.4em] font-bold uppercase mb-8 block italic">Reserve Your Date</span>
             <h2 className="text-4xl md:text-7xl font-serif text-white mb-12 leading-tight uppercase">Ready to <span className="italic">Collaborate?</span></h2>
-            <Link 
-              to="/booking" 
-              className="gold-gradient text-black px-16 py-5 font-bold tracking-widest uppercase text-xs hover:brightness-110 transition-all inline-block"
-            >
-               Request Quote
-            </Link>
+            <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
+              <Link 
+                to="/booking" 
+                className="gold-gradient text-black px-16 py-5 font-bold tracking-widest uppercase text-xs hover:brightness-110 transition-all inline-block"
+              >
+                 Request Quote
+              </Link>
+              <Link
+                to="/faqs"
+                className="border border-white/20 hover:border-gold-400 text-white hover:text-gold-400 px-12 py-5 font-bold tracking-widest uppercase text-xs transition-all inline-block bg-white/5"
+              >
+                Browse FAQs
+              </Link>
+            </div>
         </div>
       </section>
     </div>

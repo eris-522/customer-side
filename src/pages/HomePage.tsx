@@ -1,5 +1,5 @@
 import { motion } from "motion/react";
-import { ChevronRight, Quote } from "lucide-react";
+import { ChevronRight, Quote, ChevronDown, FileText } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useState, useEffect } from "react";
 import { supabase } from "../utils/supabase";
@@ -34,11 +34,12 @@ const fallbackImages = [
 
 export default function HomePage() {
   const { cms } = useCMS();
-  const { hero, process: processData, testimonials, contact, packages: packagesCms } = cms;
+  const { hero, process: processData, testimonials, contact, packages: packagesCms, faqs } = cms;
   const [packages, setPackages] = useState<CateringPackage[]>([]);
   const [inclusionCategories, setInclusionCategories] = useState<
     Record<string, string[]>
   >({});
+  const [openFaqId, setOpenFaqId] = useState<string | null>(null);
 
   const featuredReview =
     testimonials?.items?.find((t) => t.featured && t.active) ||
@@ -49,6 +50,10 @@ export default function HomePage() {
     processData?.steps && processData.steps.length > 0
       ? processData.steps
       : [];
+
+  const previewFaqs = (faqs?.items || [])
+    .filter((item) => item.active !== false)
+    .slice(0, 4);
 
   useEffect(() => {
     const fetchPackages = async (forceRefresh = false) => {
@@ -306,6 +311,78 @@ export default function HomePage() {
         </div>
       </section>
 
+      {/* Menu Teaser / Curated Gastronomy */}
+      <section id="menu-teaser" className="py-24 px-10 bg-[#070707]">
+        <div className="max-w-7xl mx-auto">
+          <div className="flex flex-col md:flex-row justify-between items-start md:items-end mb-16 gap-6">
+            <div>
+              <span className="text-gold-400 text-[10px] tracking-[0.4em] font-bold uppercase mb-4 block italic">
+                Gastronomic Craft
+              </span>
+              <h2 className="text-4xl md:text-6xl font-serif">
+                Curated <span className="italic gold-text-gradient">Selection</span>
+              </h2>
+            </div>
+            <Link
+              to="/menu"
+              className="text-xs uppercase tracking-widest text-gold-400 hover:text-white transition-colors flex items-center gap-2 font-bold group"
+            >
+              <span>Explore Complete Menu</span>
+              <ChevronRight size={14} className="group-hover:translate-x-1 transition-transform" />
+            </Link>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+            {[
+              {
+                title: "Slow-Roasted Beef",
+                category: "Main Course",
+                image: "https://images.unsplash.com/photo-1544025162-d76694265947?auto=format&fit=crop&q=80&w=800",
+              },
+              {
+                title: "Grilled Salmon in Lemon Butter",
+                category: "Main Course",
+                image: "https://images.unsplash.com/photo-1467003909585-2f8a72700288?auto=format&fit=crop&q=80&w=800",
+              },
+              {
+                title: "Truffle Cream Penne",
+                category: "Pasta",
+                image: "https://images.unsplash.com/photo-1565299624946-b28f40a0ae38?auto=format&fit=crop&q=80&w=800",
+              },
+              {
+                title: "Artisan Charcuterie",
+                category: "Appetizers",
+                image: "https://images.unsplash.com/photo-1504674900247-0877df9cc836?auto=format&fit=crop&q=80&w=800",
+              },
+            ].map((dish, idx) => (
+              <motion.div
+                key={dish.title}
+                initial={{ opacity: 0, y: 20 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true }}
+                transition={{ delay: idx * 0.1 }}
+                className="group relative aspect-[4/5] overflow-hidden rounded-sm border border-white/10"
+              >
+                <img
+                  src={dish.image}
+                  alt={dish.title}
+                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700 grayscale group-hover:grayscale-0"
+                />
+                <div className="absolute inset-0 bg-gradient-to-t from-black via-black/30 to-transparent" />
+                <div className="absolute bottom-6 left-6 right-6">
+                  <span className="text-[9px] uppercase tracking-widest text-gold-400 font-bold block mb-1">
+                    {dish.category}
+                  </span>
+                  <h4 className="text-lg font-serif text-white font-bold leading-snug">
+                    {dish.title}
+                  </h4>
+                </div>
+              </motion.div>
+            ))}
+          </div>
+        </div>
+      </section>
+
       {/* How It Works */}
       <section id="process" className="bg-rich-black">
         <div className="max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-3">
@@ -356,6 +433,94 @@ export default function HomePage() {
           </div>
         </div>
       </section>
+
+      {/* Frequently Asked Questions Showcase */}
+      {previewFaqs.length > 0 && (
+        <section className="py-24 px-10 border-t border-white/10 bg-[#070707]">
+          <div className="max-w-5xl mx-auto space-y-12">
+            <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 border-b border-white/10 pb-8">
+              <div>
+                <span className="text-gold-400 text-[10px] tracking-[0.4em] font-bold uppercase mb-3 block italic">
+                  {faqs?.subtitle || "Service Policies & Common Inquiries"}
+                </span>
+                <h2 className="text-3xl md:text-5xl font-serif text-white">
+                  Frequently Asked <span className="italic gold-text-gradient">Questions</span>
+                </h2>
+              </div>
+              <div className="flex items-center gap-4 flex-wrap">
+                <Link
+                  to="/faqs"
+                  className="text-xs uppercase tracking-widest text-gold-400 hover:text-white transition-colors flex items-center gap-2 font-bold group"
+                >
+                  <span>View All FAQs</span>
+                  <ChevronRight size={14} className="group-hover:translate-x-1 transition-transform" />
+                </Link>
+                <span className="text-white/20">•</span>
+                <Link
+                  to="/terms"
+                  className="text-xs uppercase tracking-widest text-white/60 hover:text-gold-400 transition-colors flex items-center gap-1.5 font-bold"
+                >
+                  <FileText size={13} className="text-gold-400" />
+                  <span>Terms & Conditions</span>
+                </Link>
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              {previewFaqs.map((faq) => {
+                const isOpen = openFaqId === faq.id;
+                return (
+                  <div
+                    key={faq.id}
+                    className={`border transition-all duration-300 rounded-xl overflow-hidden ${
+                      isOpen
+                        ? "border-gold-400/40 bg-[#121212]"
+                        : "border-white/10 bg-black/40 hover:border-white/20"
+                    }`}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => setOpenFaqId(isOpen ? null : faq.id)}
+                      className="w-full p-5 text-left flex items-center justify-between gap-4 cursor-pointer"
+                    >
+                      <div className="flex items-center gap-3 flex-1">
+                        {faq.category && (
+                          <span className="text-[9px] uppercase tracking-widest font-bold text-gold-400/80 bg-gold-400/10 px-2 py-0.5 rounded border border-gold-400/20 shrink-0">
+                            {faq.category}
+                          </span>
+                        )}
+                        <h4 className="text-sm md:text-base font-serif text-white">
+                          {faq.question}
+                        </h4>
+                      </div>
+                      <ChevronDown
+                        size={16}
+                        className={`text-white/40 shrink-0 transition-transform duration-300 ${
+                          isOpen ? "rotate-180 text-gold-400" : ""
+                        }`}
+                      />
+                    </button>
+                    {isOpen && (
+                      <div className="px-5 pb-5 pt-1 text-xs text-white/70 leading-relaxed border-t border-white/5 font-sans space-y-3">
+                        <p>{faq.answer}</p>
+                        <div className="pt-1">
+                          <Link
+                            to={faq.termId ? `/terms#${faq.termId}` : "/terms"}
+                            className="inline-flex items-center gap-1.5 text-xs text-gold-400 hover:text-white transition-colors font-semibold"
+                          >
+                            <FileText size={12} className="text-gold-400" />
+                            <span>Read official term in Terms & Conditions →</span>
+                          </Link>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </section>
+      )}
 
       {/* Contact Section */}
       <section

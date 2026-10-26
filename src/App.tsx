@@ -10,6 +10,7 @@ import MenuPage from "./pages/MenuPage";
 import PackagesPage from "./pages/PackagesPage";
 import AboutPage from "./pages/AboutPage";
 import ContactPage from "./pages/ContactPage";
+import FAQsPage from "./pages/FAQsPage";
 import AuthPage from "./pages/AuthPage";
 import BookingPage from "./pages/BookingPage";
 import MyInquiriesPage from "./pages/MyInquiriesPage";
@@ -33,6 +34,7 @@ export default function App() {
               <Route path="/menu" element={<MenuPage />} />
               <Route path="/packages" element={<PackagesPage />} />
               <Route path="/about" element={<AboutPage />} />
+              <Route path="/faqs" element={<FAQsPage />} />
               <Route path="/contact" element={<ContactPage />} />
               <Route path="/auth" element={<AuthPage />} />
               <Route path="/booking" element={<BookingPage />} />

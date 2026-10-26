@@ -7,11 +7,11 @@ import { NotificationCenter } from "./NotificationCenter";
 import { AnnouncementBanner } from "./AnnouncementBanner";
 
 export const navLinks = [
-
   { name: "Home", href: "/" },
   { name: "Menu", href: "/menu" },
   { name: "Packages", href: "/packages" },
   { name: "About", href: "/about" },
+  { name: "FAQs", href: "/faqs" },
   { name: "Contact", href: "/contact" },
   { name: "Book", href: "/booking" },
 ];
@@ -74,7 +74,6 @@ export default function Navbar() {
   const isLoginActive = isAuthPage && mode !== "signup";
   const isSignupActive = !isAuthPage || (isAuthPage && mode === "signup");
 
-
   useEffect(() => {
     const handleScroll = () => {
       setIsScrolled(window.scrollY > 50);
@@ -106,7 +105,6 @@ export default function Navbar() {
     };
   }, []);
 
-
   // Fetch updates related to the user's booking statuses
   useEffect(() => {
     if (!user) return;
@@ -115,8 +113,7 @@ export default function Navbar() {
       const { data } = await supabase
         .from('bookings')
         .select('id, status, cancelled_by, cancellation_reason, event_date, created_at, logistics_info, food_allergies')
-        .eq('user_id', user.id)
-        ; // Fetch all bookings to support status and logistics travel fee notifications
+        .eq('user_id', user.id);
       
       if (data) {
         // Filter out bookings cancelled by the customer so they don't receive a notification for their own action
@@ -184,7 +181,6 @@ export default function Navbar() {
     };
   }, [user]);
 
-
   const handleLogoutClick = () => {
     setIsMobileMenuOpen(false);
     setShowLogoutConfirm(true);
@@ -208,8 +204,6 @@ export default function Navbar() {
       return newIds;
     });
   };
-
-
 
   return (
     <>
