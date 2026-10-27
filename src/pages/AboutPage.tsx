@@ -13,6 +13,9 @@ const ICON_MAP: Record<string, LucideIcon> = {
   Clock,
 };
 
+const FALLBACK_STORY_IMAGE =
+  "https://images.unsplash.com/photo-1414235077428-338989a2e8c0?auto=format&fit=crop&q=80&w=1000";
+
 export default function AboutPage() {
   const { cms } = useCMS();
   const { about } = cms;
@@ -52,8 +55,14 @@ export default function AboutPage() {
           >
             <div className="absolute -inset-4 border border-gold-400/20 z-0"></div>
             <img 
-              src={about.storyImage || "https://scontent.fmnl17-3.fna.fbcdn.net/v/t1.15752-9/696223294_1463671008399082_3075120905317355661_n.jpg?_nc_cat=106&ccb=1-7&_nc_sid=9f807c&_nc_eui2=AeF8Y1R0NyhMvp8gl9ixD8IuMmuqx43po3Uya6rHjemjdUfxja92Q5vtTvTw-_J2pPpUL1cCao3gCtVjfkVj659e&_nc_ohc=ODlXDTe3ta8Q7kNvwFsx7uN&_nc_oc=AdqPZ2cRRNZKL2quPxdm2IiL8WaaseY9oPAZYYlr0TT5LuL8pGLPt2T5ztAckwqv180&_nc_zt=23&_nc_ht=scontent.fmnl17-3.fna&_nc_ss=7b2a8&oh=03_Q7cD5QFjPgKrvwkRZPYDKGi3NdV5QH2732T_Ab67mk1COEjLMg&oe=6A2A1AF5"} 
+              src={about.storyImage || FALLBACK_STORY_IMAGE} 
               alt="Culinary story" 
+              onError={(e) => {
+                const target = e.currentTarget;
+                if (target.src !== FALLBACK_STORY_IMAGE) {
+                  target.src = FALLBACK_STORY_IMAGE;
+                }
+              }}
               className="relative z-10 w-full aspect-[4/5] object-cover grayscale hover:grayscale-0 transition-all duration-700"
             />
           </motion.div>
