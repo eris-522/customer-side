@@ -14,6 +14,7 @@ import {
   ChevronLeft,
   ShieldQuestion,
   Phone,
+  CheckCircle2,
 } from "lucide-react";
 import { supabase } from "../utils/supabase";
 
@@ -46,11 +47,22 @@ const validateEmailFormat = (email: string): string => {
   const emailRegex =
     /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.(com|net|org|edu|gov|ph|co|uk|us|ca|au|nz|sg|in|io|me|tv|app|dev|tech)$/i;
   if (!emailRegex.test(trimmed)) {
-    return "Please enter a valid email address (e.g., @gmail.com, @yahoo.com).";
+    return "Please enter a valid email address (e.g., name@gmail.com, name@yahoo.com).";
+  }
+
+  const [localPart, rawDomain] = trimmed.split("@");
+  if (
+    !localPart ||
+    localPart.length < 3 ||
+    !/[a-zA-Z]/.test(localPart) ||
+    /^[._+-]|[._+-]$/.test(localPart) ||
+    localPart.includes("..")
+  ) {
+    return "Please enter a valid email address (username before '@' must be at least 3 characters and contain letters).";
   }
 
   // Smart typo detection for major email providers using Levenshtein distance
-  const domain = trimmed.split("@")[1]?.toLowerCase();
+  const domain = rawDomain?.toLowerCase();
   if (domain) {
     // Whitelist valid domains that are intentionally spelled similarly to major ones to prevent false positives
     const exactMatches = [
@@ -113,6 +125,8 @@ export default function AuthPage() {
   const [error, setError] = useState<React.ReactNode>("");
   const [emailError, setEmailError] = useState("");
   const [recoveryEmailError, setRecoveryEmailError] = useState("");
+  const [showEmailConfirmModal, setShowEmailConfirmModal] = useState(false);
+  const [registeredEmail, setRegisteredEmail] = useState("");
 
   useEffect(() => {
     // Listen for password recovery redirect from email links
@@ -236,6 +250,7 @@ export default function AuthPage() {
     try {
       const emailValidationErr = validateEmailFormat(currentEmail);
       if (emailValidationErr) {
+        setEmailError(emailValidationErr);
         setError(emailValidationErr);
         return;
       }
@@ -294,6 +309,11 @@ export default function AuthPage() {
 
         if (phoneNumber.length !== 10) {
           setError("Phone number must be exactly 10 digits.");
+          return;
+        }
+
+        if (password.length < 6) {
+          setError("Password must be at least 6 characters long.");
           return;
         }
 
@@ -402,17 +422,27 @@ export default function AuthPage() {
         );
 
         if (authError) {
+          const lowerMsg = authError.message.toLowerCase();
           const isAlreadyRegistered =
-            authError.message.toLowerCase().includes("already registered") ||
-            authError.message.toLowerCase().includes("already in use") ||
-            authError.message.toLowerCase().includes("user already exists") ||
-            (authError as any).status === 422;
+            lowerMsg.includes("already registered") ||
+            lowerMsg.includes("already in use") ||
+            lowerMsg.includes("user already exists");
+          const isInvalidEmail =
+            (lowerMsg.includes("invalid") && lowerMsg.includes("email")) ||
+            lowerMsg.includes("validate email");
 
           if (isAlreadyRegistered) {
             setError(
               "This email is already in use. Please sign in or use a different email.",
             );
             setEmailError("This email is already in use.");
+          } else if (isInvalidEmail) {
+            setError(
+              "Please enter a valid email address (e.g., name@gmail.com, name@yahoo.com).",
+            );
+            setEmailError(
+              "Please enter a valid email address (e.g., name@gmail.com, name@yahoo.com).",
+            );
           } else {
             setError(authError.message);
           }
@@ -453,21 +483,12 @@ export default function AuthPage() {
             return;
           }
 
-          // If email confirmation is required/unconfirmed, inform the user to check their email
-          if (!authData.session || !authData.user.email_confirmed_at) {
-            setMessage(
-              "Registration successful! Please check your email to confirm your account before logging in.",
-            );
-          } else {
-            setMessage(
-              "Registration successful! You can now log in to book your event.",
-            );
-          }
-
-          setIsLogin(true);
-          setSearchParams({ mode: "login" });
+          setRegisteredEmail(currentEmail);
+          setShowEmailConfirmModal(true);
+          setFullName("");
           setPassword("");
           setPhoneNumber("");
+          setSecurityAnswer("");
         }
       }
     } finally {
@@ -896,6 +917,59 @@ export default function AuthPage() {
           </div>
         </div>
       </div>
+
+      {/* Email Confirmation Pop-Up Modal */}
+      <AnimatePresence>
+        {showEmailConfirmModal && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[100] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4"
+          >
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0, y: 20 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.95, opacity: 0, y: 20 }}
+              className="glass-card border border-white/10 p-8 sm:p-10 max-w-md w-full text-center relative overflow-hidden rounded-xl shadow-2xl bg-[#0c0c0c]"
+            >
+              <div className="absolute top-0 left-0 w-full h-1 bg-gold-400" />
+              <div className="w-20 h-20 bg-gold-400/10 rounded-full flex items-center justify-center mx-auto mb-6 border border-gold-400/20">
+                <Mail className="text-gold-400" size={38} />
+              </div>
+              <h3 className="text-2xl sm:text-3xl font-serif text-white mb-3 italic">
+                Check Your <span className="gold-text-gradient">Email</span>
+              </h3>
+              <p className="text-sm sm:text-base text-white/80 mb-4 font-medium leading-relaxed">
+                Your account has been created! We've sent a confirmation link to{" "}
+                <span className="text-gold-400 font-bold break-all">
+                  {registeredEmail}
+                </span>
+                .
+              </p>
+              <div className="text-xs text-gold-300 font-medium leading-relaxed border border-gold-400/20 bg-gold-400/5 p-4 rounded-lg mb-8 text-left space-y-1.5">
+                <p className="font-bold text-gold-400 uppercase tracking-wider text-[11px] flex items-center gap-1.5">
+                  <CheckCircle2 size={14} /> Confirm Before Signing In
+                </p>
+                <p className="text-white/70">
+                  Please open the email and click the verification link to activate your account before signing in. If you don't see it within a few minutes, check your Spam or Junk folder.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowEmailConfirmModal(false);
+                  setIsLogin(true);
+                  setSearchParams({ mode: "login" });
+                }}
+                className="w-full py-3.5 gold-gradient text-black font-bold tracking-wider text-sm uppercase hover:brightness-110 transition-all rounded-sm flex items-center justify-center gap-2"
+              >
+                Proceed to Sign In <ArrowRight size={15} />
+              </button>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
