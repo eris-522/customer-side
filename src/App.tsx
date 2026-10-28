@@ -32,7 +32,7 @@ function RouteLoadingFallback() {
   );
 }
 
-function AuthRecoveryRedirect() {
+function AuthRoutingHandler() {
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -42,8 +42,16 @@ function AuthRecoveryRedirect() {
       window.location.search.includes("type=recovery") ||
       sessionStorage.getItem("supabase_recovery_mode") === "true";
 
+    const isSignup =
+      window.location.hash.includes("type=signup") ||
+      window.location.search.includes("type=signup") ||
+      window.location.search.includes("confirmed=true") ||
+      sessionStorage.getItem("supabase_email_confirmed") === "true";
+
     if (isRecovery && location.pathname !== "/auth") {
       navigate(`/auth?mode=reset${window.location.hash}`, { replace: true });
+    } else if (isSignup && location.pathname !== "/auth") {
+      navigate(`/auth?mode=login&confirmed=true${window.location.hash}`, { replace: true });
     }
 
     const {
@@ -71,7 +79,7 @@ export default function App() {
   return (
     <CMSProvider>
       <Router>
-        <AuthRecoveryRedirect />
+        <AuthRoutingHandler />
         <ScrollToTop />
         <div className="flex flex-col min-h-screen bg-rich-black">
           <Navbar />

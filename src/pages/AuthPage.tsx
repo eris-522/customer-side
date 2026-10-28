@@ -139,6 +139,7 @@ export default function AuthPage() {
   const [error, setError] = useState<React.ReactNode>("");
   const [emailError, setEmailError] = useState("");
   const [phoneError, setPhoneError] = useState("");
+  const [emailConfirmed, setEmailConfirmed] = useState(false);
   const [recoveryEmailError, setRecoveryEmailError] = useState("");
   const [showEmailConfirmModal, setShowEmailConfirmModal] = useState(false);
   const [registeredEmail, setRegisteredEmail] = useState("");
@@ -169,6 +170,23 @@ export default function AuthPage() {
         return;
       }
 
+      const isSignupConfirmation =
+        urlParams.get("confirmed") === "true" ||
+        window.location.hash.includes("type=signup") ||
+        sessionStorage.getItem("supabase_email_confirmed") === "true";
+
+      if (isSignupConfirmation) {
+        try {
+          sessionStorage.removeItem("supabase_email_confirmed");
+        } catch {}
+        // Explicitly sign out so user logs in manually as requested
+        await supabase.auth.signOut();
+        setIsLogin(true);
+        setForgotPasswordStep("none");
+        setEmailConfirmed(true);
+        return;
+      }
+
       // If already signed in, skip auth page
       const { data } = await supabase.auth.getUser();
       if (data.user) {
@@ -195,6 +213,14 @@ export default function AuthPage() {
     } else {
       setIsLogin(mode !== "signup");
       setForgotPasswordStep("none");
+    }
+
+    if (
+      searchParams.get("confirmed") === "true" ||
+      window.location.hash.includes("type=signup") ||
+      sessionStorage.getItem("supabase_email_confirmed") === "true"
+    ) {
+      setEmailConfirmed(true);
     }
     setEmailError("");
     setPhoneError("");
@@ -454,7 +480,7 @@ export default function AuthPage() {
             email: currentEmail,
             password: password,
             options: {
-              emailRedirectTo: "https://rpcatering.vercel.app/auth",
+              emailRedirectTo: "https://rpcatering.vercel.app/auth?confirmed=true",
             },
           },
         );
@@ -576,6 +602,24 @@ export default function AuthPage() {
                   : "Join us for exquisite event planning."}
             </p>
           </div>
+
+          {emailConfirmed && isLogin && forgotPasswordStep === "none" && (
+            <motion.div
+              initial={{ opacity: 0, y: -10 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="mb-6 p-4 rounded-lg bg-green-500/10 border border-green-500/30 flex items-start gap-3 text-left"
+            >
+              <CheckCircle2 className="text-green-400 shrink-0 mt-0.5" size={20} />
+              <div>
+                <h4 className="text-green-400 font-bold text-base leading-snug">
+                  Email Confirmed!
+                </h4>
+                <p className="text-white/80 text-sm mt-0.5 leading-relaxed">
+                  Your email address has been successfully verified. Please sign in below to access your account.
+                </p>
+              </div>
+            </motion.div>
+          )}
 
           <AnimatePresence mode="wait">
             {forgotPasswordStep === "none" ? (
@@ -964,6 +1008,7 @@ export default function AuthPage() {
                 <button
                   onClick={() => {
                     setIsLogin(!isLogin);
+                    setEmailConfirmed(false);
                     setSearchParams({ mode: isLogin ? "signup" : "login" });
                     setError("");
                     setMessage("");

@@ -10,13 +10,21 @@ export const supabase = createClient(supabaseUrl, supabaseKey, {
 });
 
 if (typeof window !== 'undefined') {
-  // Capture recovery token in URL immediately before Supabase or routing cleans it up
+  // Capture recovery or confirmation token in URL immediately before Supabase cleans it up
   if (
     window.location.hash.includes('type=recovery') ||
     window.location.search.includes('type=recovery')
   ) {
     try {
       sessionStorage.setItem('supabase_recovery_mode', 'true');
+    } catch {}
+  } else if (
+    window.location.hash.includes('type=signup') ||
+    window.location.search.includes('type=signup') ||
+    window.location.search.includes('confirmed=true')
+  ) {
+    try {
+      sessionStorage.setItem('supabase_email_confirmed', 'true');
     } catch {}
   }
 
