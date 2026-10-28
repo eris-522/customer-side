@@ -712,7 +712,10 @@ export function CMSProvider({ children }: { children: ReactNode }) {
     // Refresh when user switches back to the customer portal tab/window
     const handleVisibilityOrFocus = () => {
       if (document.visibilityState === "visible") {
-        fetchContent(true);
+        const lastFetch = Number(localStorage.getItem(LOCAL_STORAGE_CMS_TIME_KEY) || 0);
+        if (Date.now() - lastFetch > 300000) {
+          fetchContent(true);
+        }
       }
     };
     window.addEventListener("focus", handleVisibilityOrFocus);

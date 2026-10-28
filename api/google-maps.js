@@ -318,7 +318,7 @@ export default async function handler(req, res) {
     const mode = urlObj.searchParams.get("mode") || "search";
 
     res.setHeader("Content-Type", "application/json; charset=utf-8");
-    res.setHeader("Cache-Control", "public, max-age=60");
+    res.setHeader("Cache-Control", "public, max-age=3600, s-maxage=86400, stale-while-revalidate=604800");
 
     if (mode === "reverse") {
       const lat = urlObj.searchParams.get("lat");
