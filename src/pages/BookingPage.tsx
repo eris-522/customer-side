@@ -574,7 +574,7 @@ export default function BookingPage() {
       setMenuToastError("");
     } else if (currentStep === 4) {
       if (corkageState.outsideFoodCount > 0 && !corkageState.outsideFoodDisclaimerAgreed) {
-        setStepError("Please read and acknowledge the Outside Food Health Risk Waiver (Contract Term 15) to continue.");
+        setStepError("Please read and acknowledge the Outside Food Health Risk Waiver to continue.");
         return;
       }
     }
@@ -2028,9 +2028,6 @@ export default function BookingPage() {
                       <ShieldAlert className="text-amber-400 shrink-0 mt-0.5" size={24} />
                       <div className="space-y-1.5">
                         <div className="flex items-center gap-2">
-                          <span className="px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider rounded bg-amber-500/20 text-amber-300 border border-amber-500/40">
-                            Contract Term 15
-                          </span>
                           <h4 className="text-base font-bold text-amber-300">
                             Outside Food Health Risk Disclaimer &amp; Liability Waiver
                           </h4>
@@ -2174,13 +2171,13 @@ export default function BookingPage() {
                               )}
                               {corkageState.alcoholicBeveragesCount > 0 && (
                                 <div className="flex justify-between text-sm text-gold-400 font-medium">
-                                  <span>Alcoholic Corkage ({corkageState.alcoholicBeveragesCount} btl{corkageState.alcoholicBeveragesCount > 1 ? "s" : ""})</span>
+                                  <span>Alcoholic Corkage</span>
                                   <span className="text-right">₱{(corkageState.alcoholicBeveragesCount * 400).toLocaleString()}</span>
                                 </div>
                               )}
                               {corkageState.outsideFoodCount > 0 && (
                                 <div className="flex justify-between text-sm text-gold-400 font-medium">
-                                  <span>Outside Food Corkage ({corkageState.outsideFoodCount} dish{corkageState.outsideFoodCount > 1 ? "es" : ""})</span>
+                                  <span>Outside Food Corkage</span>
                                   <span className="text-right">₱{(corkageState.outsideFoodCount * 400).toLocaleString()}</span>
                                 </div>
                               )}

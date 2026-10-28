@@ -787,11 +787,11 @@ export default function MyInquiriesPage() {
                               <div className="p-2.5 rounded border bg-gold-400/10 border-gold-400/30 text-gold-300 col-span-1 sm:col-span-2 lg:col-span-4">
                                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
                                   <div>
-                                    <p className="text-[10px] uppercase font-bold text-gold-400 tracking-wider">Corkage &amp; Services (Term 8)</p>
+                                    <p className="text-[10px] uppercase font-bold text-gold-400 tracking-wider">Corkage &amp; Services</p>
                                     <p className="text-xs text-white/80 mt-0.5">
                                       {[
                                         corkageData?.hasLechonTable ? "Lechon Table Setup (₱1,500)" : "",
-                                        corkageData?.alcoholicBeveragesCount > 0 ? `${corkageData.alcoholicBeveragesCount} Btl(s) Alcohol (₱${(corkageData.alcoholicBeveragesCount * 400).toLocaleString()})` : "",
+                                        corkageData?.alcoholicBeveragesCount > 0 ? `${corkageData.alcoholicBeveragesCount} Bottle(s) Alcohol (₱${(corkageData.alcoholicBeveragesCount * 400).toLocaleString()})` : "",
                                         corkageData?.outsideFoodCount > 0 ? `${corkageData.outsideFoodCount} Outside Dish(es) (₱${(corkageData.outsideFoodCount * 400).toLocaleString()})` : "",
                                       ].filter(Boolean).join(" • ")}
                                     </p>
