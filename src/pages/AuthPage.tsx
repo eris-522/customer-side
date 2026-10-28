@@ -138,8 +138,13 @@ export default function AuthPage() {
     });
 
     const init = async () => {
+      const urlParams = new URLSearchParams(window.location.search);
+      const isRecoveryFlow =
+        window.location.hash.includes("type=recovery") ||
+        urlParams.get("mode") === "reset";
+
       // Check if we are currently in a recovery flow
-      if (window.location.hash.includes("type=recovery")) {
+      if (isRecoveryFlow) {
         setForgotPasswordStep("reset");
         return;
       }
@@ -162,8 +167,14 @@ export default function AuthPage() {
   useEffect(() => {
     // Update display mode whenever the URL parameters change
     const mode = searchParams.get("mode");
-    setIsLogin(mode !== "signup");
-    setForgotPasswordStep("none");
+    const isRecoveryHash = window.location.hash.includes("type=recovery");
+    if (mode === "reset" || isRecoveryHash) {
+      setIsLogin(true);
+      setForgotPasswordStep("reset");
+    } else {
+      setIsLogin(mode !== "signup");
+      setForgotPasswordStep("none");
+    }
     setEmailError("");
     setRecoveryEmailError("");
     setError("");
@@ -203,7 +214,7 @@ export default function AuthPage() {
         if (recoveryAnswer.toLowerCase().trim() === fetchedAnswer) {
           // Send the recovery email instead of skipping directly to reset
           const { error } = await supabase.auth.resetPasswordForEmail(recoveryEmail, {
-            redirectTo: `${window.location.origin}/auth?mode=login`,
+            redirectTo: `${window.location.origin}/auth?mode=reset`,
           });
 
           if (error) {
