@@ -94,9 +94,16 @@ export default function Navbar() {
 
     initAuth();
 
+    if (window.location.hash.includes("type=recovery") && window.location.pathname !== "/auth") {
+      navigate(`/auth?mode=reset${window.location.hash}`, { replace: true });
+    }
+
     const { data: subscription } = supabase.auth.onAuthStateChange(
-      (_event, session) => {
+      (event, session) => {
         setUser(session?.user ?? null);
+        if (event === "PASSWORD_RECOVERY" && window.location.pathname !== "/auth") {
+          navigate("/auth?mode=reset", { replace: true });
+        }
       },
     );
 
