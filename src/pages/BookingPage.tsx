@@ -1876,9 +1876,7 @@ export default function BookingPage() {
                         >
                           <Plus size={14} />
                         </button>
-                        <span className="text-xs text-white/50 ml-1">
-                          bottle${corkageState.alcoholicBeveragesCount === 1 ? "" : "s"}
-                        </span>
+
                       </div>
                     </div>
                   </div>
@@ -2001,9 +1999,7 @@ export default function BookingPage() {
                         >
                           <Plus size={14} />
                         </button>
-                        <span className="text-xs text-white/50 ml-1">
-                          dish${corkageState.outsideFoodCount === 1 ? "" : "es"}
-                        </span>
+
                       </div>
                     </div>
                   </div>
