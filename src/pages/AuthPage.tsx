@@ -97,6 +97,20 @@ const validateEmailFormat = (email: string): string => {
   return "";
 };
 
+const validatePhoneFormat = (phone: string): string => {
+  const digits = phone.replace(/\D/g, "");
+  if (!digits) {
+    return "Phone number is required.";
+  }
+  if (!digits.startsWith("9")) {
+    return "Philippine mobile numbers must start with 9 (e.g., 917 123 4567).";
+  }
+  if (digits.length !== 10) {
+    return "Phone number must be exactly 10 digits after +63 (e.g., 917 123 4567).";
+  }
+  return "";
+};
+
 export default function AuthPage() {
   const navigate = useNavigate();
   const location = useLocation();
@@ -124,6 +138,7 @@ export default function AuthPage() {
   const [message, setMessage] = useState("");
   const [error, setError] = useState<React.ReactNode>("");
   const [emailError, setEmailError] = useState("");
+  const [phoneError, setPhoneError] = useState("");
   const [recoveryEmailError, setRecoveryEmailError] = useState("");
   const [showEmailConfirmModal, setShowEmailConfirmModal] = useState(false);
   const [registeredEmail, setRegisteredEmail] = useState("");
@@ -182,6 +197,7 @@ export default function AuthPage() {
       setForgotPasswordStep("none");
     }
     setEmailError("");
+    setPhoneError("");
     setRecoveryEmailError("");
     setError("");
     setMessage("");
@@ -327,8 +343,10 @@ export default function AuthPage() {
           return;
         }
 
-        if (phoneNumber.length !== 10) {
-          setError("Phone number must be exactly 10 digits.");
+        const phoneValidationErr = validatePhoneFormat(phoneNumber);
+        if (phoneValidationErr) {
+          setPhoneError(phoneValidationErr);
+          setError(phoneValidationErr);
           return;
         }
 
@@ -610,15 +628,36 @@ export default function AuthPage() {
                           placeholder="917 123 4567"
                           value={phoneNumber}
                           onChange={(e) => {
-                            const val = e.target.value
-                              .replace(/\D/g, "")
-                              .slice(0, 10);
+                            let val = e.target.value.replace(/\D/g, "");
+                            if (val.startsWith("639") && val.length > 10) {
+                              val = val.slice(2);
+                            } else if (val.startsWith("09") && val.length > 10) {
+                              val = val.slice(1);
+                            }
+                            val = val.slice(0, 10);
                             setPhoneNumber(val);
+                            if (phoneError) {
+                              const err = validatePhoneFormat(val);
+                              setPhoneError(err);
+                            }
+                          }}
+                          onBlur={() => {
+                            if (phoneNumber) {
+                              const err = validatePhoneFormat(phoneNumber);
+                              setPhoneError(err);
+                            } else {
+                              setPhoneError("");
+                            }
                           }}
                           required={!isLogin}
-                          className="w-full bg-white/5 border border-white/10 pl-24 pr-4 py-4 text-lg focus:outline-none focus:border-gold-400/50 transition-all placeholder:text-white/40"
+                          className={`w-full bg-white/5 border ${phoneError ? "border-red-500/50 focus:border-red-500/50" : "border-white/10 focus:border-gold-400/50"} pl-24 pr-4 py-4 text-lg focus:outline-none transition-all placeholder:text-white/40`}
                         />
                       </div>
+                      {phoneError && (
+                        <p className="text-red-400 text-sm mt-1 ml-1">
+                          {phoneError}
+                        </p>
+                      )}
                     </div>
                   </>
                 )}
@@ -760,7 +799,7 @@ export default function AuthPage() {
 
                 <button
                   type="submit"
-                  disabled={loading || !!emailError}
+                  disabled={loading || !!emailError || (!isLogin && !!phoneError)}
                   className="w-full gold-gradient text-black py-4 font-bold tracking-wide text-lg hover:brightness-110 transition-all flex items-center justify-center gap-2 mt-8 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {loading ? "Processing..." : isLogin ? "Sign In" : "Register"}{" "}
@@ -929,6 +968,7 @@ export default function AuthPage() {
                     setError("");
                     setMessage("");
                     setEmailError("");
+                    setPhoneError("");
                     setRecoveryEmailError("");
                   }}
                   className="text-lg tracking-wide text-gold-400 font-bold hover:text-white transition-colors"
