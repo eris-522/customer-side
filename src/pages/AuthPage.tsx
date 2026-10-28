@@ -212,9 +212,9 @@ export default function AuthPage() {
         }
       } else if (forgotPasswordStep === "question") {
         if (recoveryAnswer.toLowerCase().trim() === fetchedAnswer) {
-          // Send the recovery email instead of skipping directly to reset
+          // Send the recovery email pointing directly to the Vercel deployment (no query params so Supabase Redirect URL matching never rejects it)
           const { error } = await supabase.auth.resetPasswordForEmail(recoveryEmail, {
-            redirectTo: `${window.location.origin}/auth?mode=reset`,
+            redirectTo: "https://rpcatering.vercel.app/auth",
           });
 
           if (error) {
@@ -427,7 +427,7 @@ export default function AuthPage() {
             email: currentEmail,
             password: password,
             options: {
-              emailRedirectTo: `${window.location.origin}/auth?mode=login`,
+              emailRedirectTo: "https://rpcatering.vercel.app/auth",
             },
           },
         );
