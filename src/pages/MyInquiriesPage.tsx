@@ -721,7 +721,13 @@ export default function MyInquiriesPage() {
 
                       const travelFee = Number(logData?.travelFee) || 0;
                       const haulingFee = Number(logData?.haulingFee) || 0;
-                      const totalAdditionalFees = travelFee + haulingFee;
+                      const corkageData = (booking as any).corkage_info || logData?.corkage || null;
+                      const corkageFee = Number(corkageData?.totalCorkageFee) || (
+                        (corkageData?.hasLechonTable ? 1500 : 0) +
+                        (Number(corkageData?.alcoholicBeveragesCount || 0) * 400) +
+                        (Number(corkageData?.outsideFoodCount || 0) * 400)
+                      ) || 0;
+                      const totalAdditionalFees = travelFee + haulingFee + corkageFee;
                       const totalEventCost = basePrice + additionalPaxTotal + totalAdditionalFees;
 
                       return (
@@ -776,6 +782,26 @@ export default function MyInquiriesPage() {
                                 {travelFee > 0 ? "Assessed by coordinator" : "Pending assessment"}
                               </p>
                             </div>
+
+                            {corkageFee > 0 && (
+                              <div className="p-2.5 rounded border bg-gold-400/10 border-gold-400/30 text-gold-300 col-span-1 sm:col-span-2 lg:col-span-4">
+                                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+                                  <div>
+                                    <p className="text-[10px] uppercase font-bold text-gold-400 tracking-wider">Corkage &amp; Services (Term 8)</p>
+                                    <p className="text-xs text-white/80 mt-0.5">
+                                      {[
+                                        corkageData?.hasLechonTable ? "Lechon Table Setup (₱1,500)" : "",
+                                        corkageData?.alcoholicBeveragesCount > 0 ? `${corkageData.alcoholicBeveragesCount} Btl(s) Alcohol (₱${(corkageData.alcoholicBeveragesCount * 400).toLocaleString()})` : "",
+                                        corkageData?.outsideFoodCount > 0 ? `${corkageData.outsideFoodCount} Outside Dish(es) (₱${(corkageData.outsideFoodCount * 400).toLocaleString()})` : "",
+                                      ].filter(Boolean).join(" • ")}
+                                    </p>
+                                  </div>
+                                  <p className="font-serif font-bold text-gold-400 text-sm sm:text-base">
+                                    +₱{corkageFee.toLocaleString()}
+                                  </p>
+                                </div>
+                              </div>
+                            )}
                           </div>
                         </div>
                       );

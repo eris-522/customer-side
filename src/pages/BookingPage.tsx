@@ -30,6 +30,9 @@ import {
   Clock,
   Scale,
   ShieldAlert,
+  Minus,
+  Plus,
+  Sparkles,
 } from "lucide-react";
 import { supabase } from "../utils/supabase";
 import { CATERING_CONTRACT_TERMS } from "../data/cateringContractTerms";
@@ -117,7 +120,8 @@ const steps = [
   { id: 1, title: "Package", icon: Package },
   { id: 2, title: "Details", icon: Calendar },
   { id: 3, title: "Menu", icon: Utensils },
-  { id: 4, title: "Review", icon: ClipboardCheck },
+  { id: 4, title: "Add-ons", icon: Wine },
+  { id: 5, title: "Review", icon: ClipboardCheck },
 ];
 
 export const formatPrice = (price?: string | number) => {
@@ -244,6 +248,19 @@ export default function BookingPage() {
   const [isSecondFloorOrHigher, setIsSecondFloorOrHigher] = useState<boolean>(false);
   const [floorLevel, setFloorLevel] = useState<number>(2);
   const [hasElevator, setHasElevator] = useState<boolean>(false);
+
+  // Feature: Dedicated Corkage & Additional Services State (Contract Term 8 & 15)
+  const [corkageState, setCorkageState] = useState<{
+    hasLechonTable: boolean;
+    alcoholicBeveragesCount: number;
+    outsideFoodCount: number;
+    outsideFoodDisclaimerAgreed: boolean;
+  }>({
+    hasLechonTable: false,
+    alcoholicBeveragesCount: 0,
+    outsideFoodCount: 0,
+    outsideFoodDisclaimerAgreed: false,
+  });
 
   // Derived variables dynamically calculated from the user's selected package
   const selectedPkgForMenu = availablePackages.find((p) => p.id === formData.packageId);
@@ -555,9 +572,14 @@ export default function BookingPage() {
         }
       }
       setMenuToastError("");
+    } else if (currentStep === 4) {
+      if (corkageState.outsideFoodCount > 0 && !corkageState.outsideFoodDisclaimerAgreed) {
+        setStepError("Please read and acknowledge the Outside Food Health Risk Waiver (Contract Term 15) to continue.");
+        return;
+      }
     }
 
-    setCurrentStep((prev) => Math.min(prev + 1, 4));
+    setCurrentStep((prev) => Math.min(prev + 1, 5));
   };
 
   // Feature: Moves back a step and clears any active error messages
@@ -670,7 +692,12 @@ export default function BookingPage() {
   const requiresStairsIngress = isSecondFloorOrHigher && !hasElevator;
   const calculatedHaulingFee = requiresStairsIngress ? 150 * floorsAboveGround * waiterCountCalc : 0;
 
-  const calculatedTotalBudget = basePriceCalc + (addPriceCalc * extraPaxCalc) + calculatedHaulingFee;
+  const lechonFeeCalc = corkageState.hasLechonTable ? 1500 : 0;
+  const alcoholicFeeCalc = (corkageState.alcoholicBeveragesCount || 0) * 400;
+  const outsideFoodFeeCalc = (corkageState.outsideFoodCount || 0) * 400;
+  const totalCorkageFeeCalc = lechonFeeCalc + alcoholicFeeCalc + outsideFoodFeeCalc;
+
+  const calculatedTotalBudget = basePriceCalc + (addPriceCalc * extraPaxCalc) + calculatedHaulingFee + totalCorkageFeeCalc;
   const downpaymentPercentage = paymentScheme === "Standard 50%" ? 0.50 : 0.20;
   const calculatedDownpayment = Math.round(calculatedTotalBudget * downpaymentPercentage);
   const calculatedRemainingBalance = calculatedTotalBudget - calculatedDownpayment;
@@ -769,6 +796,23 @@ export default function BookingPage() {
       final_balance_amount: calculatedRemainingBalance,
       final_balance_status: "Unpaid",
       installment_schedule: paymentScheme === "Installment 20%" ? installmentMilestones : null,
+      selected_add_ons: (() => {
+        const list: string[] = [];
+        if (corkageState.hasLechonTable) list.push("Lechon Table w/ Chopper Setup");
+        if (corkageState.alcoholicBeveragesCount > 0) list.push(`Alcoholic Beverages / Beer Corkage (${corkageState.alcoholicBeveragesCount} bottle${corkageState.alcoholicBeveragesCount > 1 ? "s" : ""})`);
+        if (corkageState.outsideFoodCount > 0) list.push(`Outside Food Corkage (${corkageState.outsideFoodCount} dish${corkageState.outsideFoodCount > 1 ? "es" : ""})`);
+        return list;
+      })(),
+      corkage_info: {
+        hasLechonTable: corkageState.hasLechonTable,
+        lechonFee: lechonFeeCalc,
+        alcoholicBeveragesCount: corkageState.alcoholicBeveragesCount,
+        alcoholicFee: alcoholicFeeCalc,
+        outsideFoodCount: corkageState.outsideFoodCount,
+        outsideFoodFee: outsideFoodFeeCalc,
+        totalCorkageFee: totalCorkageFeeCalc,
+        outsideFoodDisclaimerAgreed: corkageState.outsideFoodDisclaimerAgreed,
+      },
       logistics_info: {
         isOutsideTaytay,
         isSecondFloorOrHigher,
@@ -779,6 +823,16 @@ export default function BookingPage() {
         haulingFee: calculatedHaulingFee,
         travelFee: 0,
         coords: hasPinnedVenue ? venueCoords : null,
+        corkage: {
+          hasLechonTable: corkageState.hasLechonTable,
+          lechonFee: lechonFeeCalc,
+          alcoholicBeveragesCount: corkageState.alcoholicBeveragesCount,
+          alcoholicFee: alcoholicFeeCalc,
+          outsideFoodCount: corkageState.outsideFoodCount,
+          outsideFoodFee: outsideFoodFeeCalc,
+          totalCorkageFee: totalCorkageFeeCalc,
+          outsideFoodDisclaimerAgreed: corkageState.outsideFoodDisclaimerAgreed,
+        },
       },
     };
 
@@ -808,6 +862,26 @@ export default function BookingPage() {
           haulingFee: calculatedHaulingFee,
           travelFee: 0,
           coords: hasPinnedVenue ? venueCoords : null,
+          corkage: {
+            hasLechonTable: corkageState.hasLechonTable,
+            lechonFee: lechonFeeCalc,
+            alcoholicBeveragesCount: corkageState.alcoholicBeveragesCount,
+            alcoholicFee: alcoholicFeeCalc,
+            outsideFoodCount: corkageState.outsideFoodCount,
+            outsideFoodFee: outsideFoodFeeCalc,
+            totalCorkageFee: totalCorkageFeeCalc,
+            outsideFoodDisclaimerAgreed: corkageState.outsideFoodDisclaimerAgreed,
+          },
+        },
+        corkage: {
+          hasLechonTable: corkageState.hasLechonTable,
+          lechonFee: lechonFeeCalc,
+          alcoholicBeveragesCount: corkageState.alcoholicBeveragesCount,
+          alcoholicFee: alcoholicFeeCalc,
+          outsideFoodCount: corkageState.outsideFoodCount,
+          outsideFoodFee: outsideFoodFeeCalc,
+          totalCorkageFee: totalCorkageFeeCalc,
+          outsideFoodDisclaimerAgreed: corkageState.outsideFoodDisclaimerAgreed,
         },
         submittedAt: new Date().toISOString(),
       });
@@ -1607,8 +1681,396 @@ export default function BookingPage() {
             </motion.div>
           )}
 
-          {/* Step 4: Review */}
+
+          {/* Step 4: Add-ons & Corkage */}
           {currentStep === 4 && (
+            <motion.div
+              key="step4"
+              initial={{ opacity: 0, x: 20 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -20 }}
+              className="space-y-10"
+            >
+              <div className="text-center mb-12">
+                <h2 className="text-4xl md:text-5xl font-serif mb-4 uppercase tracking-wide">
+                  Corkage &amp; <span className="italic gold-text-gradient">Add-ons</span>
+                </h2>
+                <p className="text-white/60 tracking-widest uppercase text-sm font-medium">
+                  Select additional culinary setups or bring outside food &amp; drinks (Contract Term 8)
+                </p>
+              </div>
+
+              {/* Corkage Options Grid */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                {/* 1. Lechon Table w/ Chopper Setup */}
+                <div
+                  className={`p-6 glass-card border transition-all rounded-xl flex flex-col justify-between relative cursor-pointer group ${
+                    corkageState.hasLechonTable
+                      ? "border-gold-400 bg-gold-400/[0.07] shadow-[0_0_30px_rgba(197,160,89,0.12)]"
+                      : "border-white/10 hover:border-white/30 bg-white/[0.02]"
+                  }`}
+                  onClick={() =>
+                    setCorkageState((prev) => ({
+                      ...prev,
+                      hasLechonTable: !prev.hasLechonTable,
+                    }))
+                  }
+                >
+                  <div className="space-y-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <span className="text-[10px] uppercase font-bold tracking-widest px-2.5 py-1 rounded bg-gold-400/20 text-gold-300 border border-gold-400/30">
+                          Setup &amp; Dedicated Staff
+                        </span>
+                        <h3 className="text-xl font-serif font-bold text-white mt-2">
+                          Lechon Table w/ Chopper Setup
+                        </h3>
+                      </div>
+                      <div
+                        className={`w-6 h-6 rounded border flex items-center justify-center shrink-0 transition-all ${
+                          corkageState.hasLechonTable
+                            ? "bg-gold-400 border-gold-400 text-black"
+                            : "border-white/20 group-hover:border-gold-400"
+                        }`}
+                      >
+                        {corkageState.hasLechonTable && <Check size={14} strokeWidth={3.5} />}
+                      </div>
+                    </div>
+
+                    <div className="text-2xl font-serif font-bold text-gold-400">
+                      ₱1,500 <span className="text-xs font-sans text-white/50 font-normal">/ setup</span>
+                    </div>
+
+                    <p className="text-xs text-white/70 leading-relaxed">
+                      Complete lechon station presentation with designated staff for carving and continuous serving.
+                    </p>
+
+                    <div className="border-t border-white/10 pt-3 space-y-2 text-xs text-white/80">
+                      <p className="text-[10px] uppercase font-bold text-gold-300 tracking-wider">Inclusions:</p>
+                      <ul className="space-y-1.5 text-xs text-white/70">
+                        <li className="flex items-center gap-2">
+                          <Check size={12} className="text-gold-400 shrink-0" /> Half long presentation table
+                        </li>
+                        <li className="flex items-center gap-2">
+                          <Check size={12} className="text-gold-400 shrink-0" /> 50 small plates for lechon
+                        </li>
+                        <li className="flex items-center gap-2">
+                          <Check size={12} className="text-gold-400 shrink-0" /> Chafing dish &amp; food warmer
+                        </li>
+                        <li className="flex items-center gap-2">
+                          <Check size={12} className="text-gold-400 shrink-0" /> Chopping knives, board &amp; sauce dishes
+                        </li>
+                        <li className="flex items-center gap-2 text-gold-300 font-semibold">
+                          <Check size={12} className="text-gold-400 shrink-0" /> 1 Designated waiter chopper strictly assigned
+                        </li>
+                      </ul>
+                    </div>
+                  </div>
+
+                  <div className="mt-6 pt-3 border-t border-white/10 flex items-center justify-between">
+                    <span className="text-xs font-bold uppercase tracking-wider text-white/60">
+                      {corkageState.hasLechonTable ? "Selected" : "Click to Add"}
+                    </span>
+                    <span className={`text-xs font-bold ${corkageState.hasLechonTable ? "text-gold-400" : "text-white/40"}`}>
+                      {corkageState.hasLechonTable ? "+₱1,500" : "Optional"}
+                    </span>
+                  </div>
+                </div>
+
+                {/* 2. Alcoholic Beverages / Beer Corkage */}
+                <div
+                  className={`p-6 glass-card border transition-all rounded-xl flex flex-col justify-between relative ${
+                    corkageState.alcoholicBeveragesCount > 0
+                      ? "border-gold-400 bg-gold-400/[0.07] shadow-[0_0_30px_rgba(197,160,89,0.12)]"
+                      : "border-white/10 bg-white/[0.02]"
+                  }`}
+                >
+                  <div className="space-y-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <span className="text-[10px] uppercase font-bold tracking-widest px-2.5 py-1 rounded bg-gold-400/20 text-gold-300 border border-gold-400/30">
+                          Beverage Service
+                        </span>
+                        <h3 className="text-xl font-serif font-bold text-white mt-2">
+                          Alcoholic Beverages / Beer Corkage
+                        </h3>
+                      </div>
+                      <div
+                        onClick={() =>
+                          setCorkageState((prev) => ({
+                            ...prev,
+                            alcoholicBeveragesCount: prev.alcoholicBeveragesCount > 0 ? 0 : 1,
+                          }))
+                        }
+                        className={`w-6 h-6 rounded border flex items-center justify-center shrink-0 transition-all cursor-pointer ${
+                          corkageState.alcoholicBeveragesCount > 0
+                            ? "bg-gold-400 border-gold-400 text-black"
+                            : "border-white/20 hover:border-gold-400"
+                        }`}
+                      >
+                        {corkageState.alcoholicBeveragesCount > 0 && <Check size={14} strokeWidth={3.5} />}
+                      </div>
+                    </div>
+
+                    <div className="text-2xl font-serif font-bold text-gold-400">
+                      ₱400 <span className="text-xs font-sans text-white/50 font-normal">/ bottle</span>
+                    </div>
+
+                    <p className="text-xs text-white/70 leading-relaxed">
+                      Bring outside wine, beer, or spirits. Complete bar setup and drinkware service provided.
+                    </p>
+
+                    <div className="border-t border-white/10 pt-3 space-y-2 text-xs text-white/80">
+                      <p className="text-[10px] uppercase font-bold text-gold-300 tracking-wider">Inclusions:</p>
+                      <ul className="space-y-1.5 text-xs text-white/70">
+                        <li className="flex items-center gap-2">
+                          <Check size={12} className="text-gold-400 shrink-0" /> High-grade ice for beverages
+                        </li>
+                        <li className="flex items-center gap-2">
+                          <Check size={12} className="text-gold-400 shrink-0" /> Service water
+                        </li>
+                        <li className="flex items-center gap-2">
+                          <Check size={12} className="text-gold-400 shrink-0" /> Drinking glasses &amp; glassware service
+                        </li>
+                      </ul>
+                    </div>
+
+                    {/* Quantity Stepper */}
+                    <div className="pt-2">
+                      <label className="block text-[11px] font-bold uppercase tracking-wider text-white/60 mb-2">
+                        Number of Bottles
+                      </label>
+                      <div className="flex items-center gap-3">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setCorkageState((prev) => ({
+                              ...prev,
+                              alcoholicBeveragesCount: Math.max(0, prev.alcoholicBeveragesCount - 1),
+                            }))
+                          }
+                          disabled={corkageState.alcoholicBeveragesCount === 0}
+                          className="w-9 h-9 rounded bg-white/10 hover:bg-gold-400 hover:text-black text-white flex items-center justify-center transition-all disabled:opacity-30 disabled:hover:bg-white/10 disabled:hover:text-white"
+                        >
+                          <Minus size={14} />
+                        </button>
+                        <input
+                          type="number"
+                          min="0"
+                          value={corkageState.alcoholicBeveragesCount}
+                          onChange={(e) => {
+                            const val = Math.max(0, parseInt(e.target.value, 10) || 0);
+                            setCorkageState((prev) => ({ ...prev, alcoholicBeveragesCount: val }));
+                          }}
+                          className="w-16 text-center py-1.5 bg-white/5 border border-white/20 rounded font-bold text-base text-gold-400 focus:outline-none focus:border-gold-400"
+                        />
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setCorkageState((prev) => ({
+                              ...prev,
+                              alcoholicBeveragesCount: prev.alcoholicBeveragesCount + 1,
+                            }))
+                          }
+                          className="w-9 h-9 rounded bg-white/10 hover:bg-gold-400 hover:text-black text-white flex items-center justify-center transition-all"
+                        >
+                          <Plus size={14} />
+                        </button>
+                        <span className="text-xs text-white/50 ml-1">
+                          bottle${corkageState.alcoholicBeveragesCount === 1 ? "" : "s"}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="mt-6 pt-3 border-t border-white/10 flex items-center justify-between">
+                    <span className="text-xs font-bold uppercase tracking-wider text-white/60">
+                      Subtotal
+                    </span>
+                    <span className="text-base font-serif font-bold text-gold-400">
+                      ₱{(corkageState.alcoholicBeveragesCount * 400).toLocaleString()}
+                    </span>
+                  </div>
+                </div>
+
+                {/* 3. Outside Food Corkage */}
+                <div
+                  className={`p-6 glass-card border transition-all rounded-xl flex flex-col justify-between relative ${
+                    corkageState.outsideFoodCount > 0
+                      ? "border-gold-400 bg-gold-400/[0.07] shadow-[0_0_30px_rgba(197,160,89,0.12)]"
+                      : "border-white/10 bg-white/[0.02]"
+                  }`}
+                >
+                  <div className="space-y-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <span className="text-[10px] uppercase font-bold tracking-widest px-2.5 py-1 rounded bg-gold-400/20 text-gold-300 border border-gold-400/30">
+                          External Food
+                        </span>
+                        <h3 className="text-xl font-serif font-bold text-white mt-2">
+                          Outside Food Corkage
+                        </h3>
+                      </div>
+                      <div
+                        onClick={() =>
+                          setCorkageState((prev) => ({
+                            ...prev,
+                            outsideFoodCount: prev.outsideFoodCount > 0 ? 0 : 1,
+                            outsideFoodDisclaimerAgreed: prev.outsideFoodCount > 0 ? false : prev.outsideFoodDisclaimerAgreed,
+                          }))
+                        }
+                        className={`w-6 h-6 rounded border flex items-center justify-center shrink-0 transition-all cursor-pointer ${
+                          corkageState.outsideFoodCount > 0
+                            ? "bg-gold-400 border-gold-400 text-black"
+                            : "border-white/20 hover:border-gold-400"
+                        }`}
+                      >
+                        {corkageState.outsideFoodCount > 0 && <Check size={14} strokeWidth={3.5} />}
+                      </div>
+                    </div>
+
+                    <div className="text-2xl font-serif font-bold text-gold-400">
+                      ₱400 <span className="text-xs font-sans text-white/50 font-normal">/ dish</span>
+                    </div>
+
+                    <p className="text-xs text-white/70 leading-relaxed">
+                      Bringing specialty food not prepared by the caterer. Includes buffet line warming and presentation.
+                    </p>
+
+                    <div className="border-t border-white/10 pt-3 space-y-2 text-xs text-white/80">
+                      <p className="text-[10px] uppercase font-bold text-gold-300 tracking-wider">Inclusions:</p>
+                      <ul className="space-y-1.5 text-xs text-white/70">
+                        <li className="flex items-center gap-2">
+                          <Check size={12} className="text-gold-400 shrink-0" /> Extra chafing dish per food item
+                        </li>
+                        <li className="flex items-center gap-2">
+                          <Check size={12} className="text-gold-400 shrink-0" /> Sterno food warmer &amp; fuel
+                        </li>
+                        <li className="flex items-center gap-2">
+                          <Check size={12} className="text-gold-400 shrink-0" /> Serving spoons &amp; buffet allocation
+                        </li>
+                      </ul>
+                    </div>
+
+                    {/* Quantity Stepper */}
+                    <div className="pt-2">
+                      <label className="block text-[11px] font-bold uppercase tracking-wider text-white/60 mb-2">
+                        Number of Outside Dishes
+                      </label>
+                      <div className="flex items-center gap-3">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setCorkageState((prev) => {
+                              const newCount = Math.max(0, prev.outsideFoodCount - 1);
+                              return {
+                                ...prev,
+                                outsideFoodCount: newCount,
+                                outsideFoodDisclaimerAgreed: newCount === 0 ? false : prev.outsideFoodDisclaimerAgreed,
+                              };
+                            })
+                          }
+                          disabled={corkageState.outsideFoodCount === 0}
+                          className="w-9 h-9 rounded bg-white/10 hover:bg-gold-400 hover:text-black text-white flex items-center justify-center transition-all disabled:opacity-30 disabled:hover:bg-white/10 disabled:hover:text-white"
+                        >
+                          <Minus size={14} />
+                        </button>
+                        <input
+                          type="number"
+                          min="0"
+                          value={corkageState.outsideFoodCount}
+                          onChange={(e) => {
+                            const val = Math.max(0, parseInt(e.target.value, 10) || 0);
+                            setCorkageState((prev) => ({
+                              ...prev,
+                              outsideFoodCount: val,
+                              outsideFoodDisclaimerAgreed: val === 0 ? false : prev.outsideFoodDisclaimerAgreed,
+                            }));
+                          }}
+                          className="w-16 text-center py-1.5 bg-white/5 border border-white/20 rounded font-bold text-base text-gold-400 focus:outline-none focus:border-gold-400"
+                        />
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setCorkageState((prev) => ({
+                              ...prev,
+                              outsideFoodCount: prev.outsideFoodCount + 1,
+                            }))
+                          }
+                          className="w-9 h-9 rounded bg-white/10 hover:bg-gold-400 hover:text-black text-white flex items-center justify-center transition-all"
+                        >
+                          <Plus size={14} />
+                        </button>
+                        <span className="text-xs text-white/50 ml-1">
+                          dish${corkageState.outsideFoodCount === 1 ? "" : "es"}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="mt-6 pt-3 border-t border-white/10 flex items-center justify-between">
+                    <span className="text-xs font-bold uppercase tracking-wider text-white/60">
+                      Subtotal
+                    </span>
+                    <span className="text-base font-serif font-bold text-gold-400">
+                      ₱{(corkageState.outsideFoodCount * 400).toLocaleString()}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Outside Food Health Risk Disclaimer & Waiver (Contract Term 15) */}
+              <AnimatePresence>
+                {corkageState.outsideFoodCount > 0 && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 15 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: 15 }}
+                    className="p-6 rounded-xl border border-amber-500/40 bg-amber-500/10 backdrop-blur-md space-y-4"
+                  >
+                    <div className="flex items-start gap-3">
+                      <ShieldAlert className="text-amber-400 shrink-0 mt-0.5" size={24} />
+                      <div className="space-y-1.5">
+                        <div className="flex items-center gap-2">
+                          <span className="px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider rounded bg-amber-500/20 text-amber-300 border border-amber-500/40">
+                            Contract Term 15
+                          </span>
+                          <h4 className="text-base font-bold text-amber-300">
+                            Outside Food Health Risk Disclaimer &amp; Liability Waiver
+                          </h4>
+                        </div>
+                        <p className="text-xs sm:text-sm text-white/90 leading-relaxed italic">
+                          &ldquo;If the CLIENT chooses to bring food on their own, the CATERER is not liable for health risks such as food poisoning, diarrhea and the like that was caused by the food not prepared by us. Since bacteria can travel through air, the CATERER is also no longer liable if cross-contamination happens.&rdquo;
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="pt-2 border-t border-amber-500/20">
+                      <label className="flex items-start gap-3 cursor-pointer group">
+                        <input
+                          type="checkbox"
+                          checked={corkageState.outsideFoodDisclaimerAgreed}
+                          onChange={(e) =>
+                            setCorkageState((prev) => ({
+                              ...prev,
+                              outsideFoodDisclaimerAgreed: e.target.checked,
+                            }))
+                          }
+                          className="mt-1 w-4 h-4 rounded border-amber-400/50 accent-amber-500 cursor-pointer"
+                        />
+                        <span className="text-xs text-white/90 font-medium group-hover:text-white leading-relaxed">
+                          <strong className="text-amber-300 font-bold">I acknowledge and agree to this waiver:</strong> I understand that Roxan Policarpio Events &amp; Catering holds zero liability for food poisoning, spoiled ingredients, digestive illnesses, or cross-contamination resulting from food items not prepared by the catering team.
+                        </span>
+                      </label>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </motion.div>
+          )}
+
+          {/* Step 5: Review */}
+          {currentStep === 5 && (
             <motion.div
               key="step5"
               initial={{ opacity: 0, x: 20 }}
@@ -1688,7 +2150,7 @@ export default function BookingPage() {
                           const addPrice = pkg && pkg.additional_pax_price ? parseFloat(String(pkg.additional_pax_price).replace(/[^0-9.-]+/g, "")) || 0 : 0;
                           const extraPax = parseInt(formData.additionalPax) || 0;
                           const additionalPaxTotal = addPrice * extraPax;
-                          const totalBudget = basePrice + additionalPaxTotal + calculatedHaulingFee;
+                          const totalBudget = basePrice + additionalPaxTotal + calculatedHaulingFee + totalCorkageFeeCalc;
 
                           return (
                             <div className="space-y-2 w-full max-w-sm">
@@ -1706,6 +2168,24 @@ export default function BookingPage() {
                                 <div className="flex justify-between text-sm text-gold-400 font-medium">
                                   <span>Hauling Fee</span>
                                   <span className="text-right">₱{calculatedHaulingFee.toLocaleString()}</span>
+                                </div>
+                              )}
+                              {corkageState.hasLechonTable && (
+                                <div className="flex justify-between text-sm text-gold-400 font-medium">
+                                  <span>Lechon Table Setup</span>
+                                  <span className="text-right">₱1,500</span>
+                                </div>
+                              )}
+                              {corkageState.alcoholicBeveragesCount > 0 && (
+                                <div className="flex justify-between text-sm text-gold-400 font-medium">
+                                  <span>Alcoholic Corkage ({corkageState.alcoholicBeveragesCount} btl{corkageState.alcoholicBeveragesCount > 1 ? "s" : ""})</span>
+                                  <span className="text-right">₱{(corkageState.alcoholicBeveragesCount * 400).toLocaleString()}</span>
+                                </div>
+                              )}
+                              {corkageState.outsideFoodCount > 0 && (
+                                <div className="flex justify-between text-sm text-gold-400 font-medium">
+                                  <span>Outside Food Corkage ({corkageState.outsideFoodCount} dish{corkageState.outsideFoodCount > 1 ? "es" : ""})</span>
+                                  <span className="text-right">₱{(corkageState.outsideFoodCount * 400).toLocaleString()}</span>
                                 </div>
                               )}
                               {isOutsideTaytay && (
@@ -1915,7 +2395,7 @@ export default function BookingPage() {
               <div />
             )}{" "}
             {/* Empty div to keep Next button aligned right via justify-between */}
-            {currentStep > 1 && currentStep < 4 && (
+            {currentStep > 1 && currentStep < 5 && (
               <button
                 onClick={handleNextStep}
                 className="gold-gradient text-black px-12 py-4 font-bold tracking-wide text-lg hover:brightness-110 transition-all flex items-center gap-3"
