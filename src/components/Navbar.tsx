@@ -58,10 +58,11 @@ export default function Navbar() {
   }, [isNotifOpen]);
 
   const getNotifKey = (b: any) => {
-    const travelFee = Number(b.logistics_info?.travelFee) || 0;
-    const haulingFee = Number(b.logistics_info?.haulingFee) || 0;
-    const logTimestamp = b.logistics_info?.updated_at || "";
-    if (travelFee > 0 || haulingFee > 0) {
+    if (b.notifKey) return b.notifKey;
+    if (b.notifType === "logistics") {
+      const travelFee = Number(b.logistics_info?.travelFee) || 0;
+      const haulingFee = Number(b.logistics_info?.haulingFee) || 0;
+      const logTimestamp = b.logistics_info?.updated_at || "";
       return `${b.id}-logistics-${travelFee}-${haulingFee}${logTimestamp ? `-${logTimestamp}` : ""}`;
     }
     return `${b.id}-${b.status}`;
@@ -129,21 +130,48 @@ export default function Navbar() {
           return { ...b, logistics_info: logInfo };
         });
 
-        const validNotifications = normalizedData.filter((b: any) => {
-          if (b.status === 'Cancelled' && b.cancelled_by === 'Customer') return false;
-          const isStatusNotif = ['Confirmed', 'Accepted', 'Approved', 'Cancelled', 'Declined', 'Rejected'].includes(b.status);
+        const expandedNotifications: any[] = [];
+
+        normalizedData.forEach((b: any) => {
+          const isCustomerCancelled = b.status === 'Cancelled' && b.cancelled_by === 'Customer';
+          const isStatusNotif =
+            !isCustomerCancelled &&
+            ['Confirmed', 'Accepted', 'Approved', 'Cancelled', 'Declined', 'Rejected'].includes(b.status);
+
+          if (isStatusNotif) {
+            const statusTime =
+              b.logistics_info?.confirmed_at ||
+              b.updated_at ||
+              b.created_at;
+            expandedNotifications.push({
+              ...b,
+              notifType: 'status',
+              notifKey: `${b.id}-${b.status}`,
+              notifTimestamp: statusTime,
+            });
+          }
+
+          const travelFee = Number(b.logistics_info?.travelFee) || 0;
+          const haulingFee = Number(b.logistics_info?.haulingFee) || 0;
+          const logTimestamp = b.logistics_info?.updated_at || '';
           const hasLogisticsUpdate = Boolean(
-            b.logistics_info?.updated_at ||
-            Number(b.logistics_info?.travelFee) > 0 ||
-            Number(b.logistics_info?.haulingFee) > 0
+            (logTimestamp || travelFee > 0) && (travelFee > 0 || haulingFee > 0)
           );
-          return isStatusNotif || hasLogisticsUpdate;
+
+          if (hasLogisticsUpdate && !isCustomerCancelled) {
+            expandedNotifications.push({
+              ...b,
+              notifType: 'logistics',
+              notifKey: `${b.id}-logistics-${travelFee}-${haulingFee}${logTimestamp ? `-${logTimestamp}` : ''}`,
+              notifTimestamp: logTimestamp || b.created_at,
+            });
+          }
         });
 
         // Sort primarily by the most recent update so new confirmations sit at the top
-        const sorted = validNotifications.sort((a: any, b: any) => {
-          const timeA = new Date(a.logistics_info?.updated_at || a.created_at || 0).getTime();
-          const timeB = new Date(b.logistics_info?.updated_at || b.created_at || 0).getTime();
+        const sorted = expandedNotifications.sort((a: any, b: any) => {
+          const timeA = new Date(a.notifTimestamp || a.created_at || 0).getTime();
+          const timeB = new Date(b.notifTimestamp || b.created_at || 0).getTime();
           return timeB - timeA;
         });
         setNotifications(sorted);

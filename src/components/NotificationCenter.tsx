@@ -14,14 +14,15 @@ interface NotificationCenterProps {
 
 export function NotificationCenter({ isOpen, onClose, notifications, unreadCount, readIds = [], onDismiss }: NotificationCenterProps) {
   const navigate = useNavigate();
-  const [expandedId, setExpandedId] = useState<number | null>(null);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
   const [readDuringSession, setReadDuringSession] = useState<string[]>([]);
 
   const getNotifKey = (item: any) => {
-    const travel = Number(item.logistics_info?.travelFee) || 0;
-    const hauling = Number(item.logistics_info?.haulingFee) || 0;
-    const logTimestamp = item.logistics_info?.updated_at || "";
-    if (travel > 0 || hauling > 0) {
+    if (item.notifKey) return item.notifKey;
+    if (item.notifType === "logistics") {
+      const travel = Number(item.logistics_info?.travelFee) || 0;
+      const hauling = Number(item.logistics_info?.haulingFee) || 0;
+      const logTimestamp = item.logistics_info?.updated_at || "";
       return `${item.id}-logistics-${travel}-${hauling}${logTimestamp ? `-${logTimestamp}` : ""}`;
     }
     return `${item.id}-${item.status}`;
@@ -50,8 +51,8 @@ export function NotificationCenter({ isOpen, onClose, notifications, unreadCount
     if (isUnreadA && !isUnreadB) return -1;
     if (!isUnreadA && isUnreadB) return 1;
 
-    const timeA = new Date(a.logistics_info?.updated_at || a.created_at || 0).getTime();
-    const timeB = new Date(b.logistics_info?.updated_at || b.created_at || 0).getTime();
+    const timeA = new Date(a.notifTimestamp || a.logistics_info?.updated_at || a.created_at || 0).getTime();
+    const timeB = new Date(b.notifTimestamp || b.logistics_info?.updated_at || b.created_at || 0).getTime();
     return timeB - timeA;
   });
 
@@ -98,22 +99,28 @@ export function NotificationCenter({ isOpen, onClose, notifications, unreadCount
               </div>
             ) : (
               sortedNotifications.map((notif) => {
-                const isCancelled = ['Cancelled', 'Declined', 'Rejected'].includes(notif.status);
-                const isConfirmed = ['Confirmed', 'Accepted', 'Approved'].includes(notif.status);
-                const reason = notif.reason || notif.reject_reason || notif.cancellation_reason || notif.admin_notes;
-                const isExpanded = expandedId === notif.id;
                 const notifKey = getNotifKey(notif);
+                const isExpanded = expandedId === notifKey;
                 const travelFeeVal = Number(notif.logistics_info?.travelFee) || 0;
                 const haulingFeeVal = Number(notif.logistics_info?.haulingFee) || 0;
-                const isLogisticsUpdate = travelFeeVal > 0 || haulingFeeVal > 0;
+                const isLogisticsUpdate =
+                  notif.notifType === 'logistics' ||
+                  (!notif.notifType && (travelFeeVal > 0 || haulingFeeVal > 0));
+                const isCancelled =
+                  !isLogisticsUpdate &&
+                  ['Cancelled', 'Declined', 'Rejected'].includes(notif.status);
+                const isConfirmed =
+                  !isLogisticsUpdate &&
+                  ['Confirmed', 'Accepted', 'Approved'].includes(notif.status);
+                const reason = notif.reason || notif.reject_reason || notif.cancellation_reason || notif.admin_notes;
                 const isUnreadNotif = !readIds.includes(notifKey);
 
                 return (
                   <div 
-                    key={notif.id} 
+                    key={notifKey} 
                     onClick={(e) => {
                       e.stopPropagation();
-                      setExpandedId(isExpanded ? null : notif.id);
+                      setExpandedId(isExpanded ? null : notifKey);
                       if (isUnreadNotif && onDismiss) {
                         setReadDuringSession(prev => [...prev, notifKey]);
                         onDismiss(notifKey);
@@ -143,7 +150,7 @@ export function NotificationCenter({ isOpen, onClose, notifications, unreadCount
                           )}
                         </p>
                         <span className="text-[10px] text-white/40 mt-1 block">
-                          {formatNotifDate(notif.logistics_info?.updated_at || notif.created_at)}
+                          {formatNotifDate(notif.notifTimestamp || notif.logistics_info?.updated_at || notif.created_at)}
                         </span>
                       </div>
                       <span className="text-[10px] font-medium bg-gold-400/10 text-gold-400 px-2 py-0.5 rounded shrink-0">

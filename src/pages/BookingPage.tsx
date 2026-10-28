@@ -1,5 +1,5 @@
 import { motion, AnimatePresence } from "motion/react";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import {
   ChevronRight,
@@ -164,6 +164,26 @@ export default function BookingPage() {
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   // Feature: State to hold validation error messages for the current step
   const [stepError, setStepError] = useState("");
+  const [menuToastError, setMenuToastError] = useState("");
+  const menuToastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const triggerMenuToast = (msg: string) => {
+    if (menuToastTimerRef.current) {
+      clearTimeout(menuToastTimerRef.current);
+    }
+    setMenuToastError(msg);
+    menuToastTimerRef.current = setTimeout(() => {
+      setMenuToastError("");
+    }, 3500);
+  };
+
+  useEffect(() => {
+    return () => {
+      if (menuToastTimerRef.current) {
+        clearTimeout(menuToastTimerRef.current);
+      }
+    };
+  }, []);
 
   // Feature: Terms of Service Modal State
   const [showTermsModal, setShowTermsModal] = useState(false);
@@ -512,7 +532,11 @@ export default function BookingPage() {
           const count = currentMenuCounts[cat] || 0;
           
           if (count < dynamicMin) {
-            setStepError(`Please select at least ${dynamicMin} item(s) for ${cat}.`);
+            const sectionEl = document.getElementById(
+              `menu-category-${cat.replace(/\s+/g, "-").toLowerCase()}`
+            );
+            sectionEl?.scrollIntoView({ behavior: "smooth", block: "center" });
+            triggerMenuToast(`Please select at least ${dynamicMin} item(s) for ${cat}.`);
             return;
           }
         }
@@ -520,10 +544,17 @@ export default function BookingPage() {
         // Fallback for custom packages without defined rules
         const hasAvailableItems = menuOptions.some(o => o.status !== "Not Available" && o.status !== "Archived");
         if (formData.menuSelections.length === 0 && hasAvailableItems) {
-          setStepError("Please select at least one menu item for your event.");
+          const firstCat = categoryOrder.find((c) => (groupedMenu[c] || []).length > 0);
+          if (firstCat) {
+            document
+              .getElementById(`menu-category-${firstCat.replace(/\s+/g, "-").toLowerCase()}`)
+              ?.scrollIntoView({ behavior: "smooth", block: "center" });
+          }
+          triggerMenuToast("Please select at least one menu item for your event.");
           return;
         }
       }
+      setMenuToastError("");
     }
 
     setCurrentStep((prev) => Math.min(prev + 1, 4));
@@ -532,6 +563,7 @@ export default function BookingPage() {
   // Feature: Moves back a step and clears any active error messages
   const prevStep = () => {
     setStepError("");
+    setMenuToastError("");
     setCurrentStep((prev) => Math.max(prev - 1, 1));
   };
 
@@ -560,11 +592,12 @@ export default function BookingPage() {
     if (!isSelected && activeMenuRules && activeMenuRules[ruleCat]) {
       const currentCount = currentMenuCounts[ruleCat] || 0;
       if (currentCount >= activeMenuRules[ruleCat].max) {
-        setStepError(`You can only select up to ${activeMenuRules[ruleCat].max} item(s) for ${ruleCat}.`);
+        triggerMenuToast(`You can only select up to ${activeMenuRules[ruleCat].max} item(s) for ${ruleCat}.`);
         return;
       }
     }
 
+    setMenuToastError("");
     const updated = isSelected
       ? current.filter((i) => i !== itemName)
       : [...current, itemName];
@@ -889,6 +922,33 @@ export default function BookingPage() {
       </div>
 
       <main className="max-w-5xl mx-auto px-10 pb-32">
+        {/* Floating Toast Notification for Menu Curation Errors */}
+        <AnimatePresence>
+          {menuToastError && (
+            <motion.div
+              initial={{ opacity: 0, y: -16, scale: 0.96 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: -16, scale: 0.96 }}
+              transition={{ duration: 0.2 }}
+              className="fixed top-24 right-6 z-[90] max-w-sm w-full px-4 py-3.5 bg-[#1a0a0a]/95 border border-red-500/50 text-red-200 rounded-lg shadow-2xl backdrop-blur-md flex items-center justify-between gap-3"
+            >
+              <div className="flex items-center gap-2.5">
+                <AlertTriangle size={18} className="text-red-400 shrink-0" />
+                <span className="text-xs sm:text-sm font-bold tracking-wide leading-snug">
+                  {menuToastError}
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setMenuToastError("")}
+                className="text-red-300/60 hover:text-white transition-colors p-1 shrink-0 cursor-pointer"
+              >
+                <X size={15} />
+              </button>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
         {/* Feature: Displays validation errors sticky at the top for better visibility */}
         <div className="sticky top-24 z-40 w-full flex flex-col gap-2 mb-6">
           <AnimatePresence>
@@ -1481,7 +1541,11 @@ export default function BookingPage() {
                   const isFulfilled = limit ? currentCount >= dynamicMin && currentCount <= limit.max : currentCount > 0;
 
                   return (
-                  <div key={category} className="space-y-6">
+                  <div
+                    key={category}
+                    id={`menu-category-${category.replace(/\s+/g, "-").toLowerCase()}`}
+                    className="space-y-6 scroll-mt-28"
+                  >
                     <div className="flex items-center justify-between border-b border-gold-400/20 pb-4">
                       <h3 className="text-xl tracking-wide text-gold-400 font-bold italic">
                         {category}
@@ -1614,7 +1678,7 @@ export default function BookingPage() {
                       </div>
                     <div className="flex gap-4">
                       <CreditCard className="text-gold-400 shrink-0 mt-0.5" size={18} />
-                      <div className="w-full pr-4">
+                      <div className="w-full">
                         <p className="text-sm tracking-wide text-white/70 font-bold mb-3">
                           Budget Breakdown
                         </p>
@@ -1630,18 +1694,24 @@ export default function BookingPage() {
                             <div className="space-y-2 w-full max-w-sm">
                               <div className="flex justify-between text-sm text-white/90 font-medium">
                                 <span>Base Package</span>
-                                <span>₱{basePrice.toLocaleString()}</span>
+                                <span className="text-right">₱{basePrice.toLocaleString()}</span>
                               </div>
                               {extraPax > 0 && (
                                 <div className="flex justify-between text-sm text-white/90 font-medium">
                                   <span>Extra Pax</span>
-                                  <span>₱{additionalPaxTotal.toLocaleString()}</span>
+                                  <span className="text-right">₱{additionalPaxTotal.toLocaleString()}</span>
                                 </div>
                               )}
                               {calculatedHaulingFee > 0 && (
                                 <div className="flex justify-between text-sm text-gold-400 font-medium">
                                   <span>Hauling Fee</span>
-                                  <span>₱{calculatedHaulingFee.toLocaleString()}</span>
+                                  <span className="text-right">₱{calculatedHaulingFee.toLocaleString()}</span>
+                                </div>
+                              )}
+                              {isOutsideTaytay && (
+                                <div className="flex justify-between gap-2 text-sm text-gold-400 font-medium">
+                                  <span>Out-of-Town Fee</span>
+                                  <span className="text-right shrink-0 whitespace-nowrap">Under Review</span>
                                 </div>
                               )}
                               <div className="flex justify-between items-center pt-3 mt-3 border-t border-white/10">
@@ -2450,7 +2520,7 @@ export default function BookingPage() {
                       <div className="p-4 bg-white/5 border border-white/10 rounded-lg space-y-2">
                         <div className="flex justify-between items-center">
                           <span className="text-xs font-bold text-gold-400 uppercase tracking-wider">
-                            BPI (Bank of the Phil. Islands)
+                            BPI
                           </span>
                         </div>
                         <div>
