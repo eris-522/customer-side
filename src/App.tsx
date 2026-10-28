@@ -3,13 +3,14 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { Suspense, lazy } from "react";
-import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
+import React, { Suspense, lazy, useEffect } from "react";
+import { BrowserRouter as Router, Routes, Route, useNavigate, useLocation } from "react-router-dom";
 import HomePage from "./pages/HomePage";
 import Navbar from "./components/Navbar";
 import Footer from "./components/Footer";
 import { ScrollToTop } from "./components/ScrollToTop";
 import { CMSProvider } from "./context/CMSContext";
+import { supabase } from "./utils/supabase";
 
 // Lazy-load secondary routes to drastically reduce initial bundle size and Vercel bandwidth consumption
 const MenuPage = lazy(() => import("./pages/MenuPage"));
@@ -31,10 +32,46 @@ function RouteLoadingFallback() {
   );
 }
 
+function AuthRecoveryRedirect() {
+  const navigate = useNavigate();
+  const location = useLocation();
+
+  useEffect(() => {
+    const isRecovery =
+      window.location.hash.includes("type=recovery") ||
+      window.location.search.includes("type=recovery") ||
+      sessionStorage.getItem("supabase_recovery_mode") === "true";
+
+    if (isRecovery && location.pathname !== "/auth") {
+      navigate(`/auth?mode=reset${window.location.hash}`, { replace: true });
+    }
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((event) => {
+      if (event === "PASSWORD_RECOVERY") {
+        try {
+          sessionStorage.setItem("supabase_recovery_mode", "true");
+        } catch {}
+        if (location.pathname !== "/auth") {
+          navigate("/auth?mode=reset", { replace: true });
+        }
+      }
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, [location.pathname, navigate]);
+
+  return null;
+}
+
 export default function App() {
   return (
     <CMSProvider>
       <Router>
+        <AuthRecoveryRedirect />
         <ScrollToTop />
         <div className="flex flex-col min-h-screen bg-rich-black">
           <Navbar />

@@ -132,6 +132,9 @@ export default function AuthPage() {
     // Listen for password recovery redirect from email links
     const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
       if (event === "PASSWORD_RECOVERY") {
+        try {
+          sessionStorage.setItem("supabase_recovery_mode", "true");
+        } catch {}
         setForgotPasswordStep("reset");
         setIsLogin(true);
       }
@@ -141,11 +144,13 @@ export default function AuthPage() {
       const urlParams = new URLSearchParams(window.location.search);
       const isRecoveryFlow =
         window.location.hash.includes("type=recovery") ||
-        urlParams.get("mode") === "reset";
+        urlParams.get("mode") === "reset" ||
+        sessionStorage.getItem("supabase_recovery_mode") === "true";
 
       // Check if we are currently in a recovery flow
       if (isRecoveryFlow) {
         setForgotPasswordStep("reset");
+        setIsLogin(true);
         return;
       }
 
@@ -168,7 +173,8 @@ export default function AuthPage() {
     // Update display mode whenever the URL parameters change
     const mode = searchParams.get("mode");
     const isRecoveryHash = window.location.hash.includes("type=recovery");
-    if (mode === "reset" || isRecoveryHash) {
+    const isRecoveryStorage = sessionStorage.getItem("supabase_recovery_mode") === "true";
+    if (mode === "reset" || isRecoveryHash || isRecoveryStorage) {
       setIsLogin(true);
       setForgotPasswordStep("reset");
     } else {
@@ -236,6 +242,9 @@ export default function AuthPage() {
           );
         } else {
           setMessage("Password reset successful. You can now log in.");
+          try {
+            sessionStorage.removeItem("supabase_recovery_mode");
+          } catch {}
           await supabase.auth.signOut(); // Sign out the recovery session
           setForgotPasswordStep("none");
           setIsLogin(true);
@@ -894,6 +903,9 @@ export default function AuthPage() {
             {forgotPasswordStep !== "none" ? (
               <button
                 onClick={() => {
+                  try {
+                    sessionStorage.removeItem("supabase_recovery_mode");
+                  } catch {}
                   setForgotPasswordStep("none");
                   setSearchParams({ mode: "login" });
                   setError("");
