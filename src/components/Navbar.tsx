@@ -120,7 +120,7 @@ export default function Navbar() {
     const fetchNotifications = async () => {
       const { data } = await supabase
         .from('bookings')
-        .select('id, status, cancelled_by, cancellation_reason, event_date, created_at, logistics_info, food_allergies')
+        .select('id, status, cancelled_by, cancellation_reason, event_date, created_at, logistics_info, food_allergies, dish_substitutions, modification_requests, final_balance_status')
         .eq('user_id', user.id);
       
       if (data) {
@@ -148,7 +148,6 @@ export default function Navbar() {
           if (isStatusNotif) {
             const statusTime =
               b.logistics_info?.confirmed_at ||
-              b.updated_at ||
               b.created_at;
             expandedNotifications.push({
               ...b,
@@ -161,9 +160,7 @@ export default function Navbar() {
           const travelFee = Number(b.logistics_info?.travelFee) || 0;
           const haulingFee = Number(b.logistics_info?.haulingFee) || 0;
           const logTimestamp = b.logistics_info?.updated_at || '';
-          const hasLogisticsUpdate = Boolean(
-            (logTimestamp || travelFee > 0) && (travelFee > 0 || haulingFee > 0)
-          );
+          const hasLogisticsUpdate = Boolean(logTimestamp || travelFee > 0 || haulingFee > 0);
 
           if (hasLogisticsUpdate && !isCustomerCancelled) {
             expandedNotifications.push({
@@ -171,6 +168,50 @@ export default function Navbar() {
               notifType: 'logistics',
               notifKey: `${b.id}-logistics-${travelFee}-${haulingFee}${logTimestamp ? `-${logTimestamp}` : ''}`,
               notifTimestamp: logTimestamp || b.created_at,
+            });
+          }
+
+          // Check for dish substitutions sent by Coordinator
+          if (Array.isArray(b.dish_substitutions) && b.dish_substitutions.length > 0 && !isCustomerCancelled) {
+            b.dish_substitutions.forEach((sub: any) => {
+              const subKey = `${b.id}-sub-${sub.id || sub.substituted_at || sub.original_dish}`;
+              expandedNotifications.push({
+                ...b,
+                notifType: 'substitution',
+                notifKey: subKey,
+                notifTimestamp: sub.substituted_at || b.created_at,
+                original_dish: sub.original_dish,
+                replacement_dish: sub.replacement_dish,
+                subReason: sub.reason,
+                subNote: sub.client_note,
+              });
+            });
+          }
+
+          // Check for modification requests reviewed/acknowledged or reverted by Coordinator
+          if (Array.isArray(b.modification_requests) && b.modification_requests.length > 0 && !isCustomerCancelled) {
+            b.modification_requests.forEach((mod: any) => {
+              if (mod.status === 'Approved' || mod.status === 'Rejected') {
+                const modKey = `${b.id}-mod-${mod.id}-${mod.status}`;
+                expandedNotifications.push({
+                  ...b,
+                  notifType: 'modification',
+                  notifKey: modKey,
+                  notifTimestamp: mod.reviewed_at || mod.created_at || b.created_at,
+                  modStatus: mod.status,
+                  modReason: mod.review_note || '',
+                });
+              }
+            });
+          }
+
+          // Check for final balance verification by Coordinator
+          if (b.final_balance_status === 'Verified' && !isCustomerCancelled) {
+            expandedNotifications.push({
+              ...b,
+              notifType: 'balance_verified',
+              notifKey: `${b.id}-balance-verified`,
+              notifTimestamp: b.logistics_info?.updated_at || b.created_at,
             });
           }
         });
@@ -186,32 +227,39 @@ export default function Navbar() {
     };
     fetchNotifications();
 
-    // Fallback polling (60s) to conserve database connections and PostgREST egress; only polls when tab is visible
+    // Fast lightweight polling (6s) when visible so Admin updates reflect even if WebSocket reconnects
     const intervalId = setInterval(() => {
       if (document.visibilityState === 'visible') {
         fetchNotifications();
       }
-    }, 60000);
+    }, 6000);
 
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible') {
         fetchNotifications();
       }
     };
-    document.addEventListener('visibilitychange', handleVisibilityChange);
+    const handleLocalBookingSync = () => fetchNotifications();
 
-    // Real-time subscription to catch instant status changes or deletions with unique channel topic
-    const channelName = `user-bookings-${user.id}-${Date.now()}`;
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('focus', handleLocalBookingSync);
+    window.addEventListener('customerBookingsUpdated', handleLocalBookingSync);
+
+    // Real-time subscription to catch instant Admin updates or status changes
+    const channelName = `user-bookings-${user.id}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
     const channel = supabase
       .channel(channelName)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'bookings', filter: `user_id=eq.${user.id}` }, () => {
         fetchNotifications();
+        window.dispatchEvent(new CustomEvent('bookingsRealtimeUpdated'));
       })
       .subscribe();
 
     return () => {
       clearInterval(intervalId);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('focus', handleLocalBookingSync);
+      window.removeEventListener('customerBookingsUpdated', handleLocalBookingSync);
       supabase.removeChannel(channel);
     };
   }, [user]);

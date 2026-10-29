@@ -131,13 +131,38 @@ export function NotificationCenter({ isOpen, onClose, notifications, unreadCount
                     <div className="flex justify-between items-start mb-1 gap-2">
                       <div>
                         <p className="text-sm text-white/90 font-semibold">
-                          {isLogisticsUpdate ? (
+                          {notif.notifType === 'substitution' ? (
+                            <>
+                              Dish Substituted for {notif.event_date}:{" "}
+                              <span className="text-amber-400 font-bold">
+                                "{notif.original_dish}" ➔ "{notif.replacement_dish}"
+                              </span>
+                            </>
+                          ) : notif.notifType === 'modification' ? (
+                            <>
+                              Menu &amp; Event Changes for {notif.event_date}:{" "}
+                              <span className={notif.modStatus === 'Approved' ? "text-green-400 font-bold" : "text-red-400 font-bold"}>
+                                {notif.modStatus === 'Approved' ? "Confirmed by Coordinator" : "Declined / Reverted"}
+                              </span>
+                            </>
+                          ) : notif.notifType === 'balance_verified' ? (
+                            <>
+                              Final Balance for {notif.event_date} was{" "}
+                              <span className="text-green-400 font-bold">Verified &amp; Settled</span>.
+                            </>
+                          ) : isLogisticsUpdate ? (
                             <>
                               Logistics fees updated for {notif.event_date}:{" "}
                               <span className="text-gold-400 font-bold">
-                                {travelFeeVal > 0 && `Travel: ₱${travelFeeVal.toLocaleString()}`}
-                                {travelFeeVal > 0 && haulingFeeVal > 0 && " • "}
-                                {haulingFeeVal > 0 && `Hauling: ₱${haulingFeeVal.toLocaleString()}`}
+                                {travelFeeVal > 0 || haulingFeeVal > 0 ? (
+                                  <>
+                                    {travelFeeVal > 0 && `Travel: ₱${travelFeeVal.toLocaleString()}`}
+                                    {travelFeeVal > 0 && haulingFeeVal > 0 && " • "}
+                                    {haulingFeeVal > 0 && `Hauling: ₱${haulingFeeVal.toLocaleString()}`}
+                                  </>
+                                ) : (
+                                  "₱0 Surcharge"
+                                )}
                               </span>
                             </>
                           ) : (
@@ -166,7 +191,34 @@ export function NotificationCenter({ isOpen, onClose, notifications, unreadCount
                             <p className="text-xs text-white/80 italic">"{reason}"</p>
                           </div>
                         )}
-                        {isLogisticsUpdate && (
+                        {notif.notifType === 'substitution' && (
+                          <div className="mb-3 p-2.5 bg-amber-500/10 border border-amber-500/30 rounded-md text-xs space-y-1">
+                            <p className="text-amber-300 font-semibold">
+                              Replacement: {notif.replacement_dish} (was {notif.original_dish})
+                            </p>
+                            <p className="text-white/80 text-[11px]">
+                              Reason: {notif.subReason || "Market ingredient availability"}
+                            </p>
+                            {notif.subNote && (
+                              <p className="text-white/60 text-[10px] italic">
+                                "{notif.subNote}"
+                              </p>
+                            )}
+                          </div>
+                        )}
+                        {notif.notifType === 'modification' && (
+                          <div className="mb-3 p-2.5 bg-gold-400/10 border border-gold-400/30 rounded-md text-xs space-y-1">
+                            <p className="text-gold-300 font-semibold">
+                              Status: {notif.modStatus}
+                            </p>
+                            {notif.modReason && (
+                              <p className="text-white/80 text-[11px]">
+                                Coordinator note: {notif.modReason}
+                              </p>
+                            )}
+                          </div>
+                        )}
+                        {isLogisticsUpdate && notif.notifType === 'logistics' && (
                           <div className="mb-3 p-2.5 bg-gold-400/10 border border-gold-400/30 rounded-md text-xs space-y-1">
                             <p className="text-gold-300 font-semibold">
                               {travelFeeVal > 0 && `Out-of-Town Travel Fee: ₱${travelFeeVal.toLocaleString()}`}

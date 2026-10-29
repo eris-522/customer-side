@@ -1696,7 +1696,7 @@ export default function BookingPage() {
                   Corkage &amp; <span className="italic gold-text-gradient">Add-ons</span>
                 </h2>
                 <p className="text-white/60 tracking-widest uppercase text-sm font-medium">
-                  Select additional culinary setups or bring outside food &amp; drinks (Contract Term 8)
+                  Select additional culinary setups or bring outside food &amp; drinks
                 </p>
               </div>
 
