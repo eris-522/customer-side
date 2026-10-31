@@ -243,3 +243,35 @@ export const calculateDayOfOvertime = (
   };
 };
 
+/**
+ * Checks if a specific overtime vendor service is included in the chosen package.
+ * Catering Service is core and always included in every catering package.
+ * Other services (Sounds & Lights, Photo Booth, Emcee, Coordinators, Photo & Video, Mobile Bar)
+ * are only eligible for overtime if included in the package's inclusions.
+ */
+export const isServiceIncludedInPackage = (serviceId: string, pkg: any): boolean => {
+  if (!pkg) return true;
+  if (serviceId === "catering") return true;
+
+  const rawInclusions = Array.isArray(pkg.inclusions) ? pkg.inclusions : [];
+  const inclusions = rawInclusions.map((i) => String(i).toLowerCase().trim());
+  const hasInclusion = (patterns) =>
+    patterns.some((p) => inclusions.some((inc) => inc.includes(p)));
+
+  switch (serviceId) {
+    case "soundsLights":
+      return hasInclusion(["sound", "light", "audio", "pa system"]);
+    case "photoBooth":
+      return hasInclusion(["photobooth", "photo booth", "photo-booth"]);
+    case "emcee":
+      return hasInclusion(["emcee", "host", "dj/emcee", "dj / emcee", "master of ceremonies"]);
+    case "coordinators":
+      return hasInclusion(["coordinator", "coordination", "planner"]);
+    case "photoVideo":
+      return hasInclusion(["photo", "video", "coverage", "photographer", "videographer"]);
+    case "mobileBar":
+      return hasInclusion(["mobile bar", "bar service", "bartender", "cocktail bar"]);
+    default:
+      return true;
+  }
+};

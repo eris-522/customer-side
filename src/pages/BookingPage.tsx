@@ -44,6 +44,7 @@ import {
   PrebookedOvertimeState,
   calculatePrebookedOvertimeFee,
   calculateServiceWindow,
+  isServiceIncludedInPackage,
 } from "../utils/overtimeBilling";
 import VenueMapPicker from "../components/VenueMapPicker";
 
@@ -260,6 +261,45 @@ export default function BookingPage() {
   // Feature: Pre-Booked Service Duration & Overtime Add-ons (Contract Rate Sheet)
   const [overtimeState, setOvertimeState] = useState<PrebookedOvertimeState>(DEFAULT_PREBOOKED_OVERTIME);
   const totalPrebookedOvertimeFee = calculatePrebookedOvertimeFee(overtimeState);
+
+  // Reset any overtime services that are not included in the selected package
+  useEffect(() => {
+    if (selectedPkgForMenu) {
+      setOvertimeState((prev) => {
+        let changed = false;
+        const next = { ...prev };
+        if (!isServiceIncludedInPackage("catering", selectedPkgForMenu) && next.catering > 0) {
+          next.catering = 0;
+          changed = true;
+        }
+        if (!isServiceIncludedInPackage("soundsLights", selectedPkgForMenu) && next.soundsLights > 0) {
+          next.soundsLights = 0;
+          changed = true;
+        }
+        if (!isServiceIncludedInPackage("photoBooth", selectedPkgForMenu) && next.photoBooth > 0) {
+          next.photoBooth = 0;
+          changed = true;
+        }
+        if (!isServiceIncludedInPackage("emcee", selectedPkgForMenu) && next.emcee > 0) {
+          next.emcee = 0;
+          changed = true;
+        }
+        if (!isServiceIncludedInPackage("coordinators", selectedPkgForMenu) && next.coordinators.hours > 0) {
+          next.coordinators = { ...next.coordinators, hours: 0 };
+          changed = true;
+        }
+        if (!isServiceIncludedInPackage("photoVideo", selectedPkgForMenu) && next.photoVideo > 0) {
+          next.photoVideo = 0;
+          changed = true;
+        }
+        if (!isServiceIncludedInPackage("mobileBar", selectedPkgForMenu) && next.mobileBar > 0) {
+          next.mobileBar = 0;
+          changed = true;
+        }
+        return changed ? next : prev;
+      });
+    }
+  }, [selectedPkgForMenu?.id]);
 
   const [corkageState, setCorkageState] = useState<{
     hasLechonTable: boolean;
@@ -2146,7 +2186,7 @@ export default function BookingPage() {
                       Service Duration &amp; <span className="italic gold-text-gradient">Pre-Booked Overtime</span>
                     </h3>
                     <p className="text-xs sm:text-sm text-white/60 mt-1">
-                      Packages include 4 hours standard service. Pre-book additional vendor or catering hours at official contract rates.
+                      Packages include 4 hours standard service. Only services included in your {selectedPkgForMenu?.name || "selected package"} are available for overtime extensions.
                     </p>
                   </div>
                   {totalPrebookedOvertimeFee > 0 && (
@@ -2159,7 +2199,7 @@ export default function BookingPage() {
 
                 {/* Overtime Rate Sheet Interactive Cards */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {OVERTIME_SERVICE_RATES.map((service) => {
+                  {OVERTIME_SERVICE_RATES.filter((service) => isServiceIncludedInPackage(service.id, selectedPkgForMenu)).map((service) => {
                     let currentHours = 0;
                     if (service.id === "catering") currentHours = overtimeState.catering;
                     else if (service.id === "soundsLights") currentHours = overtimeState.soundsLights;
