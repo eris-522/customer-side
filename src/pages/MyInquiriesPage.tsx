@@ -30,6 +30,7 @@ import { Link } from "react-router-dom";
 
 import { compressReceiptImage, uploadReceiptImage } from "../utils/receiptUploader";
 import { calculateServiceWindow, OVERTIME_SERVICE_RATES } from "../utils/overtimeBilling";
+import { restoreBookingInventoryOnCancellation } from "../utils/inventoryReturn";
 
 // Helper to check if event is within 14 days
 const getRuleCategory = (dbCategory: string, itemName: string) => {
@@ -370,6 +371,24 @@ export default function MyInquiriesPage() {
         .eq("id", cancelModalId);
 
       if (error) throw error;
+
+      // If the event was previously confirmed, automatically return the allocated equipment to equipment monitoring
+      if (wasConfirmed) {
+        const clientName =
+          targetBooking?.customer_name ||
+          targetBooking?.profiles?.name ||
+          targetBooking?.profiles?.full_name ||
+          "Client";
+        try {
+          await restoreBookingInventoryOnCancellation(
+            cancelModalId,
+            clientName,
+            formattedReason
+          );
+        } catch (invErr) {
+          console.error("Error returning inventory on customer cancellation:", invErr);
+        }
+      }
 
       setBookings((prev) =>
         prev.map((b) =>
