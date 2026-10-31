@@ -1432,9 +1432,6 @@ export default function BookingPage() {
                             </p>
                           </div>
                         </div>
-                        <span className="px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider rounded bg-gold-400/10 text-gold-300 border border-gold-400/30">
-                          Included in Package
-                        </span>
                       </div>
                       <p className="text-xs text-white/60 leading-relaxed pl-10">
                         {serviceWin.isDefaultFallback ? (
@@ -2194,7 +2191,7 @@ export default function BookingPage() {
                   {totalPrebookedOvertimeFee > 0 && (
                     <div className="px-4 py-2 rounded-xl bg-gold-400/10 border border-gold-400/30 text-right shrink-0">
                       <p className="text-[10px] uppercase font-bold text-white/50 tracking-wider">Pre-Booked Overtime Total</p>
-                      <p className="text-lg font-serif font-bold text-gold-400">+₱{totalPrebookedOvertimeFee.toLocaleString()}</p>
+                      <p className="text-lg font-serif font-bold text-gold-400">₱{totalPrebookedOvertimeFee.toLocaleString()}</p>
                     </div>
                   )}
                 </div>
@@ -2494,7 +2491,7 @@ export default function BookingPage() {
                                 <div className="space-y-1 pt-2 border-t border-white/5">
                                   <div className="flex justify-between text-xs font-bold uppercase tracking-wider text-gold-400">
                                     <span>Pre-Booked Overtime</span>
-                                    <span className="text-right">+₱{totalPrebookedOvertimeFee.toLocaleString()}</span>
+                                    <span className="text-right">₱{totalPrebookedOvertimeFee.toLocaleString()}</span>
                                   </div>
                                   {overtimeState.catering > 0 && (
                                     <div className="flex justify-between text-xs text-white/70 pl-2">

@@ -674,7 +674,10 @@ export default function MyInquiriesPage() {
     const downpaymentDue =
       existingDownpayment > 0
         ? existingDownpayment
-        : Math.round(newTotalBudget * (is50Percent ? 0.5 : 0.2));
+        : Math.round(
+            Math.max(0, newTotalBudget - travelFee - dayOfOTFee) *
+              (is50Percent ? 0.5 : 0.2)
+          );
     const newFinalBalance = Math.max(0, newTotalBudget - downpaymentDue);
 
     // Recalculate unpaid installment milestones if installment plan exists
@@ -1216,6 +1219,50 @@ export default function MyInquiriesPage() {
                 booking.cancellation_reason ||
                 booking.admin_notes;
 
+              // Compute complete financial breakdown upfront so payment tracker and breakdown cards reconcile identically
+              const pkg = booking.packages;
+              const basePrice = pkg && pkg.price ? parseFloat(String(pkg.price).replace(/[^0-9.-]+/g, "")) || 0 : 0;
+              const addPrice = pkg && pkg.additional_pax_price ? parseFloat(String(pkg.additional_pax_price).replace(/[^0-9.-]+/g, "")) || 0 : 0;
+              const extraPax = parseInt(booking.additional_pax) || 0;
+              const additionalPaxTotal = addPrice * extraPax;
+
+              let logData = booking.logistics_info || null;
+              if ((!logData || Object.keys(logData).length === 0) && typeof booking.food_allergies === "string" && booking.food_allergies.includes("__PAYMENT_METADATA__:")) {
+                try {
+                  const meta = JSON.parse(booking.food_allergies.split("__PAYMENT_METADATA__:")[1]);
+                  if (meta?.logistics) logData = meta.logistics;
+                } catch (e) {}
+              }
+
+              const travelFee = Number(logData?.travelFee) || 0;
+              const haulingFee = Number(logData?.haulingFee) || 0;
+              const corkageData = (booking as any).corkage_info || logData?.corkage || null;
+              const corkageFee = Number(corkageData?.totalCorkageFee) || (
+                (corkageData?.hasLechonTable ? 1500 : 0) +
+                (Number(corkageData?.alcoholicBeveragesCount || 0) * 400) +
+                (Number(corkageData?.outsideFoodCount || 0) * 400)
+              ) || 0;
+
+              let otData = (booking as any).overtime_info;
+              if (typeof otData === "string") {
+                try { otData = JSON.parse(otData); } catch (e) {}
+              }
+              if ((!otData || Object.keys(otData).length === 0) && typeof booking.food_allergies === "string" && booking.food_allergies.includes("__PAYMENT_METADATA__:")) {
+                try {
+                  const meta = JSON.parse(booking.food_allergies.split("__PAYMENT_METADATA__:")[1]);
+                  if (meta?.overtime) otData = meta.overtime;
+                } catch (e) {}
+              }
+
+              const prebookedOT = otData?.prebooked;
+              const dayOfOT = otData?.day_of;
+              const prebookedOTFee = Number(prebookedOT?.total_prebooked_fee) || 0;
+              const dayOfOTFee = Number(dayOfOT?.total_day_of_fee) || 0;
+              const totalOTFee = Number(otData?.total_overtime_fee) || (prebookedOTFee + dayOfOTFee);
+
+              const totalAdditionalFees = travelFee + haulingFee + corkageFee + totalOTFee;
+              const totalEventCost = basePrice + additionalPaxTotal + totalAdditionalFees;
+
               const paymentData = (() => {
                 let method = booking.payment_method || "";
                 let scheme = booking.payment_scheme || "";
@@ -1251,14 +1298,33 @@ export default function MyInquiriesPage() {
 
                 if (!method && !downpayment && !receipt && !balanceAmount) return null;
 
+                const is50Percent = (scheme || "Standard 50%") === "Standard 50%";
+                // Fixed date-lock deposit strictly excludes post-booking additions (out-of-town travel fee & day-of overtime)
+                const effectiveDownpayment = downpayment > 0
+                  ? downpayment
+                  : Math.round(Math.max(0, totalEventCost - travelFee - dayOfOTFee) * (is50Percent ? 0.5 : 0.2));
+
+                // If customer is on installment plan, sum verified/paid milestones
+                let paidMilestones = 0;
+                if (Array.isArray(installments)) {
+                  installments.forEach((inst: any) => {
+                    if (inst.status === "Verified" || inst.status === "Paid") {
+                      paidMilestones += Number(inst.amount) || 0;
+                    }
+                  });
+                }
+
+                // Balance due must ALWAYS accurately equal Total Event Cost minus Downpayment (and any paid milestones)
+                const computedBalanceDue = Math.max(0, totalEventCost - effectiveDownpayment - paidMilestones);
+
                 return {
                   method: method || "Payment",
                   scheme: scheme || "Standard 50%",
-                  downpayment,
+                  downpayment: effectiveDownpayment,
                   status,
                   receipt,
                   ref,
-                  balanceAmount,
+                  balanceAmount: computedBalanceDue,
                   balanceStatus,
                   balanceMethod,
                   balanceRef,
@@ -1367,38 +1433,6 @@ export default function MyInquiriesPage() {
 
                     {/* Total Fees & Detailed Cost Breakdown */}
                     {(() => {
-                      const pkg = booking.packages;
-                      const basePrice = pkg && pkg.price ? parseFloat(String(pkg.price).replace(/[^0-9.-]+/g, "")) || 0 : 0;
-                      const addPrice = pkg && pkg.additional_pax_price ? parseFloat(String(pkg.additional_pax_price).replace(/[^0-9.-]+/g, "")) || 0 : 0;
-                      const extraPax = parseInt(booking.additional_pax) || 0;
-                      const additionalPaxTotal = addPrice * extraPax;
-
-                      let logData = booking.logistics_info || null;
-                      if ((!logData || Object.keys(logData).length === 0) && typeof booking.food_allergies === "string" && booking.food_allergies.includes("__PAYMENT_METADATA__:")) {
-                        try {
-                          const meta = JSON.parse(booking.food_allergies.split("__PAYMENT_METADATA__:")[1]);
-                          if (meta?.logistics) logData = meta.logistics;
-                        } catch (e) {}
-                      }
-
-                      const travelFee = Number(logData?.travelFee) || 0;
-                      const haulingFee = Number(logData?.haulingFee) || 0;
-                      const corkageData = (booking as any).corkage_info || logData?.corkage || null;
-                      const corkageFee = Number(corkageData?.totalCorkageFee) || (
-                        (corkageData?.hasLechonTable ? 1500 : 0) +
-                        (Number(corkageData?.alcoholicBeveragesCount || 0) * 400) +
-                        (Number(corkageData?.outsideFoodCount || 0) * 400)
-                      ) || 0;
-
-                      const prebookedOT = (booking as any).overtime_info?.prebooked;
-                      const dayOfOT = (booking as any).overtime_info?.day_of;
-                      const prebookedOTFee = Number(prebookedOT?.total_prebooked_fee) || 0;
-                      const dayOfOTFee = Number(dayOfOT?.total_day_of_fee) || 0;
-                      const totalOTFee = Number((booking as any).overtime_info?.total_overtime_fee) || (prebookedOTFee + dayOfOTFee);
-
-                      const totalAdditionalFees = travelFee + haulingFee + corkageFee + totalOTFee;
-                      const totalEventCost = basePrice + additionalPaxTotal + totalAdditionalFees;
-
                       return (
                         <div className="p-4 bg-white/[0.03] border border-white/10 rounded-sm space-y-3">
                           <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/10 pb-2">
@@ -1471,6 +1505,55 @@ export default function MyInquiriesPage() {
                                 </div>
                               </div>
                             )}
+
+                            {prebookedOTFee > 0 && (
+                              <div className="p-2.5 rounded border bg-gold-400/10 border-gold-400/30 text-gold-300 col-span-1 sm:col-span-2 lg:col-span-4">
+                                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+                                  <div>
+                                    <p className="text-[10px] uppercase font-bold text-gold-400 tracking-wider flex items-center gap-1.5">
+                                       Pre-Booked Overtime Add-ons
+                                    </p>
+                                    <p className="text-xs text-white/80 mt-0.5">
+                                      {[
+                                        prebookedOT?.catering_hours > 0 ? `Catering (${prebookedOT.catering_hours}h @ ₱4,000/h)` : "",
+                                        prebookedOT?.sounds_lights_hours > 0 ? `Sounds & Lights (${prebookedOT.sounds_lights_hours}h @ ₱1,500/h)` : "",
+                                        prebookedOT?.photo_booth_hours > 0 ? `Photo Booth (${prebookedOT.photo_booth_hours}h @ ₱1,000/h)` : "",
+                                        prebookedOT?.emcee_hours > 0 ? `Emcee (${prebookedOT.emcee_hours}h @ ₱500/h)` : "",
+                                        prebookedOT?.coordinators_hours > 0 ? `Coordinators (${prebookedOT.coordinators_hours}h x ${prebookedOT.coordinators_count || 2}p @ ₱300/h/p)` : "",
+                                        prebookedOT?.photo_video_hours > 0 ? `Photo & Video (${prebookedOT.photo_video_hours}h @ ₱2,500/h)` : "",
+                                        prebookedOT?.mobile_bar_hours > 0 ? `Mobile Bar (${prebookedOT.mobile_bar_hours}h @ ₱1500/h)` : "",
+                                      ].filter(Boolean).join(" • ")}
+                                    </p>
+                                  </div>
+                                  <p className="font-serif font-bold text-gold-400 text-sm sm:text-base">
+                                    +₱{prebookedOTFee.toLocaleString()}
+                                  </p>
+                                </div>
+                              </div>
+                            )}
+
+                            {dayOfOTFee > 0 && (
+                              <div className="p-2.5 rounded border bg-amber-500/15 border-amber-500/40 text-amber-200 col-span-1 sm:col-span-2 lg:col-span-4">
+                                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+                                  <div>
+                                    <p className="text-[10px] uppercase font-bold text-amber-300 tracking-wider flex items-center gap-1.5">
+                                      Day-of Event Overtime Surcharge
+                                    </p>
+                                    <p className="text-xs text-white/90 mt-0.5">
+                                      Actual End Time: <strong>{dayOfOT?.actual_end_time}</strong> ({dayOfOT?.minutes_over} mins past scheduled end • {dayOfOT?.billable_ot_hours} billable hours).
+                                    </p>
+                                    {Array.isArray(dayOfOT?.services_billed) && dayOfOT.services_billed.length > 0 && (
+                                      <p className="text-[11px] text-white/70 mt-0.5">
+                                        Services: {dayOfOT.services_billed.map((s: any) => `${s.name} (+₱${Number(s.subtotal).toLocaleString()})`).join(" • ")}
+                                      </p>
+                                    )}
+                                  </div>
+                                  <p className="font-serif font-bold text-amber-300 text-sm sm:text-base">
+                                    +₱{dayOfOTFee.toLocaleString()}
+                                  </p>
+                                </div>
+                              </div>
+                            )}
                           </div>
                         </div>
                       );
@@ -1486,21 +1569,17 @@ export default function MyInquiriesPage() {
                           <span className="font-medium tracking-wide block">
                             {booking.event_date || "Date TBD"}
                           </span>
-                          <span className="text-white/50 text-xs block">
-                            {booking.event_time || ""}
-                          </span>
                           {(() => {
                             const prebookedCatering = Number((booking as any).overtime_info?.prebooked?.catering_hours) || 0;
                             const serviceWin = calculateServiceWindow(booking.event_time, prebookedCatering);
                             return (
                               <div className="flex flex-col gap-1 pt-0.5">
                                 <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded bg-gold-400/10 border border-gold-400/30 text-gold-300 text-[11px] font-semibold w-fit">
-                                  <Clock size={11} className="text-gold-400 shrink-0" />
-                                  4h Standard Service Window ({serviceWin.standardWindowText})
+                                  {serviceWin.standardWindowText}
                                 </span>
                                 {serviceWin.hasExtraHours && (
                                   <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded bg-amber-500/15 border border-amber-500/30 text-amber-300 text-[11px] font-medium w-fit">
-                                    ✦ Extended: {serviceWin.extendedWindowText} (+{prebookedCatering}h pre-booked OT)
+                                    Extended: {serviceWin.extendedWindowText} (+{prebookedCatering}h pre-booked OT)
                                   </span>
                                 )}
                               </div>

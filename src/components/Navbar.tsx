@@ -171,6 +171,30 @@ export default function Navbar() {
             });
           }
 
+          // Check for day-of event overtime surcharge applied by admin
+          let bOt = b.overtime_info;
+          if (typeof bOt === "string") {
+            try { bOt = JSON.parse(bOt); } catch (e) {}
+          }
+          if ((!bOt || Object.keys(bOt).length === 0) && typeof b.food_allergies === "string" && b.food_allergies.includes("__PAYMENT_METADATA__:")) {
+            try {
+              const meta = JSON.parse(b.food_allergies.split("__PAYMENT_METADATA__:")[1]);
+              if (meta?.overtime) bOt = meta.overtime;
+            } catch (e) {}
+          }
+          const dayOfOTData = bOt?.day_of;
+          const dayOfOTFee = Number(dayOfOTData?.total_day_of_fee) || 0;
+          if (dayOfOTFee > 0 && !isCustomerCancelled) {
+            const otKey = `${b.id}-dayof-ot-${dayOfOTFee}-${dayOfOTData.applied_at || dayOfOTData.actual_end_time}`;
+            expandedNotifications.push({
+              ...b,
+              notifType: 'day_of_overtime',
+              notifKey: otKey,
+              notifTimestamp: dayOfOTData.applied_at || b.created_at,
+              dayOfOT: dayOfOTData,
+            });
+          }
+
           // Check for dish substitutions & restored availability sent by Coordinator
           if (Array.isArray(b.dish_substitutions) && b.dish_substitutions.length > 0 && !isCustomerCancelled) {
             b.dish_substitutions.forEach((sub: any) => {

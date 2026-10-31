@@ -105,27 +105,46 @@ export const calculatePrebookedOvertimeFee = (
   );
 };
 
-export const timeStringToMinutes = (str: string): number => {
-  if (!str) return 0;
-  const s = str.trim();
-  let hours = 0;
-  let minutes = 0;
-  if (s.toUpperCase().includes("AM") || s.toUpperCase().includes("PM")) {
-    const parts = s.split(" ");
-    if (parts.length === 2) {
-      const [time, period] = parts;
-      const tParts = time.split(":");
-      hours = parseInt(tParts[0], 10) || 0;
-      minutes = parseInt(tParts[1] || "0", 10) || 0;
-      if (period.toUpperCase() === "PM" && hours !== 12) hours += 12;
-      if (period.toUpperCase() === "AM" && hours === 12) hours = 0;
-    }
-  } else {
-    const parts = s.split(":");
-    hours = parseInt(parts[0], 10) || 0;
-    minutes = parseInt(parts[1] || "0", 10) || 0;
+export const validateTimeString = (
+  str: string
+): { valid: boolean; minutes: number; error?: string } => {
+  if (!str || typeof str !== "string" || !str.trim()) {
+    return { valid: false, minutes: 0, error: "Actual end time is required." };
   }
-  return hours * 60 + minutes;
+  const s = str.trim();
+
+  // 12-hour format: e.g. "08:00 AM", "8:00 AM", "11:30 PM", "11:30pm"
+  const regex12 = /^([0]?[1-9]|1[0-2]):([0-5][0-9])\s*(AM|PM)$/i;
+  // 24-hour format: e.g. "08:00", "14:30", "23:59"
+  const regex24 = /^([01]?[0-9]|2[0-3]):([0-5][0-9])$/;
+
+  const match12 = s.match(regex12);
+  if (match12) {
+    let hours = parseInt(match12[1], 10);
+    const minutes = parseInt(match12[2], 10);
+    const period = match12[3].toUpperCase();
+    if (period === "PM" && hours !== 12) hours += 12;
+    if (period === "AM" && hours === 12) hours = 0;
+    return { valid: true, minutes: hours * 60 + minutes };
+  }
+
+  const match24 = s.match(regex24);
+  if (match24) {
+    const hours = parseInt(match24[1], 10);
+    const minutes = parseInt(match24[2], 10);
+    return { valid: true, minutes: hours * 60 + minutes };
+  }
+
+  return {
+    valid: false,
+    minutes: 0,
+    error: "Invalid time format. Please enter a valid time (e.g. 03:00 PM or 15:00).",
+  };
+};
+
+export const timeStringToMinutes = (str: string): number => {
+  const res = validateTimeString(str);
+  return res.valid ? res.minutes : 0;
 };
 
 export const minutesTo12h = (mins: number): string => {
@@ -175,18 +194,47 @@ export const calculateDayOfOvertime = (
   selectedServiceIds: string[] = ["catering"],
   coordinatorCount: number = 2
 ) => {
-  if (!scheduledEndStr || !actualEndStr) {
+  if (!scheduledEndStr || !actualEndStr || !actualEndStr.trim()) {
     return {
+      valid: false,
       minutesOver: 0,
       billableOtHours: 0,
       servicesBilled: [],
       totalFee: 0,
       isOvertime: false,
+      error: "Actual end time is required.",
     };
   }
 
-  const schedMins = timeStringToMinutes(scheduledEndStr);
-  const actMins = timeStringToMinutes(actualEndStr);
+  const schedVal = validateTimeString(scheduledEndStr);
+  const actVal = validateTimeString(actualEndStr);
+
+  if (!actVal.valid) {
+    return {
+      valid: false,
+      minutesOver: 0,
+      billableOtHours: 0,
+      servicesBilled: [],
+      totalFee: 0,
+      isOvertime: false,
+      error: actVal.error || "Invalid actual end time format.",
+    };
+  }
+
+  if (!schedVal.valid) {
+    return {
+      valid: false,
+      minutesOver: 0,
+      billableOtHours: 0,
+      servicesBilled: [],
+      totalFee: 0,
+      isOvertime: false,
+      error: "Invalid scheduled end time.",
+    };
+  }
+
+  const schedMins = schedVal.minutes;
+  const actMins = actVal.minutes;
 
   let minutesOver = actMins - schedMins;
   // Handle cross-midnight events (e.g., scheduled 11:00 PM = 1380m, actual 01:15 AM = 75m)
@@ -194,8 +242,22 @@ export const calculateDayOfOvertime = (
     minutesOver += 24 * 60;
   }
 
+  // Prevent unrealistic overtime (> 12 hours)
+  if (minutesOver > 12 * 60) {
+    return {
+      valid: false,
+      minutesOver,
+      billableOtHours: Math.ceil(minutesOver / 60),
+      servicesBilled: [],
+      totalFee: 0,
+      isOvertime: true,
+      error: "Overtime cannot exceed 12 hours on an event. Please check the actual end time.",
+    };
+  }
+
   if (minutesOver <= 0) {
     return {
+      valid: true,
       minutesOver: 0,
       billableOtHours: 0,
       servicesBilled: [],
@@ -235,6 +297,7 @@ export const calculateDayOfOvertime = (
   const totalFee = servicesBilled.reduce((sum, s) => sum + s.subtotal, 0);
 
   return {
+    valid: true,
     minutesOver,
     billableOtHours,
     servicesBilled,

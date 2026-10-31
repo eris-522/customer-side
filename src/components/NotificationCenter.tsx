@@ -19,6 +19,7 @@ export function NotificationCenter({ isOpen, onClose, notifications, unreadCount
 
   const getNotifKey = (item: any) => {
     if (item.notifKey) return item.notifKey;
+    if (item.notifType === "day_of_overtime") return item.notifKey || `${item.id}-dayof-ot-${item.dayOfOT?.total_day_of_fee}`;
     if (item.notifType === "logistics") {
       const travel = Number(item.logistics_info?.travelFee) || 0;
       const hauling = Number(item.logistics_info?.haulingFee) || 0;
@@ -152,6 +153,13 @@ export function NotificationCenter({ isOpen, onClose, notifications, unreadCount
                                 {notif.modStatus === 'Approved' ? "Confirmed by Coordinator" : "Declined / Reverted"}
                               </span>
                             </>
+                          ) : notif.notifType === 'day_of_overtime' ? (
+                            <>
+                              Overtime Surcharge Applied for {notif.event_date}:{" "}
+                              <span className="text-amber-400 font-bold">
+                                +{notif.dayOfOT?.billable_ot_hours}h OT (₱{Number(notif.dayOfOT?.total_day_of_fee || 0).toLocaleString()})
+                              </span>
+                            </>
                           ) : notif.notifType === 'balance_verified' ? (
                             <>
                               Final Balance for {notif.event_date} was{" "}
@@ -192,6 +200,25 @@ export function NotificationCenter({ isOpen, onClose, notifications, unreadCount
 
                     {isExpanded && (
                       <div className="mt-3 pt-3 border-t border-white/10 animate-in slide-in-from-top-1 fade-in duration-200">
+                        {notif.notifType === 'day_of_overtime' && (
+                          <div className="mb-3 p-3 bg-amber-500/10 border border-amber-500/20 rounded-md space-y-1.5 text-xs">
+                            <div className="flex justify-between items-center text-amber-300 font-bold">
+                              <span>Day-of Event Overtime Billed: +₱{Number(notif.dayOfOT?.total_day_of_fee || 0).toLocaleString()}</span>
+                              <span className="text-[10px] uppercase px-1.5 py-0.5 rounded bg-amber-500/20">Contract 1m = 1h OT</span>
+                            </div>
+                            <p className="text-[11px] text-white/80">
+                              Event ended at <strong>{notif.dayOfOT?.actual_end_time}</strong> ({notif.dayOfOT?.minutes_over} mins over scheduled end • {notif.dayOfOT?.billable_ot_hours} billable hours).
+                            </p>
+                            {Array.isArray(notif.dayOfOT?.services_billed) && notif.dayOfOT.services_billed.length > 0 && (
+                              <p className="text-[10px] text-white/60">
+                                Extended Services: {notif.dayOfOT.services_billed.map((s) => `${s.name} (+₱${Number(s.subtotal).toLocaleString()})`).join(" • ")}
+                              </p>
+                            )}
+                            <p className="text-[10px] text-gold-400 font-medium pt-1 border-t border-amber-500/20">
+                              ✓ Added to your final invoice balance. You can review the updated ledger below.
+                            </p>
+                          </div>
+                        )}
                         {isCancelled && reason && (
                           <div className="mb-3 p-2.5 bg-red-500/10 border border-red-500/20 rounded-md">
                             <p className="text-[10px] font-bold text-red-400 uppercase tracking-widest mb-1">Reason</p>
