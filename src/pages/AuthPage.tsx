@@ -15,6 +15,8 @@ import {
   ShieldQuestion,
   Phone,
   CheckCircle2,
+  Eye,
+  EyeOff,
 } from "lucide-react";
 import { supabase } from "../utils/supabase";
 
@@ -120,6 +122,7 @@ export default function AuthPage() {
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [phoneNumber, setPhoneNumber] = useState("");
 
   // Security question fields
@@ -133,6 +136,7 @@ export default function AuthPage() {
   const [recoveryAnswer, setRecoveryAnswer] = useState("");
   const [fetchedAnswer, setFetchedAnswer] = useState("");
   const [newPassword, setNewPassword] = useState("");
+  const [showNewPassword, setShowNewPassword] = useState(false);
 
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
@@ -792,13 +796,22 @@ export default function AuthPage() {
                       size={16}
                     />
                     <input
-                      type="password"
+                      type={showPassword ? "text" : "password"}
                       placeholder="••••••••"
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
                       required
-                      className="w-full bg-white/5 border border-white/10 px-12 py-4 text-lg focus:outline-none focus:border-gold-400/50 transition-all placeholder:text-white/40"
+                      className="w-full bg-white/5 border border-white/10 pl-12 pr-12 py-4 text-lg focus:outline-none focus:border-gold-400/50 transition-all placeholder:text-white/40"
                     />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword((prev) => !prev)}
+                      className="absolute right-4 top-1/2 -translate-y-1/2 text-white/40 hover:text-gold-400 transition-colors cursor-pointer p-1"
+                      aria-label={showPassword ? "Hide password" : "Show password"}
+                      title={showPassword ? "Hide password" : "Show password"}
+                    >
+                      {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                    </button>
                   </div>
                 </div>
 
@@ -941,13 +954,22 @@ export default function AuthPage() {
                         size={16}
                       />
                       <input
-                        type="password"
+                        type={showNewPassword ? "text" : "password"}
                         placeholder="Enter new password"
                         value={newPassword}
                         onChange={(e) => setNewPassword(e.target.value)}
                         required
-                        className="w-full bg-white/5 border border-white/10 px-12 py-4 text-lg focus:outline-none focus:border-gold-400/50 transition-all placeholder:text-white/40"
+                        className="w-full bg-white/5 border border-white/10 pl-12 pr-12 py-4 text-lg focus:outline-none focus:border-gold-400/50 transition-all placeholder:text-white/40"
                       />
+                      <button
+                        type="button"
+                        onClick={() => setShowNewPassword((prev) => !prev)}
+                        className="absolute right-4 top-1/2 -translate-y-1/2 text-white/40 hover:text-gold-400 transition-colors cursor-pointer p-1"
+                        aria-label={showNewPassword ? "Hide password" : "Show password"}
+                        title={showNewPassword ? "Hide password" : "Show password"}
+                      >
+                        {showNewPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                      </button>
                     </div>
                   </div>
                 )}
