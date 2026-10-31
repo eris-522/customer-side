@@ -115,24 +115,31 @@ export default function Navbar() {
     }
 
     const { data: subscription } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
-        if (session?.user) {
-          const { data: profile } = await supabase
-            .from("profiles")
-            .select("status")
-            .eq("id", session.user.id)
-            .maybeSingle();
-
-          const statusLower = (profile?.status || "").toLowerCase().trim();
-          if (statusLower === "inactive" || statusLower === "archived") {
-            await supabase.auth.signOut();
-            if (isMounted) setUser(null);
-            return;
-          }
-        }
+      (event, session) => {
         setUser(session?.user ?? null);
         if (event === "PASSWORD_RECOVERY" && window.location.pathname !== "/auth") {
           navigate("/auth?mode=reset", { replace: true });
+        }
+        if (session?.user) {
+          // Defer async database calls to avoid Supabase Auth mutex deadlock
+          setTimeout(async () => {
+            if (!isMounted) return;
+            try {
+              const { data: profile } = await supabase
+                .from("profiles")
+                .select("status")
+                .eq("id", session.user.id)
+                .maybeSingle();
+
+              const statusLower = (profile?.status || "").toLowerCase().trim();
+              if (statusLower === "inactive" || statusLower === "archived") {
+                await supabase.auth.signOut();
+                if (isMounted) setUser(null);
+              }
+            } catch (err) {
+              console.error("Status check error in Navbar:", err);
+            }
+          }, 0);
         }
       },
     );

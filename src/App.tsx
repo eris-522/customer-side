@@ -123,7 +123,12 @@ function AuthRoutingHandler() {
           navigate("/auth?mode=reset", { replace: true });
         }
       } else if (event === "SIGNED_IN") {
-        verifyUserActiveStatus();
+        // Defer async verification to prevent Supabase Auth client deadlock
+        setTimeout(() => {
+          if (!isCancelled) {
+            verifyUserActiveStatus();
+          }
+        }, 0);
       }
     });
 

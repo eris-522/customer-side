@@ -174,6 +174,12 @@ export default function AuthPage() {
         return;
       }
 
+      if (urlParams.get("mode") === "forgot") {
+        setForgotPasswordStep("email");
+        setIsLogin(true);
+        return;
+      }
+
       const isSignupConfirmation =
         urlParams.get("confirmed") === "true" ||
         window.location.hash.includes("type=signup") ||
@@ -249,6 +255,9 @@ export default function AuthPage() {
     if (mode === "reset" || isRecoveryHash || isRecoveryStorage) {
       setIsLogin(true);
       setForgotPasswordStep("reset");
+    } else if (mode === "forgot") {
+      setIsLogin(true);
+      setForgotPasswordStep((prev) => (prev === "question" ? "question" : "email"));
     } else {
       setIsLogin(mode !== "signup");
       setForgotPasswordStep("none");
@@ -298,47 +307,76 @@ export default function AuthPage() {
 
     try {
       if (forgotPasswordStep === "email") {
-        const currentRecoveryEmail = recoveryEmail.trim();
+        const currentRecoveryEmail = recoveryEmail.trim().toLowerCase();
         const emailValidationErr = validateEmailFormat(currentRecoveryEmail);
         if (emailValidationErr) {
           setError(emailValidationErr);
           return;
         }
 
-        const { data, error } = await supabase
+        // 10-second timeout promise to guarantee UI never deadlocks or hangs indefinitely
+        const queryPromise = supabase
           .from("profiles")
           .select("security_answer")
-          .eq("email", currentRecoveryEmail)
-          .single();
+          .ilike("email", currentRecoveryEmail)
+          .maybeSingle();
+
+        const timeoutPromise = new Promise<{ data: any; error: any }>((_, reject) =>
+          setTimeout(
+            () => reject(new Error("Request timed out. Please check your internet connection and try again.")),
+            10000
+          )
+        );
+
+        const { data, error } = await Promise.race([queryPromise, timeoutPromise]);
 
         if (error || !data) {
-          setError("Account not found.");
+          setError("Account not found. Please check your email address.");
         } else if (!data.security_answer) {
-          setError("No security question set up for this account.");
+          setError("No security question set up for this account. Please contact the administrator.");
         } else {
-          setFetchedAnswer(data.security_answer);
+          setFetchedAnswer(data.security_answer.toLowerCase().trim());
           setForgotPasswordStep("question");
         }
       } else if (forgotPasswordStep === "question") {
         if (recoveryAnswer.toLowerCase().trim() === fetchedAnswer) {
           // Send the recovery email pointing directly to the Vercel deployment (no query params so Supabase Redirect URL matching never rejects it)
-          const { error } = await supabase.auth.resetPasswordForEmail(recoveryEmail, {
+          const resetPromise = supabase.auth.resetPasswordForEmail(recoveryEmail.trim(), {
             redirectTo: "https://rpcatering.vercel.app/auth",
           });
+
+          const timeoutPromise = new Promise<{ data: any; error: any }>((_, reject) =>
+            setTimeout(
+              () => reject(new Error("Request timed out sending reset email. Please try again.")),
+              12000
+            )
+          );
+
+          const { error } = await Promise.race([resetPromise, timeoutPromise]);
 
           if (error) {
             setError(`Failed to send reset email: ${error.message}`);
           } else {
-            setMessage("Security answer correct! We've sent a password reset link to your email. Please click the link to continue.");
+            setMessage("Security answer verified! We've sent a password reset link to your email. Please check your inbox (and spam folder) to reset your password.");
           }
         } else {
-          setError("Incorrect answer.");
+          setError("Incorrect answer. Please check your spelling and try again.");
         }
       } else if (forgotPasswordStep === "reset") {
         // After clicking the email link, a recovery session is established, allowing updateUser to succeed.
-        const { error } = await supabase.auth.updateUser({
+        const updatePromise = supabase.auth.updateUser({
           password: newPassword,
         });
+
+        const timeoutPromise = new Promise<{ data: any; error: any }>((_, reject) =>
+          setTimeout(
+            () => reject(new Error("Request timed out updating password. Please try again.")),
+            12000
+          )
+        );
+
+        const { error } = await Promise.race([updatePromise, timeoutPromise]);
+
         if (error) {
           setError(
             `Supabase Error: ${error.message}. (Please ensure you clicked the reset link from your email.)`,
@@ -357,6 +395,8 @@ export default function AuthPage() {
           setNewPassword("");
         }
       }
+    } catch (err: any) {
+      setError(err?.message || "An unexpected error occurred. Please try again.");
     } finally {
       setLoading(false);
     }
@@ -851,6 +891,7 @@ export default function AuthPage() {
                       <button
                         type="button"
                         onClick={() => {
+                          setSearchParams({ mode: "forgot" });
                           setForgotPasswordStep("email");
                           setError("");
                           setMessage("");
