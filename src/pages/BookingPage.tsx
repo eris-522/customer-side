@@ -262,6 +262,27 @@ export default function BookingPage() {
   const [overtimeState, setOvertimeState] = useState<PrebookedOvertimeState>(DEFAULT_PREBOOKED_OVERTIME);
   const totalPrebookedOvertimeFee = calculatePrebookedOvertimeFee(overtimeState);
 
+
+
+  const [corkageState, setCorkageState] = useState<{
+    hasLechonTable: boolean;
+    alcoholicBeveragesCount: number;
+    outsideFoodCount: number;
+    outsideFoodDisclaimerAgreed: boolean;
+  }>({
+    hasLechonTable: false,
+    alcoholicBeveragesCount: 0,
+    outsideFoodCount: 0,
+    outsideFoodDisclaimerAgreed: false,
+  });
+
+  // Derived variables dynamically calculated from the user's selected package
+  const selectedPkgForMenu = availablePackages.find((p) => p.id === formData.packageId);
+  const activeMenuRules = getActiveMenuRules(selectedPkgForMenu);
+  const maxGuests = selectedPkgForMenu?.pax 
+    ? Math.max(...(selectedPkgForMenu.pax.match(/\d+/g) || ['500']).map((n: string) => parseInt(n, 10))) 
+    : 500;
+
   // Reset any overtime services that are not included in the selected package
   useEffect(() => {
     if (selectedPkgForMenu) {
@@ -300,25 +321,6 @@ export default function BookingPage() {
       });
     }
   }, [selectedPkgForMenu?.id]);
-
-  const [corkageState, setCorkageState] = useState<{
-    hasLechonTable: boolean;
-    alcoholicBeveragesCount: number;
-    outsideFoodCount: number;
-    outsideFoodDisclaimerAgreed: boolean;
-  }>({
-    hasLechonTable: false,
-    alcoholicBeveragesCount: 0,
-    outsideFoodCount: 0,
-    outsideFoodDisclaimerAgreed: false,
-  });
-
-  // Derived variables dynamically calculated from the user's selected package
-  const selectedPkgForMenu = availablePackages.find((p) => p.id === formData.packageId);
-  const activeMenuRules = getActiveMenuRules(selectedPkgForMenu);
-  const maxGuests = selectedPkgForMenu?.pax 
-    ? Math.max(...(selectedPkgForMenu.pax.match(/\d+/g) || ['500']).map((n: string) => parseInt(n, 10))) 
-    : 500;
 
   // Feature: Fetches required dynamic data (packages, menu, services) from Supabase on mount
   useEffect(() => {
