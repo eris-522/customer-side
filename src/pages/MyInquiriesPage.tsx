@@ -405,9 +405,24 @@ export default function MyInquiriesPage() {
       return;
     }
 
-    const existingModReqs = Array.isArray(booking.modification_requests)
-      ? booking.modification_requests
+    const currentReqs = Array.isArray(modifyingBooking.modification_requests)
+      ? modifyingBooking.modification_requests.filter((r: any) => r.status !== "Superseded")
       : [];
+    if (currentReqs.some((r: any) => r.status === "Applied" || r.status === "Pending")) {
+      triggerModErrorToast("Cannot submit: Your previous modification request is awaiting coordinator acknowledgment.");
+      return;
+    }
+
+    const existingModReqs = Array.isArray(booking.modification_requests)
+      ? booking.modification_requests.filter((r: any) => r.status !== "Superseded")
+      : [];
+    const hasUnacknowledged = existingModReqs.some(
+      (r: any) => r.status === "Applied" || r.status === "Pending"
+    );
+    if (hasUnacknowledged) {
+      triggerModErrorToast("Cannot modify: Your previous modification request is awaiting coordinator acknowledgment.");
+      return;
+    }
     const latestModNote =
       existingModReqs.length > 0
         ? existingModReqs[existingModReqs.length - 1]?.notes || ""
@@ -455,14 +470,39 @@ export default function MyInquiriesPage() {
   const getCustomDishesFor = (bookingId: any) =>
     customDishes.filter((cd) => String(cd.booking_id) === String(bookingId));
 
-  // Dishes the coordinator marked unavailable for this booking (replaced due to market shortage)
+  // Dishes the coordinator marked unavailable for this booking (chronological, cleared when set available again)
   const getUnavailableDishesFor = (booking: any): Set<string> => {
     const set = new Set<string>();
     if (!booking) return set;
-    getCustomDishesFor(booking.id).forEach((cd) => cd.replaces_dish && set.add(cd.replaces_dish));
+    const activeMenu: string[] = Array.isArray(booking.selected_menu_items)
+      ? booking.selected_menu_items
+      : [];
+    const restoredSet = new Set<string>();
+
     (Array.isArray(booking.dish_substitutions) ? booking.dish_substitutions : []).forEach(
-      (s: any) => s.original_dish && set.add(s.original_dish)
+      (s: any) => {
+        if (!s?.original_dish) return;
+        if (s.restored) {
+          set.delete(s.original_dish);
+          restoredSet.add(s.original_dish);
+          return;
+        }
+        if (s.original_dish !== s.replacement_dish && !activeMenu.includes(s.original_dish)) {
+          restoredSet.delete(s.original_dish);
+          set.add(s.original_dish);
+        }
+      }
     );
+
+    getCustomDishesFor(booking.id).forEach((cd) => {
+      if (
+        cd.replaces_dish &&
+        !restoredSet.has(cd.replaces_dish) &&
+        !activeMenu.includes(cd.replaces_dish)
+      ) {
+        set.add(cd.replaces_dish);
+      }
+    });
     return set;
   };
 
@@ -521,7 +561,11 @@ export default function MyInquiriesPage() {
         const availableInCat = menuItems.filter(
           (mi) => mi.status !== "Archived" && mi.status !== "Not Available" && !unavailable.has(mi.name) && getRuleCategory(mi.category, mi.name) === cat
         );
-        const customInCat = getCustomDishesFor(modifyingBooking.id).filter((cd) => cd.category === cat);
+        const customInCat = getCustomDishesFor(modifyingBooking.id).filter(
+          (cd) =>
+            cd.category === cat &&
+            (!cd.replaces_dish || unavailable.has(cd.replaces_dish) || modSelectedDishes.includes(cd.name))
+        );
         const dynamicMin = Math.min(reqMax, availableInCat.length + customInCat.length);
         const selectedCount = modSelectedDishes.filter((name) => {
           return dishCategoryFor(name, modifyingBooking) === cat;
@@ -706,12 +750,12 @@ export default function MyInquiriesPage() {
       : [];
     const updatedRequests = [...existingReqs, newRequest];
 
-    // Prune any older dish_substitutions whose replacement dish the client just swapped out
+    // Preserve coordinator unavailability records so unavailable dishes stay locked until coordinator sets them available again
     const existingSubs = Array.isArray(modifyingBooking.dish_substitutions)
       ? modifyingBooking.dish_substitutions
       : [];
-    const activeSubsAfterEdit = existingSubs.filter((sub: any) =>
-      modSelectedDishes.includes(sub.replacement_dish)
+    const activeSubsAfterEdit = existingSubs.filter(
+      (sub: any) => sub?.restored || sub?.original_dish !== sub?.replacement_dish
     );
 
     const updatePayload: any = {
@@ -1805,16 +1849,26 @@ export default function MyInquiriesPage() {
                       const currentMenuList: string[] = Array.isArray(booking.selected_menu_items)
                         ? booking.selected_menu_items
                         : [];
-                      // Only display substitutions whose replacement dish is currently active in the menu
+                      // Only display active (non-restored) substitutions whose replacement dish is currently in the menu
                       const substitutions: any[] = Array.isArray(booking.dish_substitutions)
-                        ? booking.dish_substitutions.filter((sub: any) =>
-                            sub?.replacement_dish && currentMenuList.includes(sub.replacement_dish)
+                        ? booking.dish_substitutions.filter(
+                            (sub: any) =>
+                              !sub?.restored &&
+                              sub?.original_dish !== sub?.replacement_dish &&
+                              sub?.replacement_dish &&
+                              currentMenuList.includes(sub.replacement_dish)
                           )
                         : [];
                       const modRequests: any[] = Array.isArray(booking.modification_requests)
                         ? booking.modification_requests.filter((r: any) => r.status !== "Superseded")
                         : [];
                       const latestRequest = modRequests.length > 0 ? modRequests[modRequests.length - 1] : null;
+                      const hasUnacknowledgedModification = modRequests.some(
+                        (r: any) => r.status === "Applied" || r.status === "Pending"
+                      );
+                      const unacknowledgedMod = modRequests.find(
+                        (r: any) => r.status === "Applied" || r.status === "Pending"
+                      );
                       const activeInstructions =
                         (booking.logistics_info?.client_special_instructions || "").trim() ||
                         (latestRequest?.notes || "").trim();
@@ -1831,9 +1885,15 @@ export default function MyInquiriesPage() {
                             </div>
                             <div>
                               {!isModificationLocked ? (
-                                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 flex items-center gap-1">
-                                  <Clock size={11} /> {daysLeftToModify} Day{daysLeftToModify === 1 ? "" : "s"} Left to Modify
-                                </span>
+                                hasUnacknowledgedModification ? (
+                                  <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-amber-500/20 text-amber-300 border border-amber-500/40 flex items-center gap-1">
+                                    <Clock size={11} /> Awaiting Acknowledgment
+                                  </span>
+                                ) : (
+                                  <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 flex items-center gap-1">
+                                    <Clock size={11} /> {daysLeftToModify} Day{daysLeftToModify === 1 ? "" : "s"} Left to Modify
+                                  </span>
+                                )
                               ) : (
                                 <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-red-500/20 text-red-400 border border-red-500/40 flex items-center gap-1">
                                   <Lock size={11} /> Modifications Locked
@@ -1844,23 +1904,45 @@ export default function MyInquiriesPage() {
 
                           {/* Status Notice & Action */}
                           {!isModificationLocked ? (
-                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-emerald-500/[0.05] border border-emerald-500/20 p-3 rounded">
-                              <div className="space-y-0.5">
-                                <p className="text-xs text-white font-medium">
-                                  Event is in <strong className="text-emerald-400">{daysUntilEvent} days</strong>. Modification window is open until <strong className="text-white">{formattedCutoffDate}</strong>.
-                                </p>
-                                <p className="text-[11px] text-white/60">
-                                  You may update your menu selections, extra headcount, or special instructions before the 14-day cutoff per contract.
-                                </p>
+                            hasUnacknowledgedModification ? (
+                              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-amber-500/[0.08] border border-amber-500/30 p-3 rounded">
+                                <div className="space-y-0.5">
+                                  <p className="text-xs text-amber-200 font-semibold flex items-center gap-1.5">
+                                    <Clock size={13} className="text-amber-400" />
+                                    Modification Pending Coordinator Acknowledgment
+                                  </p>
+                                  <p className="text-[11px] text-white/70">
+                                    Your recent modification request has been submitted and is awaiting coordinator acknowledgment. Further modifications are locked until the coordinator reviews your previous request.
+                                  </p>
+                                </div>
+                                <button
+                                  type="button"
+                                  disabled
+                                  className="px-4 py-2 bg-white/5 border border-amber-500/30 text-amber-300/60 text-xs font-bold uppercase tracking-wider rounded flex items-center gap-1.5 cursor-not-allowed select-none shrink-0"
+                                  title="Further modifications locked until coordinator acknowledges the previous request"
+                                >
+                                  <Lock size={13} className="text-amber-400/70" /> Awaiting Acknowledgment
+                                </button>
                               </div>
-                              <button
-                                type="button"
-                                onClick={() => handleOpenModifyModal(booking)}
-                                className="px-4 py-2 gold-gradient text-black hover:brightness-110 text-xs font-bold uppercase tracking-wider rounded transition-all shadow flex items-center gap-1.5 shrink-0 cursor-pointer"
-                              >
-                                <Sliders size={13} /> Modify Menu &amp; Details
-                              </button>
-                            </div>
+                            ) : (
+                              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-emerald-500/[0.05] border border-emerald-500/20 p-3 rounded">
+                                <div className="space-y-0.5">
+                                  <p className="text-xs text-white font-medium">
+                                    Event is in <strong className="text-emerald-400">{daysUntilEvent} days</strong>. Modification window is open until <strong className="text-white">{formattedCutoffDate}</strong>.
+                                  </p>
+                                  <p className="text-[11px] text-white/60">
+                                    You may update your menu selections, extra headcount, or special instructions before the 14-day cutoff per contract.
+                                  </p>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenModifyModal(booking)}
+                                  className="px-4 py-2 gold-gradient text-black hover:brightness-110 text-xs font-bold uppercase tracking-wider rounded transition-all shadow flex items-center gap-1.5 shrink-0 cursor-pointer"
+                                >
+                                  <Sliders size={13} /> Modify Menu &amp; Details
+                                </button>
+                              </div>
+                            )
                           ) : (
                             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-red-500/[0.06] border border-red-500/30 p-3 rounded">
                               <div className="space-y-0.5">
@@ -1879,6 +1961,50 @@ export default function MyInquiriesPage() {
                               >
                                 <Lock size={13} /> Modifications Locked
                               </button>
+                            </div>
+                          )}
+
+                          {/* Pending Modification Notice awaiting Coordinator Acknowledgment */}
+                          {unacknowledgedMod && (
+                            <div className="p-3 bg-amber-500/10 border border-amber-500/30 rounded space-y-2 text-xs">
+                              <div className="flex items-center justify-between gap-2 border-b border-amber-500/20 pb-1.5">
+                                <span className="text-amber-300 uppercase font-bold text-[10px] tracking-wider flex items-center gap-1.5">
+                                  <Clock size={12} />
+                                  Recent Modification Submitted ({unacknowledgedMod.created_at ? new Date(unacknowledgedMod.created_at).toLocaleDateString() : "Recent"})
+                                </span>
+                                <span className="text-[10px] uppercase font-bold px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40">
+                                  Awaiting Coordinator Acknowledgment
+                                </span>
+                              </div>
+                              <div className="space-y-1 text-white/80 text-[11px]">
+                                {unacknowledgedMod.added_dishes && unacknowledgedMod.added_dishes.length > 0 && (
+                                  <p>
+                                    <span className="text-white/50">Dish Swap / Changes: </span>
+                                    {unacknowledgedMod.removed_dishes && unacknowledgedMod.removed_dishes.length > 0 && (
+                                      <span className="line-through text-red-300 mr-1.5">
+                                        {unacknowledgedMod.removed_dishes.join(", ")}
+                                      </span>
+                                    )}
+                                    <span className="text-emerald-300 font-semibold">
+                                      ➔ {unacknowledgedMod.added_dishes.join(", ")}
+                                    </span>
+                                  </p>
+                                )}
+                                {unacknowledgedMod.requested_additional_pax !== undefined &&
+                                  unacknowledgedMod.requested_additional_pax !== unacknowledgedMod.previous_additional_pax && (
+                                    <p>
+                                      <span className="text-white/50">Headcount Adjustment: </span>
+                                      <span className="text-gold-300 font-medium">
+                                        {unacknowledgedMod.requested_guest_count} Total Guests ({unacknowledgedMod.requested_additional_pax > 0 ? `+${unacknowledgedMod.requested_additional_pax} extra pax` : "Standard package pax"})
+                                      </span>
+                                    </p>
+                                  )}
+                                {unacknowledgedMod.notes && (
+                                  <p className="italic text-white/60">
+                                    "{unacknowledgedMod.notes}"
+                                  </p>
+                                )}
+                              </div>
                             </div>
                           )}
 
@@ -2660,9 +2786,15 @@ export default function MyInquiriesPage() {
                               : mi
                           );
 
-                        // Coordinator's off-menu dishes for THIS booking only (from booking_custom_dishes)
+                        // Coordinator's off-menu dishes for THIS booking only (hidden once replaced dish is set available again)
                         const customItemsForCat = getCustomDishesFor(modifyingBooking?.id)
-                          .filter((cd) => cd.category === category)
+                          .filter(
+                            (cd) =>
+                              cd.category === category &&
+                              (!cd.replaces_dish ||
+                                unavailableForBooking.has(cd.replaces_dish) ||
+                                modSelectedDishes.includes(cd.name))
+                          )
                           .map((cd) => ({
                             id: `custom-${cd.id}`,
                             name: cd.name,

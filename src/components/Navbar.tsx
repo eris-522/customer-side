@@ -171,9 +171,22 @@ export default function Navbar() {
             });
           }
 
-          // Check for dish substitutions sent by Coordinator
+          // Check for dish substitutions & restored availability sent by Coordinator
           if (Array.isArray(b.dish_substitutions) && b.dish_substitutions.length > 0 && !isCustomerCancelled) {
             b.dish_substitutions.forEach((sub: any) => {
+              if (sub.restored) {
+                const resKey = `${b.id}-restored-${sub.id || sub.restored_at || sub.original_dish}`;
+                expandedNotifications.push({
+                  ...b,
+                  notifType: 'dish_restored',
+                  notifKey: resKey,
+                  notifTimestamp: sub.restored_at || sub.substituted_at || b.created_at,
+                  original_dish: sub.original_dish,
+                  restored_to_menu: Boolean(sub.restored_to_menu),
+                });
+                return;
+              }
+              if (sub.original_dish === sub.replacement_dish) return;
               const subKey = `${b.id}-sub-${sub.id || sub.substituted_at || sub.original_dish}`;
               expandedNotifications.push({
                 ...b,

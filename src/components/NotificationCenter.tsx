@@ -131,7 +131,14 @@ export function NotificationCenter({ isOpen, onClose, notifications, unreadCount
                     <div className="flex justify-between items-start mb-1 gap-2">
                       <div>
                         <p className="text-sm text-white/90 font-semibold">
-                          {notif.notifType === 'substitution' ? (
+                          {notif.notifType === 'dish_restored' ? (
+                            <>
+                              Dish Available Again for {notif.event_date}:{" "}
+                              <span className="text-green-400 font-bold">
+                                "{notif.original_dish}" {notif.restored_to_menu ? "restored to your menu" : "is available again"}
+                              </span>
+                            </>
+                          ) : notif.notifType === 'substitution' ? (
                             <>
                               Dish Substituted for {notif.event_date}:{" "}
                               <span className="text-amber-400 font-bold">
@@ -189,6 +196,18 @@ export function NotificationCenter({ isOpen, onClose, notifications, unreadCount
                           <div className="mb-3 p-2.5 bg-red-500/10 border border-red-500/20 rounded-md">
                             <p className="text-[10px] font-bold text-red-400 uppercase tracking-widest mb-1">Reason</p>
                             <p className="text-xs text-white/80 italic">"{reason}"</p>
+                          </div>
+                        )}
+                        {notif.notifType === 'dish_restored' && (
+                          <div className="mb-3 p-2.5 bg-emerald-500/10 border border-emerald-500/30 rounded-md text-xs space-y-1">
+                            <p className="text-emerald-300 font-semibold">
+                              Good news! "{notif.original_dish}" is back in stock for your event date.
+                            </p>
+                            <p className="text-white/80 text-[11px]">
+                              {notif.restored_to_menu
+                                ? `The coordinator has restored "${notif.original_dish}" directly to your selected menu.`
+                                : `You may reselect "${notif.original_dish}" anytime before the 14-day cutoff in My Inquiries.`}
+                            </p>
                           </div>
                         )}
                         {notif.notifType === 'substitution' && (
