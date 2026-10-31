@@ -206,8 +206,8 @@ export default function AuthPage() {
           setError(
             <span>
               Your account has been deactivated. Please contact the administrator at{" "}
-              <a href="mailto:rpcateringsupport@gmail.com" className="underline hover:text-gold-400 transition-colors">
-                rpcateringsupport@gmail.com
+              <a href="mailto:santoskyleerica@gmail.com" className="underline hover:text-gold-400 transition-colors">
+                santoskyleerica@gmail.com
               </a>{" "}
               or +63 921 469 7142 to reactivate your account.
             </span>
@@ -220,8 +220,8 @@ export default function AuthPage() {
           setError(
             <span>
               Your account has been archived. Please contact support at{" "}
-              <a href="mailto:rpcateringsupport@gmail.com" className="underline hover:text-red-300 transition-colors">
-                rpcateringsupport@gmail.com
+              <a href="mailto:santoskyleerica@gmail.com" className="underline hover:text-red-300 transition-colors">
+                santoskyleerica@gmail.com
               </a>{" "}
               or +63 921 469 7142.
             </span>
@@ -271,8 +271,8 @@ export default function AuthPage() {
       setError(
         <span>
           Your account has been deactivated. Please contact the administrator at{" "}
-          <a href="mailto:rpcateringsupport@gmail.com" className="underline hover:text-gold-400 transition-colors">
-            rpcateringsupport@gmail.com
+          <a href="mailto:santoskyleerica@gmail.com" className="underline hover:text-gold-400 transition-colors">
+            santoskyleerica@gmail.com
           </a>{" "}
           or +63 921 469 7142 to reactivate your account.
         </span>
@@ -281,8 +281,8 @@ export default function AuthPage() {
       setError(
         <span>
           Your account has been archived. Please contact support at{" "}
-          <a href="mailto:rpcateringsupport@gmail.com" className="underline hover:text-red-300 transition-colors">
-            rpcateringsupport@gmail.com
+          <a href="mailto:santoskyleerica@gmail.com" className="underline hover:text-red-300 transition-colors">
+            santoskyleerica@gmail.com
           </a>{" "}
           or +63 921 469 7142.
         </span>
@@ -407,8 +407,8 @@ export default function AuthPage() {
             setError(
               <span>
                 Your account has been deactivated. Please contact the administrator at{" "}
-                <a href="mailto:rpcateringsupport@gmail.com" className="underline hover:text-gold-400 transition-colors">
-                  rpcateringsupport@gmail.com
+                <a href="mailto:santoskyleerica@gmail.com" className="underline hover:text-gold-400 transition-colors">
+                  santoskyleerica@gmail.com
                 </a>{" "}
                 or +63 921 469 7142 to reactivate your account.
               </span>
@@ -421,8 +421,8 @@ export default function AuthPage() {
             setError(
               <span>
                 Your account has been archived. Please contact support at{" "}
-                <a href="mailto:rpcateringsupport@gmail.com" className="underline hover:text-red-300 transition-colors">
-                  rpcateringsupport@gmail.com
+                <a href="mailto:santoskyleerica@gmail.com" className="underline hover:text-red-300 transition-colors">
+                  santoskyleerica@gmail.com
                 </a>{" "}
                 or +63 921 469 7142.
               </span>
