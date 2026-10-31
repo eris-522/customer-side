@@ -405,14 +405,6 @@ export default function MyInquiriesPage() {
       return;
     }
 
-    const currentReqs = Array.isArray(modifyingBooking.modification_requests)
-      ? modifyingBooking.modification_requests.filter((r: any) => r.status !== "Superseded")
-      : [];
-    if (currentReqs.some((r: any) => r.status === "Applied" || r.status === "Pending")) {
-      triggerModErrorToast("Cannot submit: Your previous modification request is awaiting coordinator acknowledgment.");
-      return;
-    }
-
     const existingModReqs = Array.isArray(booking.modification_requests)
       ? booking.modification_requests.filter((r: any) => r.status !== "Superseded")
       : [];
@@ -548,6 +540,14 @@ export default function MyInquiriesPage() {
 
     if (diffDays <= 14) {
       triggerModErrorToast("Modifications locked: All changes require 14 days prior notice per contract.");
+      return;
+    }
+
+    const currentReqs = Array.isArray(modifyingBooking?.modification_requests)
+      ? modifyingBooking.modification_requests.filter((r: any) => r.status !== "Superseded")
+      : [];
+    if (currentReqs.some((r: any) => r.status === "Applied" || r.status === "Pending")) {
+      triggerModErrorToast("Cannot submit: Your previous modification request is awaiting coordinator acknowledgment.");
       return;
     }
 
