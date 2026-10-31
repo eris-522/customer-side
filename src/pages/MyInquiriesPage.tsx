@@ -50,6 +50,37 @@ const getRuleCategory = (dbCategory: string, itemName: string) => {
   return "Main Course";
 };
 
+const getBookingDishCategory = (
+  dishName: string,
+  booking?: any,
+  menuItemsList: any[] = []
+): string => {
+  if (!dishName) return "Main Course";
+
+  // 1. Check if this dish is an active replacement in booking.dish_substitutions
+  if (booking && Array.isArray(booking.dish_substitutions)) {
+    const sub = booking.dish_substitutions.find((s: any) => s.replacement_dish === dishName);
+    if (sub) {
+      if (sub.category) return sub.category;
+      if (sub.original_dish) {
+        const origDef = menuItemsList.find((mi: any) => mi.name === sub.original_dish);
+        if (origDef) {
+          return getRuleCategory(origDef.category, origDef.name);
+        }
+      }
+    }
+  }
+
+  // 2. Check if dish is in the menuItems database
+  const def = menuItemsList.find((mi: any) => mi.name === dishName);
+  if (def) {
+    return getRuleCategory(def.category, def.name);
+  }
+
+  // 3. Fallback to name heuristic in getRuleCategory
+  return getRuleCategory("", dishName);
+};
+
 const categoryOrder = ["Appetizer", "Soup", "Main Course", "Pasta", "Vegetable", "Rice", "Dessert", "Drinks"];
 
 export default function MyInquiriesPage() {
