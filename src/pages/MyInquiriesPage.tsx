@@ -26,7 +26,7 @@ import {
   AlertCircle,
   Utensils,
 } from "lucide-react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 
 import { compressReceiptImage, uploadReceiptImage } from "../utils/receiptUploader";
 import { calculateServiceWindow, OVERTIME_SERVICE_RATES } from "../utils/overtimeBilling";
@@ -93,6 +93,7 @@ const getBookingDishCategory = (
 const categoryOrder = ["Appetizer", "Soup", "Main Course", "Pasta", "Vegetable", "Rice", "Dessert", "Drinks"];
 
 export default function MyInquiriesPage() {
+  const navigate = useNavigate();
   const [bookings, setBookings] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState("All");
@@ -189,6 +190,19 @@ export default function MyInquiriesPage() {
           await supabase.auth.getUser();
         if (authError || !authData?.user) {
           if (isMounted && !silent) setLoading(false);
+          return null;
+        }
+
+        const { data: profileCheck } = await supabase
+          .from("profiles")
+          .select("status")
+          .eq("id", authData.user.id)
+          .maybeSingle();
+
+        const inquiriesStatus = (profileCheck?.status || "").toLowerCase().trim();
+        if (inquiriesStatus === "archived" || inquiriesStatus === "inactive") {
+          await supabase.auth.signOut();
+          navigate(inquiriesStatus === "inactive" ? "/auth?mode=login&deactivated=true" : "/auth?mode=login&archived=true");
           return null;
         }
 

@@ -339,10 +339,11 @@ export default function BookingPage() {
         .eq("id", authData.user.id)
         .single();
 
-      // Secondary security check: force logout if user was archived while they had an active session
-      if (profile?.status === "Archived") {
+      // Secondary security check: force logout if user was archived or deactivated while they had an active session
+      const statusLower = (profile?.status || "").toLowerCase().trim();
+      if (statusLower === "archived" || statusLower === "inactive") {
         await supabase.auth.signOut();
-        navigate("/auth");
+        navigate(statusLower === "inactive" ? "/auth?mode=login&deactivated=true" : "/auth?mode=login&archived=true");
         return;
       }
 
@@ -801,6 +802,19 @@ export default function BookingPage() {
     const { data: authData } = await supabase.auth.getUser();
     if (!authData.user) {
       setPaymentError("You must be logged in to submit a booking.");
+      return;
+    }
+
+    const { data: profileCheck } = await supabase
+      .from("profiles")
+      .select("status")
+      .eq("id", authData.user.id)
+      .maybeSingle();
+
+    const submitStatus = (profileCheck?.status || "").toLowerCase().trim();
+    if (submitStatus === "archived" || submitStatus === "inactive") {
+      await supabase.auth.signOut();
+      navigate(submitStatus === "inactive" ? "/auth?mode=login&deactivated=true" : "/auth?mode=login&archived=true");
       return;
     }
 

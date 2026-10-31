@@ -54,6 +54,64 @@ function AuthRoutingHandler() {
       navigate(`/auth?mode=login&confirmed=true${window.location.hash}`, { replace: true });
     }
 
+    let isCancelled = false;
+    let profileChannel: any = null;
+
+    // Check if the current user profile is inactive or archived
+    const verifyUserActiveStatus = async () => {
+      const { data } = await supabase.auth.getUser();
+      if (isCancelled || !data?.user) return;
+
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("status")
+        .eq("id", data.user.id)
+        .maybeSingle();
+
+      if (isCancelled) return;
+
+      const statusLower = (profile?.status || "").toLowerCase().trim();
+      if (statusLower === "inactive") {
+        await supabase.auth.signOut();
+        if (location.pathname !== "/auth") {
+          navigate("/auth?mode=login&deactivated=true", { replace: true });
+        }
+      } else if (statusLower === "archived") {
+        await supabase.auth.signOut();
+        if (location.pathname !== "/auth") {
+          navigate("/auth?mode=login&archived=true", { replace: true });
+        }
+      } else {
+        // Subscribe to real-time status updates on this user's profile row
+        if (!profileChannel) {
+          profileChannel = supabase
+            .channel(`profile-status-guard-${data.user.id}`)
+            .on(
+              "postgres_changes",
+              {
+                event: "UPDATE",
+                schema: "public",
+                table: "profiles",
+                filter: `id=eq.${data.user.id}`,
+              },
+              async (payload: any) => {
+                const newStatus = (payload.new?.status || "").toLowerCase().trim();
+                if (newStatus === "inactive") {
+                  await supabase.auth.signOut();
+                  navigate("/auth?mode=login&deactivated=true", { replace: true });
+                } else if (newStatus === "archived") {
+                  await supabase.auth.signOut();
+                  navigate("/auth?mode=login&archived=true", { replace: true });
+                }
+              }
+            )
+            .subscribe();
+        }
+      }
+    };
+
+    verifyUserActiveStatus();
+
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((event) => {
@@ -64,11 +122,17 @@ function AuthRoutingHandler() {
         if (location.pathname !== "/auth") {
           navigate("/auth?mode=reset", { replace: true });
         }
+      } else if (event === "SIGNED_IN") {
+        verifyUserActiveStatus();
       }
     });
 
     return () => {
+      isCancelled = true;
       subscription.unsubscribe();
+      if (profileChannel) {
+        supabase.removeChannel(profileChannel);
+      }
     };
   }, [location.pathname, navigate]);
 

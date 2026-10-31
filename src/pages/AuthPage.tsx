@@ -191,9 +191,44 @@ export default function AuthPage() {
         return;
       }
 
-      // If already signed in, skip auth page
+      // If already signed in, check account status before skipping auth page
       const { data } = await supabase.auth.getUser();
       if (data.user) {
+        const { data: profile } = await supabase
+          .from("profiles")
+          .select("status")
+          .eq("id", data.user.id)
+          .maybeSingle();
+
+        const statusLower = (profile?.status || "").toLowerCase().trim();
+        if (statusLower === "inactive") {
+          await supabase.auth.signOut();
+          setError(
+            <span>
+              Your account has been deactivated. Please contact the administrator at{" "}
+              <a href="mailto:rpcateringsupport@gmail.com" className="underline hover:text-gold-400 transition-colors">
+                rpcateringsupport@gmail.com
+              </a>{" "}
+              or +63 921 469 7142 to reactivate your account.
+            </span>
+          );
+          return;
+        }
+
+        if (statusLower === "archived") {
+          await supabase.auth.signOut();
+          setError(
+            <span>
+              Your account has been archived. Please contact support at{" "}
+              <a href="mailto:rpcateringsupport@gmail.com" className="underline hover:text-red-300 transition-colors">
+                rpcateringsupport@gmail.com
+              </a>{" "}
+              or +63 921 469 7142.
+            </span>
+          );
+          return;
+        }
+
         navigate("/booking");
         return;
       }
@@ -231,6 +266,28 @@ export default function AuthPage() {
     setRecoveryEmailError("");
     setError("");
     setMessage("");
+
+    if (searchParams.get("deactivated") === "true") {
+      setError(
+        <span>
+          Your account has been deactivated. Please contact the administrator at{" "}
+          <a href="mailto:rpcateringsupport@gmail.com" className="underline hover:text-gold-400 transition-colors">
+            rpcateringsupport@gmail.com
+          </a>{" "}
+          or +63 921 469 7142 to reactivate your account.
+        </span>
+      );
+    } else if (searchParams.get("archived") === "true") {
+      setError(
+        <span>
+          Your account has been archived. Please contact support at{" "}
+          <a href="mailto:rpcateringsupport@gmail.com" className="underline hover:text-red-300 transition-colors">
+            rpcateringsupport@gmail.com
+          </a>{" "}
+          or +63 921 469 7142.
+        </span>
+      );
+    }
   }, [searchParams]);
 
   const handleForgotSubmit = async (e: React.FormEvent) => {
@@ -336,14 +393,30 @@ export default function AuthPage() {
             setError(error.message);
           }
         } else if (authData.user) {
-          // Check if the user's account has been archived by the admin
+          // Check if the user's account has been deactivated or archived by the admin
           const { data: profile } = await supabase
             .from("profiles")
             .select("status")
             .eq("id", authData.user.id)
-            .single();
+            .maybeSingle();
 
-          if (profile?.status === "Archived") {
+          const statusLower = (profile?.status || "").toLowerCase().trim();
+
+          if (statusLower === "inactive") {
+            await supabase.auth.signOut();
+            setError(
+              <span>
+                Your account has been deactivated. Please contact the administrator at{" "}
+                <a href="mailto:rpcateringsupport@gmail.com" className="underline hover:text-gold-400 transition-colors">
+                  rpcateringsupport@gmail.com
+                </a>{" "}
+                or +63 921 469 7142 to reactivate your account.
+              </span>
+            );
+            return;
+          }
+
+          if (statusLower === "archived") {
             await supabase.auth.signOut();
             setError(
               <span>

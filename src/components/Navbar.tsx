@@ -89,6 +89,22 @@ export default function Navbar() {
     const initAuth = async () => {
       const { data } = await supabase.auth.getUser();
       if (!isMounted) return;
+
+      if (data?.user) {
+        const { data: profile } = await supabase
+          .from("profiles")
+          .select("status")
+          .eq("id", data.user.id)
+          .maybeSingle();
+
+        const statusLower = (profile?.status || "").toLowerCase().trim();
+        if (statusLower === "inactive" || statusLower === "archived") {
+          await supabase.auth.signOut();
+          if (isMounted) setUser(null);
+          return;
+        }
+      }
+
       setUser(data.user ?? null);
     };
 
@@ -99,7 +115,21 @@ export default function Navbar() {
     }
 
     const { data: subscription } = supabase.auth.onAuthStateChange(
-      (event, session) => {
+      async (event, session) => {
+        if (session?.user) {
+          const { data: profile } = await supabase
+            .from("profiles")
+            .select("status")
+            .eq("id", session.user.id)
+            .maybeSingle();
+
+          const statusLower = (profile?.status || "").toLowerCase().trim();
+          if (statusLower === "inactive" || statusLower === "archived") {
+            await supabase.auth.signOut();
+            if (isMounted) setUser(null);
+            return;
+          }
+        }
         setUser(session?.user ?? null);
         if (event === "PASSWORD_RECOVERY" && window.location.pathname !== "/auth") {
           navigate("/auth?mode=reset", { replace: true });
