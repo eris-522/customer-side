@@ -53,9 +53,16 @@ const getRuleCategory = (dbCategory: string, itemName: string) => {
 const getBookingDishCategory = (
   dishName: string,
   booking?: any,
-  menuItemsList: any[] = []
+  menuItemsList: any[] = [],
+  customDishesList: any[] = []
 ): string => {
   if (!dishName) return "Main Course";
+
+  // 0. Booking-scoped custom (off-menu) dishes from booking_custom_dishes are the source of truth
+  const custom = customDishesList.find(
+    (cd: any) => cd.name === dishName && (!booking || String(cd.booking_id) === String(booking.id))
+  );
+  if (custom?.category) return custom.category;
 
   // 1. Check if this dish is an active replacement in booking.dish_substitutions
   if (booking && Array.isArray(booking.dish_substitutions)) {
@@ -96,6 +103,8 @@ export default function MyInquiriesPage() {
 
   // 14-Day Modification Request Modal State
   const [menuItems, setMenuItems] = useState<any[]>([]);
+  // Booking-scoped off-menu dishes added by the coordinator (never offered in the public booking screen)
+  const [customDishes, setCustomDishes] = useState<any[]>([]);
   const [isLoadingMenu, setIsLoadingMenu] = useState<boolean>(false);
   const [modifyingBooking, setModifyingBooking] = useState<any | null>(null);
   const [modAdditionalPax, setModAdditionalPax] = useState<number>(0);
@@ -202,6 +211,14 @@ export default function MyInquiriesPage() {
         }
 
         if (bookingsData && bookingsData.length > 0) {
+          const bookingIds = bookingsData.map((b: any) => b.id);
+          const { data: customData } = await supabase
+            .from("booking_custom_dishes")
+            .select("id, booking_id, name, category, replaces_dish")
+            .in("booking_id", bookingIds);
+          if (!isMounted || reqId !== latestFetchIdRef.current) return authData.user;
+          setCustomDishes(customData || []);
+
           const sorted = [...bookingsData].sort((a, b) => {
             const dateA = new Date(a.created_at || a.event_date || 0).getTime();
             const dateB = new Date(b.created_at || b.event_date || 0).getTime();
@@ -261,6 +278,13 @@ export default function MyInquiriesPage() {
         .on(
           "postgres_changes",
           { event: "*", schema: "public", table: "menu_items" },
+          () => {
+            fetchInquiries(true);
+          },
+        )
+        .on(
+          "postgres_changes",
+          { event: "*", schema: "public", table: "booking_custom_dishes" },
           () => {
             fetchInquiries(true);
           },
@@ -427,20 +451,38 @@ export default function MyInquiriesPage() {
     }
   };
 
+  // Custom dishes for a specific booking
+  const getCustomDishesFor = (bookingId: any) =>
+    customDishes.filter((cd) => String(cd.booking_id) === String(bookingId));
+
+  // Dishes the coordinator marked unavailable for this booking (replaced due to market shortage)
+  const getUnavailableDishesFor = (booking: any): Set<string> => {
+    const set = new Set<string>();
+    if (!booking) return set;
+    getCustomDishesFor(booking.id).forEach((cd) => cd.replaces_dish && set.add(cd.replaces_dish));
+    (Array.isArray(booking.dish_substitutions) ? booking.dish_substitutions : []).forEach(
+      (s: any) => s.original_dish && set.add(s.original_dish)
+    );
+    return set;
+  };
+
+  const dishCategoryFor = (dishName: string, booking: any) =>
+    getBookingDishCategory(dishName, booking, menuItems, getCustomDishesFor(booking?.id));
+
   const handleMenuToggle = (itemName: string) => {
     clearModErrorToast();
     const isSelected = modSelectedDishes.includes(itemName);
-    const item = menuItems.find((opt) => opt.name === itemName);
-    if (!item) return;
-
-    const ruleCat = getRuleCategory(item.category, item.name);
+    if (!isSelected && getUnavailableDishesFor(modifyingBooking).has(itemName)) {
+      triggerModErrorToast(`"${itemName}" is unavailable for your event date and was replaced by the coordinator.`);
+      return;
+    }
+    const ruleCat = dishCategoryFor(itemName, modifyingBooking);
     const limits = modifyingBooking?.packages?.category_limits;
     const maxLimit = limits && limits[ruleCat] !== undefined ? Number(limits[ruleCat]) : null;
 
     if (!isSelected && maxLimit !== null && maxLimit > 0) {
       const currentInCat = modSelectedDishes.filter((name) => {
-        const def = menuItems.find((mi) => mi.name === name);
-        return def ? getRuleCategory(def.category, def.name) === ruleCat : false;
+        return dishCategoryFor(name, modifyingBooking) === ruleCat;
       }).length;
 
       if (currentInCat >= maxLimit) {
@@ -475,19 +517,32 @@ export default function MyInquiriesPage() {
       for (const cat of categoryOrder) {
         const reqMax = pkgLimits[cat] !== undefined ? Number(pkgLimits[cat]) : 0;
         if (reqMax <= 0) continue;
+        const unavailable = getUnavailableDishesFor(modifyingBooking);
         const availableInCat = menuItems.filter(
-          (mi) => mi.status !== "Archived" && mi.status !== "Not Available" && getRuleCategory(mi.category, mi.name) === cat
+          (mi) => mi.status !== "Archived" && mi.status !== "Not Available" && !unavailable.has(mi.name) && getRuleCategory(mi.category, mi.name) === cat
         );
-        const dynamicMin = Math.min(reqMax, availableInCat.length);
+        const customInCat = getCustomDishesFor(modifyingBooking.id).filter((cd) => cd.category === cat);
+        const dynamicMin = Math.min(reqMax, availableInCat.length + customInCat.length);
         const selectedCount = modSelectedDishes.filter((name) => {
-          const def = menuItems.find((mi) => mi.name === name);
-          return def ? getRuleCategory(def.category, def.name) === cat : false;
+          return dishCategoryFor(name, modifyingBooking) === cat;
         }).length;
         if (selectedCount < dynamicMin) {
           triggerModErrorToast(`Please select ${dynamicMin} dish(es) for ${cat} (${selectedCount}/${dynamicMin} selected).`);
           return;
         }
+        if (selectedCount > reqMax) {
+          triggerModErrorToast(`You can only have ${reqMax} dish(es) for ${cat} (${selectedCount} selected). Deselect one to continue.`);
+          return;
+        }
       }
+    }
+
+    const unavailableSelected = modSelectedDishes.filter((d) =>
+      getUnavailableDishesFor(modifyingBooking).has(d)
+    );
+    if (unavailableSelected.length > 0) {
+      triggerModErrorToast(`"${unavailableSelected[0]}" is unavailable for your event date. Please choose another dish.`);
+      return;
     }
 
     const basePax = Number(modifyingBooking.guest_count) || 50;
@@ -1897,8 +1952,7 @@ export default function MyInquiriesPage() {
                           {Array.isArray(booking.selected_menu_items) && booking.selected_menu_items.length > 0 && (() => {
                             const grouped: Record<string, string[]> = {};
                             booking.selected_menu_items.forEach((dish: string) => {
-                              const def = menuItems.find((mi) => mi.name === dish);
-                              const cat = getRuleCategory(def?.category || "", dish);
+                              const cat = dishCategoryFor(dish, booking);
                               if (!grouped[cat]) grouped[cat] = [];
                               grouped[cat].push(dish);
                             });
@@ -2594,10 +2648,29 @@ export default function MyInquiriesPage() {
                   ) : (
                     <div className="space-y-6">
                       {categoryOrder.map((category) => {
-                        const itemsInCat = menuItems.filter((mi) => {
-                          if (mi.status === "Archived") return false;
-                          return getRuleCategory(mi.category, mi.name) === category;
-                        });
+                        const unavailableForBooking = getUnavailableDishesFor(modifyingBooking);
+                        const standardItemsInCat = menuItems
+                          .filter((mi) => {
+                            if (mi.status === "Archived") return false;
+                            return getRuleCategory(mi.category, mi.name) === category;
+                          })
+                          .map((mi) =>
+                            unavailableForBooking.has(mi.name) && !modSelectedDishes.includes(mi.name)
+                              ? { ...mi, status: "Not Available", isReplaced: true }
+                              : mi
+                          );
+
+                        // Coordinator's off-menu dishes for THIS booking only (from booking_custom_dishes)
+                        const customItemsForCat = getCustomDishesFor(modifyingBooking?.id)
+                          .filter((cd) => cd.category === category)
+                          .map((cd) => ({
+                            id: `custom-${cd.id}`,
+                            name: cd.name,
+                            category: cd.category,
+                            isCustom: true,
+                          }));
+
+                        const itemsInCat = [...customItemsForCat, ...standardItemsInCat];
 
                         if (itemsInCat.length === 0) return null;
 
@@ -2611,8 +2684,7 @@ export default function MyInquiriesPage() {
                         if (maxLimit === 0) return null;
 
                         const selectedInCat = modSelectedDishes.filter((dishName) => {
-                          const def = menuItems.find((mi) => mi.name === dishName);
-                          return def ? getRuleCategory(def.category, def.name) === category : false;
+                          return dishCategoryFor(dishName, modifyingBooking) === category;
                         });
                         const countInCat = selectedInCat.length;
                         const isFulfilled = maxLimit !== null ? countInCat >= maxLimit : countInCat > 0;
@@ -2653,9 +2725,16 @@ export default function MyInquiriesPage() {
                                     }`}
                                   >
                                     <div className="flex items-center justify-between w-full gap-2">
-                                      <span className="text-xs sm:text-sm tracking-wide font-bold text-left leading-snug">
-                                        {item.name}
-                                      </span>
+                                      <div className="flex flex-col text-left">
+                                        <span className="text-xs sm:text-sm tracking-wide font-bold leading-snug">
+                                          {item.name}
+                                        </span>
+                                        {(item as any).isCustom && (
+                                          <span className="text-[9px] uppercase font-bold text-gold-400 mt-0.5 tracking-wider">
+                                            Custom Replacement
+                                          </span>
+                                        )}
+                                      </div>
                                       <div
                                         className={`w-5 h-5 border flex items-center justify-center shrink-0 transition-all ${
                                           isSelected && !isUnavailable
@@ -2670,7 +2749,7 @@ export default function MyInquiriesPage() {
                                     </div>
                                     {isUnavailable && (
                                       <span className="text-[10px] text-red-400 uppercase tracking-widest mt-1.5 font-bold text-left">
-                                        Not Available
+                                        {(item as any).isReplaced ? "Unavailable · Replaced by coordinator" : "Not Available"}
                                       </span>
                                     )}
                                   </button>
