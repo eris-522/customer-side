@@ -38,6 +38,13 @@ import { supabase } from "../utils/supabase";
 import { CATERING_CONTRACT_TERMS } from "../data/cateringContractTerms";
 import { compressReceiptImage, uploadReceiptImage } from "../utils/receiptUploader";
 import { catalogCache } from "../utils/catalogCache";
+import {
+  OVERTIME_SERVICE_RATES,
+  DEFAULT_PREBOOKED_OVERTIME,
+  PrebookedOvertimeState,
+  calculatePrebookedOvertimeFee,
+  calculateServiceWindow,
+} from "../utils/overtimeBilling";
 import VenueMapPicker from "../components/VenueMapPicker";
 
 interface FormData {
@@ -250,6 +257,10 @@ export default function BookingPage() {
   const [hasElevator, setHasElevator] = useState<boolean>(false);
 
   // Feature: Dedicated Corkage & Additional Services State (Contract Term 8 & 15)
+  // Feature: Pre-Booked Service Duration & Overtime Add-ons (Contract Rate Sheet)
+  const [overtimeState, setOvertimeState] = useState<PrebookedOvertimeState>(DEFAULT_PREBOOKED_OVERTIME);
+  const totalPrebookedOvertimeFee = calculatePrebookedOvertimeFee(overtimeState);
+
   const [corkageState, setCorkageState] = useState<{
     hasLechonTable: boolean;
     alcoholicBeveragesCount: number;
@@ -697,7 +708,7 @@ export default function BookingPage() {
   const outsideFoodFeeCalc = (corkageState.outsideFoodCount || 0) * 400;
   const totalCorkageFeeCalc = lechonFeeCalc + alcoholicFeeCalc + outsideFoodFeeCalc;
 
-  const calculatedTotalBudget = basePriceCalc + (addPriceCalc * extraPaxCalc) + calculatedHaulingFee + totalCorkageFeeCalc;
+  const calculatedTotalBudget = basePriceCalc + (addPriceCalc * extraPaxCalc) + calculatedHaulingFee + totalCorkageFeeCalc + totalPrebookedOvertimeFee;
   const downpaymentPercentage = paymentScheme === "Standard 50%" ? 0.50 : 0.20;
   const calculatedDownpayment = Math.round(calculatedTotalBudget * downpaymentPercentage);
   const calculatedRemainingBalance = calculatedTotalBudget - calculatedDownpayment;
@@ -801,8 +812,37 @@ export default function BookingPage() {
         if (corkageState.hasLechonTable) list.push("Lechon Table w/ Chopper Setup");
         if (corkageState.alcoholicBeveragesCount > 0) list.push(`Alcoholic Beverages / Beer Corkage (${corkageState.alcoholicBeveragesCount} bottle${corkageState.alcoholicBeveragesCount > 1 ? "s" : ""})`);
         if (corkageState.outsideFoodCount > 0) list.push(`Outside Food Corkage (${corkageState.outsideFoodCount} dish${corkageState.outsideFoodCount > 1 ? "es" : ""})`);
+        if (overtimeState.catering > 0) list.push(`Overtime: Catering Service (${overtimeState.catering} hr${overtimeState.catering > 1 ? "s" : ""} @ ₱4,000/hr)`);
+        if (overtimeState.soundsLights > 0) list.push(`Overtime: Sounds & Lights (${overtimeState.soundsLights} hr${overtimeState.soundsLights > 1 ? "s" : ""} @ ₱1,500/hr)`);
+        if (overtimeState.photoBooth > 0) list.push(`Overtime: Photo Booth (${overtimeState.photoBooth} hr${overtimeState.photoBooth > 1 ? "s" : ""} @ ₱1,000/hr)`);
+        if (overtimeState.emcee > 0) list.push(`Overtime: Emcee / Host (${overtimeState.emcee} hr${overtimeState.emcee > 1 ? "s" : ""} @ ₱500/hr)`);
+        if (overtimeState.coordinators.hours > 0) list.push(`Overtime: Coordinators (${overtimeState.coordinators.hours} hr${overtimeState.coordinators.hours > 1 ? "s" : ""} x ${overtimeState.coordinators.count} pax @ ₱300/hr/pax)`);
+        if (overtimeState.photoVideo > 0) list.push(`Overtime: Photo & Video (${overtimeState.photoVideo} hr${overtimeState.photoVideo > 1 ? "s" : ""} @ ₱2,500/hr)`);
+        if (overtimeState.mobileBar > 0) list.push(`Overtime: Mobile Bar (${overtimeState.mobileBar} hr${overtimeState.mobileBar > 1 ? "s" : ""} @ ₱1,500/hr)`);
         return list;
       })(),
+      overtime_info: {
+        prebooked: {
+          catering_hours: overtimeState.catering,
+          catering_fee: overtimeState.catering * 4000,
+          sounds_lights_hours: overtimeState.soundsLights,
+          sounds_lights_fee: overtimeState.soundsLights * 1500,
+          photo_booth_hours: overtimeState.photoBooth,
+          photo_booth_fee: overtimeState.photoBooth * 1000,
+          emcee_hours: overtimeState.emcee,
+          emcee_fee: overtimeState.emcee * 500,
+          coordinators_hours: overtimeState.coordinators.hours,
+          coordinators_count: overtimeState.coordinators.count,
+          coordinators_fee: overtimeState.coordinators.hours * overtimeState.coordinators.count * 300,
+          photo_video_hours: overtimeState.photoVideo,
+          photo_video_fee: overtimeState.photoVideo * 2500,
+          mobile_bar_hours: overtimeState.mobileBar,
+          mobile_bar_fee: overtimeState.mobileBar * 1500,
+          total_prebooked_fee: totalPrebookedOvertimeFee,
+        },
+        day_of: null,
+        total_overtime_fee: totalPrebookedOvertimeFee,
+      },
       corkage_info: {
         hasLechonTable: corkageState.hasLechonTable,
         lechonFee: lechonFeeCalc,
@@ -1331,6 +1371,44 @@ export default function BookingPage() {
                   </select>
                   <ChevronDown className="absolute right-6 top-1/2 -translate-y-1/2 text-white/50 pointer-events-none" size={20} />
                 </div>
+                {/* 4-Hour Service Duration Indicator */}
+                {(() => {
+                  const serviceWin = calculateServiceWindow(formData.time, overtimeState.catering);
+                  return (
+                    <div className="p-4 bg-gold-400/[0.04] border border-gold-400/20 rounded-xl space-y-2.5 mt-2.5">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div className="flex items-center gap-2.5">
+                          <div className="w-8 h-8 rounded-lg bg-gold-400/10 flex items-center justify-center text-gold-400 shrink-0">
+                            <Clock size={16} />
+                          </div>
+                          <div>
+                            <p className="text-[11px] font-bold text-gold-400 uppercase tracking-wider">
+                              4-Hour Standard Service Duration
+                            </p>
+                            <p className="text-sm font-bold text-white tracking-wide">
+                              {serviceWin.standardWindowText}
+                            </p>
+                          </div>
+                        </div>
+                        <span className="px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider rounded bg-gold-400/10 text-gold-300 border border-gold-400/30">
+                          Included in Package
+                        </span>
+                      </div>
+                      <p className="text-xs text-white/60 leading-relaxed pl-10">
+                        {serviceWin.isDefaultFallback ? (
+                          <>Standard service covers 4 hours (default: <strong>7:00 PM – 11:00 PM</strong>). Select your preferred timeslot above.</>
+                        ) : (
+                          <>Catering buffet service and floor staff are officially covered for the 4-hour window (<strong>{serviceWin.standardWindowText}</strong>).</>
+                        )}
+                        {overtimeState.catering > 0 && (
+                          <span className="text-gold-400 font-semibold block mt-1">
+                            ✦ Extended to <strong>{serviceWin.extendedWindowText}</strong> (+{overtimeState.catering}h pre-booked catering overtime selected in Add-ons).
+                          </span>
+                        )}
+                      </p>
+                    </div>
+                  );
+                })()}
                 </div>
                 <div className="space-y-2">
                   <label className="text-base text-white/80 font-bold flex items-center gap-2">
@@ -2059,6 +2137,195 @@ export default function BookingPage() {
                   </motion.div>
                 )}
               </AnimatePresence>
+              {/* Feature: Pre-Booked Overtime Add-ons (Contract Clause & Official Rate Sheet) */}
+              <div className="pt-8 border-t border-white/10 space-y-6">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <div>
+                    <h3 className="text-xl md:text-2xl font-serif text-white flex items-center gap-2.5">
+                      <Clock className="text-gold-400" size={24} />
+                      Service Duration &amp; <span className="italic gold-text-gradient">Pre-Booked Overtime</span>
+                    </h3>
+                    <p className="text-xs sm:text-sm text-white/60 mt-1">
+                      Packages include 4 hours standard service. Pre-book additional vendor or catering hours at official contract rates.
+                    </p>
+                  </div>
+                  {totalPrebookedOvertimeFee > 0 && (
+                    <div className="px-4 py-2 rounded-xl bg-gold-400/10 border border-gold-400/30 text-right shrink-0">
+                      <p className="text-[10px] uppercase font-bold text-white/50 tracking-wider">Pre-Booked Overtime Total</p>
+                      <p className="text-lg font-serif font-bold text-gold-400">+₱{totalPrebookedOvertimeFee.toLocaleString()}</p>
+                    </div>
+                  )}
+                </div>
+
+                {/* Overtime Rate Sheet Interactive Cards */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {OVERTIME_SERVICE_RATES.map((service) => {
+                    let currentHours = 0;
+                    if (service.id === "catering") currentHours = overtimeState.catering;
+                    else if (service.id === "soundsLights") currentHours = overtimeState.soundsLights;
+                    else if (service.id === "photoBooth") currentHours = overtimeState.photoBooth;
+                    else if (service.id === "emcee") currentHours = overtimeState.emcee;
+                    else if (service.id === "coordinators") currentHours = overtimeState.coordinators.hours;
+                    else if (service.id === "photoVideo") currentHours = overtimeState.photoVideo;
+                    else if (service.id === "mobileBar") currentHours = overtimeState.mobileBar;
+
+                    const coordinatorCount = overtimeState.coordinators.count || 2;
+                    const itemSubtotal = service.perPerson
+                      ? currentHours * service.rate * coordinatorCount
+                      : currentHours * service.rate;
+
+                    const isSelected = currentHours > 0;
+
+                    const updateHours = (newHours: number) => {
+                      const safeHours = Math.max(0, Math.min(12, newHours));
+                      setOvertimeState((prev) => {
+                        if (service.id === "coordinators") {
+                          return {
+                            ...prev,
+                            coordinators: { ...prev.coordinators, hours: safeHours },
+                          };
+                        }
+                        return {
+                          ...prev,
+                          [service.id]: safeHours,
+                        };
+                      });
+                    };
+
+                    const updateCoordinatorCount = (newCount: number) => {
+                      const safeCount = Math.max(1, Math.min(10, newCount));
+                      setOvertimeState((prev) => ({
+                        ...prev,
+                        coordinators: { ...prev.coordinators, count: safeCount },
+                      }));
+                    };
+
+                    return (
+                      <div
+                        key={service.id}
+                        className={`p-5 rounded-2xl border transition-all duration-300 relative flex flex-col justify-between ${
+                          isSelected
+                            ? "bg-gold-400/[0.06] border-gold-400/50 shadow-[0_0_20px_rgba(212,175,55,0.1)]"
+                            : "bg-white/[0.02] border-white/10 hover:border-white/20"
+                        }`}
+                      >
+                        <div className="space-y-2">
+                          <div className="flex items-start justify-between gap-3">
+                            <div>
+                              <h4 className="text-base font-bold text-white tracking-wide">
+                                {service.name}
+                              </h4>
+                              <p className="text-xs text-white/50 leading-relaxed mt-0.5">
+                                {service.description}
+                              </p>
+                            </div>
+                            <span className="px-2.5 py-1 text-xs font-bold rounded-lg bg-white/5 text-gold-400 border border-white/10 shrink-0">
+                              ₱{service.rate.toLocaleString()}/{service.perPerson ? "hr/pax" : "hr"}
+                            </span>
+                          </div>
+
+                          {service.id === "catering" && (
+                            <div className="text-[11px] text-white/60 bg-white/5 px-2.5 py-1 rounded-md">
+                              Window: {calculateServiceWindow(formData.time, currentHours).extendedWindowText} ({4 + currentHours} hours total)
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="pt-4 mt-3 border-t border-white/10 flex flex-wrap items-center justify-between gap-3">
+                          {service.perPerson ? (
+                            <div className="flex items-center gap-3">
+                              {/* Coordinator Staff Count Stepper */}
+                              <div className="flex items-center gap-1.5 bg-black/40 border border-white/10 rounded-lg p-1 text-xs">
+                                <button
+                                  type="button"
+                                  onClick={() => updateCoordinatorCount(coordinatorCount - 1)}
+                                  disabled={coordinatorCount <= 1}
+                                  className="w-6 h-6 rounded flex items-center justify-center hover:bg-white/10 disabled:opacity-30 text-white transition-colors"
+                                >
+                                  <Minus size={12} />
+                                </button>
+                                <span className="px-1 text-[11px] font-semibold text-white/80 whitespace-nowrap">
+                                  {coordinatorCount} Staff
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => updateCoordinatorCount(coordinatorCount + 1)}
+                                  disabled={coordinatorCount >= 8}
+                                  className="w-6 h-6 rounded flex items-center justify-center hover:bg-white/10 disabled:opacity-30 text-white transition-colors"
+                                >
+                                  <Plus size={12} />
+                                </button>
+                              </div>
+
+                              {/* Hours Stepper */}
+                              <div className="flex items-center gap-1.5 bg-black/40 border border-white/10 rounded-lg p-1 text-xs">
+                                <button
+                                  type="button"
+                                  onClick={() => updateHours(currentHours - 1)}
+                                  disabled={currentHours <= 0}
+                                  className="w-6 h-6 rounded flex items-center justify-center hover:bg-white/10 disabled:opacity-30 text-white transition-colors"
+                                >
+                                  <Minus size={12} />
+                                </button>
+                                <span className="px-2 text-xs font-bold text-white min-w-10 text-center">
+                                  {currentHours} hr{currentHours !== 1 ? "s" : ""}
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => updateHours(currentHours + 1)}
+                                  disabled={currentHours >= 8}
+                                  className="w-6 h-6 rounded flex items-center justify-center hover:bg-white/10 disabled:opacity-30 text-white transition-colors"
+                                >
+                                  <Plus size={12} />
+                                </button>
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="flex items-center gap-1.5 bg-black/40 border border-white/10 rounded-lg p-1 text-xs">
+                              <button
+                                type="button"
+                                onClick={() => updateHours(currentHours - 1)}
+                                disabled={currentHours <= 0}
+                                className="w-7 h-7 rounded flex items-center justify-center hover:bg-white/10 disabled:opacity-30 text-white transition-colors"
+                              >
+                                <Minus size={14} />
+                              </button>
+                              <span className="px-3 text-xs font-bold text-white min-w-14 text-center">
+                                {currentHours} hr{currentHours !== 1 ? "s" : ""}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => updateHours(currentHours + 1)}
+                                disabled={currentHours >= 8}
+                                className="w-7 h-7 rounded flex items-center justify-center hover:bg-white/10 disabled:opacity-30 text-white transition-colors"
+                              >
+                                <Plus size={14} />
+                              </button>
+                            </div>
+                          )}
+
+                          <div className="text-right">
+                            <span className="text-[10px] text-white/40 block">Subtotal</span>
+                            <span className={`text-sm font-serif font-bold ${itemSubtotal > 0 ? "text-gold-400" : "text-white/40"}`}>
+                              {itemSubtotal > 0 ? `+₱${itemSubtotal.toLocaleString()}` : "₱0"}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Overtime Policy Callout */}
+                <div className="p-4 rounded-xl bg-white/[0.02] border border-white/10 text-xs text-white/60 flex items-start gap-3">
+                  <Info size={16} className="text-gold-400 shrink-0 mt-0.5" />
+                  <p className="leading-relaxed">
+                    <strong className="text-white">Contract Overtime Rule:</strong> Standard package covers 4 hours of service. 
+                    Pre-booked overtime hours are secured in advance and added to your event plan. 
+                    Unscheduled extensions on the day of event are billed at official contract rates under the <em>1 minute equals 1 hour OT</em> rule.
+                  </p>
+                </div>
+              </div>
             </motion.div>
           )}
 
@@ -2143,7 +2410,7 @@ export default function BookingPage() {
                           const addPrice = pkg && pkg.additional_pax_price ? parseFloat(String(pkg.additional_pax_price).replace(/[^0-9.-]+/g, "")) || 0 : 0;
                           const extraPax = parseInt(formData.additionalPax) || 0;
                           const additionalPaxTotal = addPrice * extraPax;
-                          const totalBudget = basePrice + additionalPaxTotal + calculatedHaulingFee + totalCorkageFeeCalc;
+                          const totalBudget = basePrice + additionalPaxTotal + calculatedHaulingFee + totalCorkageFeeCalc + totalPrebookedOvertimeFee;
 
                           return (
                             <div className="space-y-2 w-full max-w-sm">
@@ -2179,6 +2446,56 @@ export default function BookingPage() {
                                 <div className="flex justify-between text-sm text-gold-400 font-medium">
                                   <span>Outside Food Corkage</span>
                                   <span className="text-right">₱{(corkageState.outsideFoodCount * 400).toLocaleString()}</span>
+                                </div>
+                              )}
+                              {totalPrebookedOvertimeFee > 0 && (
+                                <div className="space-y-1 pt-2 border-t border-white/5">
+                                  <div className="flex justify-between text-xs font-bold uppercase tracking-wider text-gold-400">
+                                    <span>Pre-Booked Overtime</span>
+                                    <span className="text-right">+₱{totalPrebookedOvertimeFee.toLocaleString()}</span>
+                                  </div>
+                                  {overtimeState.catering > 0 && (
+                                    <div className="flex justify-between text-xs text-white/70 pl-2">
+                                      <span>Catering Service ({overtimeState.catering}h)</span>
+                                      <span className="text-right">₱{(overtimeState.catering * 4000).toLocaleString()}</span>
+                                    </div>
+                                  )}
+                                  {overtimeState.soundsLights > 0 && (
+                                    <div className="flex justify-between text-xs text-white/70 pl-2">
+                                      <span>Sounds &amp; Lights ({overtimeState.soundsLights}h)</span>
+                                      <span className="text-right">₱{(overtimeState.soundsLights * 1500).toLocaleString()}</span>
+                                    </div>
+                                  )}
+                                  {overtimeState.photoBooth > 0 && (
+                                    <div className="flex justify-between text-xs text-white/70 pl-2">
+                                      <span>Photo Booth ({overtimeState.photoBooth}h)</span>
+                                      <span className="text-right">₱{(overtimeState.photoBooth * 1000).toLocaleString()}</span>
+                                    </div>
+                                  )}
+                                  {overtimeState.emcee > 0 && (
+                                    <div className="flex justify-between text-xs text-white/70 pl-2">
+                                      <span>Emcee / Host ({overtimeState.emcee}h)</span>
+                                      <span className="text-right">₱{(overtimeState.emcee * 500).toLocaleString()}</span>
+                                    </div>
+                                  )}
+                                  {overtimeState.coordinators.hours > 0 && (
+                                    <div className="flex justify-between text-xs text-white/70 pl-2">
+                                      <span>Coordinators ({overtimeState.coordinators.hours}h x {overtimeState.coordinators.count}pax)</span>
+                                      <span className="text-right">₱{(overtimeState.coordinators.hours * overtimeState.coordinators.count * 300).toLocaleString()}</span>
+                                    </div>
+                                  )}
+                                  {overtimeState.photoVideo > 0 && (
+                                    <div className="flex justify-between text-xs text-white/70 pl-2">
+                                      <span>Photo &amp; Video ({overtimeState.photoVideo}h)</span>
+                                      <span className="text-right">₱{(overtimeState.photoVideo * 2500).toLocaleString()}</span>
+                                    </div>
+                                  )}
+                                  {overtimeState.mobileBar > 0 && (
+                                    <div className="flex justify-between text-xs text-white/70 pl-2">
+                                      <span>Mobile Bar ({overtimeState.mobileBar}h)</span>
+                                      <span className="text-right">₱{(overtimeState.mobileBar * 1500).toLocaleString()}</span>
+                                    </div>
+                                  )}
                                 </div>
                               )}
                               {isOutsideTaytay && (

@@ -29,6 +29,7 @@ import {
 import { Link } from "react-router-dom";
 
 import { compressReceiptImage, uploadReceiptImage } from "../utils/receiptUploader";
+import { calculateServiceWindow, OVERTIME_SERVICE_RATES } from "../utils/overtimeBilling";
 
 // Helper to check if event is within 14 days
 const getRuleCategory = (dbCategory: string, itemName: string) => {
@@ -656,7 +657,13 @@ export default function MyInquiriesPage() {
         Number(corkageData?.outsideFoodCount || 0) * 400) ||
       0;
 
-    const newTotalBudget = basePrice + extraPax * addPrice + travelFee + haulingFee + corkageFee;
+    const prebookedOT = modifyingBooking.overtime_info?.prebooked;
+    const dayOfOT = modifyingBooking.overtime_info?.day_of;
+    const prebookedOTFee = Number(prebookedOT?.total_prebooked_fee) || 0;
+    const dayOfOTFee = Number(dayOfOT?.total_day_of_fee) || 0;
+    const totalOTFee = Number(modifyingBooking.overtime_info?.total_overtime_fee) || (prebookedOTFee + dayOfOTFee);
+
+    const newTotalBudget = basePrice + extraPax * addPrice + travelFee + haulingFee + corkageFee + totalOTFee;
     const paymentScheme =
       modifyingBooking.payment_scheme || embeddedMeta?.scheme || "Standard 50%";
     const is50Percent = paymentScheme === "Standard 50%";
@@ -1382,7 +1389,14 @@ export default function MyInquiriesPage() {
                         (Number(corkageData?.alcoholicBeveragesCount || 0) * 400) +
                         (Number(corkageData?.outsideFoodCount || 0) * 400)
                       ) || 0;
-                      const totalAdditionalFees = travelFee + haulingFee + corkageFee;
+
+                      const prebookedOT = (booking as any).overtime_info?.prebooked;
+                      const dayOfOT = (booking as any).overtime_info?.day_of;
+                      const prebookedOTFee = Number(prebookedOT?.total_prebooked_fee) || 0;
+                      const dayOfOTFee = Number(dayOfOT?.total_day_of_fee) || 0;
+                      const totalOTFee = Number((booking as any).overtime_info?.total_overtime_fee) || (prebookedOTFee + dayOfOTFee);
+
+                      const totalAdditionalFees = travelFee + haulingFee + corkageFee + totalOTFee;
                       const totalEventCost = basePrice + additionalPaxTotal + totalAdditionalFees;
 
                       return (
@@ -1468,12 +1482,31 @@ export default function MyInquiriesPage() {
                           size={16}
                           className="text-gold-400 shrink-0 mt-0.5"
                         />
-                        <span className="font-medium tracking-wide">
-                          {booking.event_date || "Date TBD"} <br />
-                          <span className="text-white/50 text-xs">
+                        <div className="space-y-1">
+                          <span className="font-medium tracking-wide block">
+                            {booking.event_date || "Date TBD"}
+                          </span>
+                          <span className="text-white/50 text-xs block">
                             {booking.event_time || ""}
                           </span>
-                        </span>
+                          {(() => {
+                            const prebookedCatering = Number((booking as any).overtime_info?.prebooked?.catering_hours) || 0;
+                            const serviceWin = calculateServiceWindow(booking.event_time, prebookedCatering);
+                            return (
+                              <div className="flex flex-col gap-1 pt-0.5">
+                                <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded bg-gold-400/10 border border-gold-400/30 text-gold-300 text-[11px] font-semibold w-fit">
+                                  <Clock size={11} className="text-gold-400 shrink-0" />
+                                  4h Standard Service Window ({serviceWin.standardWindowText})
+                                </span>
+                                {serviceWin.hasExtraHours && (
+                                  <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded bg-amber-500/15 border border-amber-500/30 text-amber-300 text-[11px] font-medium w-fit">
+                                    ✦ Extended: {serviceWin.extendedWindowText} (+{prebookedCatering}h pre-booked OT)
+                                  </span>
+                                )}
+                              </div>
+                            );
+                          })()}
+                        </div>
                       </div>
                       <div className="flex items-start gap-3 text-sm text-white/80">
                         <MapPin
