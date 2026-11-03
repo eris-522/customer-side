@@ -1,4 +1,5 @@
 import { supabase } from "./supabase";
+import { ensureSharedBroadcastChannel } from "./catalogCache";
 
 export const getInventoryItemStatus = (
   stock: number,
@@ -78,6 +79,8 @@ export const restoreBookingInventoryOnCancellation = async (
       reason || `Customer cancelled confirmed booking #${idStr} - Equipment returned to inventory`;
 
     let totalRestoredUnits = 0;
+    const movementsBatch: any[] = [];
+    const nowIso = new Date().toISOString();
 
     for (const item of itemsToRestore) {
       const invItem = invRows.find(
@@ -106,10 +109,8 @@ export const restoreBookingInventoryOnCancellation = async (
           .update({ stock: newStock, status: newStatus })
           .eq("id", invItem.id);
 
-        // Record stock movement audit
-        const movId = `mov-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
-        await supabase.from("inventory_stock_movements").insert({
-          id: movId,
+        movementsBatch.push({
+          id: `mov-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
           item_id: String(invItem.id),
           item_name: invItem.name,
           change: qtyToReturn,
@@ -119,16 +120,15 @@ export const restoreBookingInventoryOnCancellation = async (
           reason: cancelReasonText,
           booking_id: idStr,
           booking_name: clientName,
-          timestamp: new Date().toISOString(),
+          timestamp: nowIso,
           user_name: "Customer (Self-Service Cancellation)",
         });
       }
 
       if (Number(item.outsourcedQuantity) > 0) {
         const outsourcedQty = Number(item.outsourcedQuantity);
-        const movId = `mov-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
-        await supabase.from("inventory_stock_movements").insert({
-          id: movId,
+        movementsBatch.push({
+          id: `mov-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
           item_id: String(invItem.id),
           item_name: invItem.name,
           change: 0,
@@ -138,10 +138,15 @@ export const restoreBookingInventoryOnCancellation = async (
           reason: `${outsourcedQty} ${item.unit || "pcs"} returned to external supplier (Booking #${idStr}) — not added to warehouse stock`,
           booking_id: idStr,
           booking_name: clientName,
-          timestamp: new Date().toISOString(),
+          timestamp: nowIso,
           user_name: "Customer (Self-Service Cancellation)",
         });
       }
+    }
+
+    // Batch insert all stock movements in a single round-trip instead of per-item inserts
+    if (movementsBatch.length > 0) {
+      await supabase.from("inventory_stock_movements").insert(movementsBatch);
     }
 
     // 4. Record customer cancellation in audit logs
@@ -157,7 +162,12 @@ export const restoreBookingInventoryOnCancellation = async (
       console.warn("[InventoryReturn] Non-critical audit log failure:", e);
     }
 
-    // 5. Notify any listening admin tabs via BroadcastChannel
+    // 5. Notify any listening admin portals via Supabase Broadcast & local BroadcastChannel
+    try {
+      const ch = ensureSharedBroadcastChannel();
+      await ch.send({ type: "broadcast", event: "inventory_change", payload: { scope: "all", ts: Date.now() } });
+      await ch.send({ type: "broadcast", event: "audit_change", payload: { action: "insert", ts: Date.now() } });
+    } catch {}
     if (typeof window !== "undefined" && "BroadcastChannel" in window) {
       try {
         const bc = new BroadcastChannel("equipment_monitoring_channel");

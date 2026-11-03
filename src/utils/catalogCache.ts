@@ -13,8 +13,8 @@
 import { supabase } from "./supabase";
 
 const DEFAULT_TTL = 10 * 60 * 1000; // 10 minutes
-const CHANNEL_TEARDOWN_GRACE_MS = 15_000;
 const REALTIME_DEBOUNCE_MS = 300;
+export const LIVE_SYNC_CHANNEL_NAME = "rpc-live-broadcast-v1";
 
 export type CatalogKey = "packages" | "menu" | "inclusions";
 type CatalogListener = (changedKey: CatalogKey) => void;
@@ -65,7 +65,6 @@ let inFlightInclusions: Promise<Record<string, string[]>> | null = null;
 
 const listeners = new Set<CatalogListener>();
 let sharedChannel: ReturnType<typeof supabase.channel> | null = null;
-let teardownTimer: ReturnType<typeof setTimeout> | null = null;
 const debounceTimers: Partial<Record<CatalogKey, ReturnType<typeof setTimeout>>> = {};
 
 function notifyCatalogChange(key: CatalogKey) {
@@ -84,37 +83,23 @@ function notifyCatalogChange(key: CatalogKey) {
   }, REALTIME_DEBOUNCE_MS);
 }
 
-function ensureSharedChannel() {
-  if (teardownTimer) {
-    clearTimeout(teardownTimer);
-    teardownTimer = null;
-  }
-  if (sharedChannel) return;
+export function ensureSharedBroadcastChannel() {
+  if (sharedChannel) return sharedChannel;
 
+  // Uses Supabase Realtime Broadcast (Elixir cluster, 0 PostgreSQL WAL decoding!)
   sharedChannel = supabase
-    .channel(`public-catalog-shared-${Date.now()}-${Math.random().toString(36).slice(2)}`)
-    .on("postgres_changes", { event: "*", schema: "public", table: "packages" }, () => {
-      notifyCatalogChange("packages");
+    .channel(LIVE_SYNC_CHANNEL_NAME, {
+      config: { broadcast: { self: true } },
     })
-    .on("postgres_changes", { event: "*", schema: "public", table: "menu_items" }, () => {
-      notifyCatalogChange("menu");
-    })
-    .on("postgres_changes", { event: "*", schema: "public", table: "inclusions" }, () => {
-      notifyCatalogChange("inclusions");
+    .on("broadcast", { event: "catalog_change" }, (msg: any) => {
+      const key = msg?.payload?.key as CatalogKey | undefined;
+      if (key === "packages" || key === "menu" || key === "inclusions") {
+        notifyCatalogChange(key);
+      }
     })
     .subscribe();
-}
 
-function scheduleChannelCleanupIfUnused() {
-  if (listeners.size > 0 || teardownTimer) return;
-  teardownTimer = setTimeout(() => {
-    teardownTimer = null;
-    if (listeners.size === 0 && sharedChannel) {
-      const ch = sharedChannel;
-      sharedChannel = null;
-      supabase.removeChannel(ch);
-    }
-  }, CHANNEL_TEARDOWN_GRACE_MS);
+  return sharedChannel;
 }
 
 export const catalogCache = {
@@ -303,10 +288,9 @@ export const catalogCache = {
    */
   subscribe(listener: CatalogListener): () => void {
     listeners.add(listener);
-    ensureSharedChannel();
+    ensureSharedBroadcastChannel();
     return () => {
       listeners.delete(listener);
-      scheduleChannelCleanupIfUnused();
     };
   },
 };

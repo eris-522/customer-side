@@ -743,23 +743,11 @@ export function CMSProvider({ children }: { children: ReactNode }) {
     window.addEventListener("focus", handleVisibilityOrFocus);
     document.addEventListener("visibilitychange", handleVisibilityOrFocus);
 
-    // Realtime postgres changes on `cms_content` and instant broadcast events across any domain (local, VS Code tunnel, Vercel)
+    // Instant broadcast events across any domain (local, VS Code tunnel, Vercel) — zero Postgres WAL overhead
     const channel = supabase
       .channel(CMS_SYNC_CHANNEL_NAME, {
         config: { broadcast: { self: true } },
       })
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "cms_content" },
-        () => {
-          if (realtimeDebounceRef.current) {
-            clearTimeout(realtimeDebounceRef.current);
-          }
-          realtimeDebounceRef.current = setTimeout(() => {
-            fetchContent(true);
-          }, 300);
-        }
-      )
       .on("broadcast", { event: "cms_update" }, (payload: any) => {
         const section = payload?.payload?.section as keyof FullCMSData | undefined;
         const rawData = payload?.payload?.data;
