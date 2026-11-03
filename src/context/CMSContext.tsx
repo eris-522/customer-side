@@ -623,8 +623,22 @@ export function CMSProvider({ children }: { children: ReactNode }) {
     return DEFAULT_CMS_DATA;
   });
   const [isLoading] = useState(false);
+  const inFlightFetchRef = React.useRef<Promise<void> | null>(null);
+  const realtimeDebounceRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const fetchContent = async (_forceRefresh = false) => {
+  const fetchContent = async (forceRefresh = false) => {
+    if (!forceRefresh) {
+      const lastFetch = Number(localStorage.getItem(LOCAL_STORAGE_CMS_TIME_KEY) || 0);
+      if (lastFetch > 0 && Date.now() - lastFetch < 300_000 && localStorage.getItem(LOCAL_STORAGE_CMS_KEY)) {
+        return;
+      }
+    }
+
+    if (inFlightFetchRef.current) {
+      return inFlightFetchRef.current;
+    }
+
+    const run = (async () => {
     try {
       const merged: FullCMSData = JSON.parse(JSON.stringify(DEFAULT_CMS_DATA));
       let hasData = false;
@@ -685,10 +699,18 @@ export function CMSProvider({ children }: { children: ReactNode }) {
     } catch (err) {
       console.warn("CMSProvider fetchContent exception:", err);
     }
+    })();
+
+    inFlightFetchRef.current = run;
+    try {
+      await run;
+    } finally {
+      inFlightFetchRef.current = null;
+    }
   };
 
   useEffect(() => {
-    fetchContent(true);
+    fetchContent(false);
 
     // Cross-tab custom event listener (when on same origin)
     const handleLocalUpdate = (e: any) => {
@@ -730,7 +752,12 @@ export function CMSProvider({ children }: { children: ReactNode }) {
         "postgres_changes",
         { event: "*", schema: "public", table: "cms_content" },
         () => {
-          fetchContent(true);
+          if (realtimeDebounceRef.current) {
+            clearTimeout(realtimeDebounceRef.current);
+          }
+          realtimeDebounceRef.current = setTimeout(() => {
+            fetchContent(true);
+          }, 300);
         }
       )
       .on("broadcast", { event: "cms_update" }, (payload: any) => {
@@ -748,6 +775,7 @@ export function CMSProvider({ children }: { children: ReactNode }) {
                 LOCAL_STORAGE_CMS_KEY,
                 JSON.stringify(updated)
               );
+              localStorage.setItem(LOCAL_STORAGE_CMS_TIME_KEY, String(Date.now()));
             } catch (err) {}
             return updated;
           });
@@ -756,6 +784,9 @@ export function CMSProvider({ children }: { children: ReactNode }) {
       .subscribe();
 
     return () => {
+      if (realtimeDebounceRef.current) {
+        clearTimeout(realtimeDebounceRef.current);
+      }
       window.removeEventListener("cms_section_updated", handleLocalUpdate);
       window.removeEventListener("focus", handleVisibilityOrFocus);
       document.removeEventListener("visibilitychange", handleVisibilityOrFocus);

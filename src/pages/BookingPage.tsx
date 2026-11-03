@@ -39,6 +39,12 @@ import { CATERING_CONTRACT_TERMS } from "../data/cateringContractTerms";
 import { compressReceiptImage, uploadReceiptImage } from "../utils/receiptUploader";
 import { catalogCache } from "../utils/catalogCache";
 import {
+  getSessionUser,
+  fetchUserProfile,
+  checkAccountStatus,
+  clearSessionGuardCache,
+} from "../utils/sessionGuard";
+import {
   OVERTIME_SERVICE_RATES,
   DEFAULT_PREBOOKED_OVERTIME,
   PrebookedOvertimeState,
@@ -324,80 +330,54 @@ export default function BookingPage() {
 
   // Feature: Fetches required dynamic data (packages, menu, services) from Supabase on mount
   useEffect(() => {
+    let isMounted = true;
+
     const fetchBookingData = async () => {
-      // Get the current logged in user
-      const { data: authData } = await supabase.auth.getUser();
-      if (!authData.user) {
-        navigate("/auth");
+      // Get the current logged in user from local session (0 GoTrue network round-trips)
+      const sessionUser = await getSessionUser();
+      if (!sessionUser) {
+        if (isMounted) navigate("/auth");
         return;
       }
 
-      // Fetch user profile
-      const { data: profile } = await supabase
-        .from("profiles")
-        .select("*")
-        .eq("id", authData.user.id)
-        .single();
+      // Fetch user profile (deduplicated & cached)
+      const profile = await fetchUserProfile(sessionUser.id);
+      if (!isMounted) return;
 
       // Secondary security check: force logout if user was archived or deactivated while they had an active session
       const statusLower = (profile?.status || "").toLowerCase().trim();
       if (statusLower === "archived" || statusLower === "inactive") {
+        clearSessionGuardCache(sessionUser.id);
         await supabase.auth.signOut();
-        navigate(statusLower === "inactive" ? "/auth?mode=login&deactivated=true" : "/auth?mode=login&archived=true");
+        if (isMounted) {
+          navigate(statusLower === "inactive" ? "/auth?mode=login&deactivated=true" : "/auth?mode=login&archived=true");
+        }
         return;
       }
 
       setUserProfile(profile);
 
-      // Feature: Check in-memory catalogCache first to reduce Supabase PostgREST egress
-      const cachedPkgs = catalogCache.getPackages();
-      const cachedMenu = catalogCache.getMenuItems();
-      const cachedInclusions = catalogCache.getInclusions();
       const todayStr = new Date().toISOString().split("T")[0];
 
-      // Fetch active packages, menu items, and add-ons (using cache when available)
-      const [bookingsRes, pkgRes, menuRes, incRes] = await Promise.all([
+      // Fetch active slot conflicts alongside deduplicated catalog cache
+      const [bookingsRes, sortedPackages, menuItemsData, groupedInclusions] = await Promise.all([
         // Only fetch active bookings from today onwards to check for slot conflicts (cuts 90%+ of transferred rows)
         supabase
           .from("bookings")
           .select("event_date, event_time, status")
           .gte("event_date", todayStr)
           .not("status", "in", '("Cancelled","Rejected","Declined","Archived")'),
-        cachedPkgs
-          ? Promise.resolve({ data: cachedPkgs, cached: true })
-          : supabase
-              .from("packages")
-              .select("id, name, price, pax, additional_pax_price, inclusions, status, tag, image_url, category_limits")
-              .neq("status", "Archived")
-              .neq("status", "none")
-              .neq("status", "None"),
-        cachedMenu
-          ? Promise.resolve({ data: cachedMenu, cached: true })
-          : supabase.from("menu_items").select("id, name, category, status").neq("status", "Archived"),
-        cachedInclusions
-          ? Promise.resolve({ data: cachedInclusions, cached: true })
-          : supabase
-              .from("inclusions")
-              .select("id, category, items")
-              .not("category", "like", "__CMS_%"),
+        catalogCache.fetchPackages(),
+        catalogCache.fetchMenuItems(),
+        catalogCache.fetchInclusions(),
       ]);
 
-      if (pkgRes.data) {
-        let sortedPackages = pkgRes.data;
-        if (!(pkgRes as any).cached) {
-          sortedPackages = [...pkgRes.data].sort((a: any, b: any) => {
-            const priceA = parseFloat(String(a.price || "0").replace(/[^0-9.-]+/g, ""));
-            const priceB = parseFloat(String(b.price || "0").replace(/[^0-9.-]+/g, ""));
-            return priceA - priceB;
-          });
-          catalogCache.setPackages(sortedPackages);
-        }
-        setAvailablePackages(sortedPackages);
-      }
-      if (menuRes.data) {
-        if (!(menuRes as any).cached) catalogCache.setMenuItems(menuRes.data);
-        setMenuOptions(menuRes.data);
-      }
+      if (!isMounted) return;
+
+      setAvailablePackages(sortedPackages);
+      setMenuOptions(menuItemsData);
+      setInclusionCategories(groupedInclusions);
+
       if (bookingsRes.data) {
         // Keep only active bookings to calculate gaps against
         const validBookings = bookingsRes.data.filter(
@@ -430,87 +410,32 @@ export default function BookingPage() {
         });
         setBookedDates(fullyBooked);
       }
-      if (incRes.data) {
-        if (!Array.isArray(incRes.data)) {
-          setInclusionCategories(incRes.data);
-        } else {
-          const grouped: Record<string, string[]> = {};
-          incRes.data.forEach((row: any) => {
-            if (!grouped[row.category]) grouped[row.category] = [];
-            if (row.items && row.items.trim() !== "" && row.items !== "-") {
-              if (!grouped[row.category].includes(row.items)) {
-                grouped[row.category].push(row.items);
-              }
-            }
-          });
-          catalogCache.setInclusions(grouped);
-          setInclusionCategories(grouped);
-        }
-      }
 
       setLoadingData(false);
     };
 
     fetchBookingData();
 
-    // Feature: Keep packages updated in real-time during the booking flow
-    const channel = supabase
-      .channel(`packages-booking-${Date.now()}-${Math.random().toString(36).slice(2)}`)
-      .on("postgres_changes", { event: "*", schema: "public", table: "packages" }, () => {
-        catalogCache.invalidate("packages");
-        supabase
-          .from("packages")
-          .select("id, name, price, pax, additional_pax_price, inclusions, status, tag, image_url, category_limits")
-          .neq("status", "Archived")
-          .neq("status", "none")
-          .neq("status", "None")
-          .then(({ data }) => {
-            if (data) {
-              const sortedPackages = data.sort((a: any, b: any) => {
-                const priceA = parseFloat(String(a.price || "0").replace(/[^0-9.-]+/g, ""));
-                const priceB = parseFloat(String(b.price || "0").replace(/[^0-9.-]+/g, ""));
-                return priceA - priceB;
-              });
-              catalogCache.setPackages(sortedPackages);
-              setAvailablePackages(sortedPackages);
-            }
-          });
-      })
-      .on("postgres_changes", { event: "*", schema: "public", table: "menu_items" }, () => {
-        catalogCache.invalidate("menu");
-        supabase.from("menu_items").select("id, name, category, status").neq("status", "Archived").then(({ data }) => {
-          if (data) {
-            catalogCache.setMenuItems(data);
-            setMenuOptions(data);
-          }
+    // Reuse the single multiplexed catalog Realtime channel instead of opening 3 per-page listeners
+    const unsubscribeCatalog = catalogCache.subscribe((changedKey) => {
+      if (changedKey === "packages") {
+        catalogCache.fetchPackages(true).then((pkgs) => {
+          if (isMounted) setAvailablePackages(pkgs);
         });
-      })
-      .on("postgres_changes", { event: "*", schema: "public", table: "inclusions" }, () => {
-        catalogCache.invalidate("inclusions");
-        supabase
-          .from("inclusions")
-          .select("id, category, items")
-          .not("category", "like", "__CMS_%")
-          .then(({ data }) => {
-            if (data) {
-            const grouped: Record<string, string[]> = {};
-            data.forEach((row: any) => {
-              if (!grouped[row.category]) grouped[row.category] = [];
-              if (row.items && row.items.trim() !== "" && row.items !== "-") {
-                if (!grouped[row.category].includes(row.items)) {
-                  grouped[row.category].push(row.items);
-                }
-              }
-            });
-            catalogCache.setInclusions(grouped);
-            setInclusionCategories(grouped);
-          }
+      } else if (changedKey === "menu") {
+        catalogCache.fetchMenuItems(true).then((items) => {
+          if (isMounted) setMenuOptions(items);
         });
-      })
-      .subscribe();
+      } else if (changedKey === "inclusions") {
+        catalogCache.fetchInclusions(true).then((inc) => {
+          if (isMounted) setInclusionCategories(inc);
+        });
+      }
+    });
 
     return () => {
-      supabase.removeChannel(channel);
+      isMounted = false;
+      unsubscribeCatalog();
     };
   }, [navigate]);
 
@@ -799,20 +724,15 @@ export default function BookingPage() {
 
   // Feature: Submits the final validated form data along with deposit proof to Supabase
   const handleSubmitPayment = async () => {
-    const { data: authData } = await supabase.auth.getUser();
-    if (!authData.user) {
+    const sessionUser = await getSessionUser();
+    if (!sessionUser) {
       setPaymentError("You must be logged in to submit a booking.");
       return;
     }
 
-    const { data: profileCheck } = await supabase
-      .from("profiles")
-      .select("status")
-      .eq("id", authData.user.id)
-      .maybeSingle();
-
-    const submitStatus = (profileCheck?.status || "").toLowerCase().trim();
+    const submitStatus = await checkAccountStatus(sessionUser.id);
     if (submitStatus === "archived" || submitStatus === "inactive") {
+      clearSessionGuardCache(sessionUser.id);
       await supabase.auth.signOut();
       navigate(submitStatus === "inactive" ? "/auth?mode=login&deactivated=true" : "/auth?mode=login&archived=true");
       return;
@@ -829,7 +749,7 @@ export default function BookingPage() {
     // Attempt to upload receipt image to Supabase Storage bucket first (avoids base64 database bloat)
     let finalReceiptUrl = receiptImage;
     if (receiptBlob) {
-      const uploadedUrl = await uploadReceiptImage(receiptBlob, authData.user.id);
+      const uploadedUrl = await uploadReceiptImage(receiptBlob, sessionUser.id);
       if (uploadedUrl) {
         finalReceiptUrl = uploadedUrl;
       }
@@ -843,7 +763,7 @@ export default function BookingPage() {
 
     // Primary payload attempting direct column insert
     const primaryPayload: Record<string, any> = {
-      user_id: authData.user.id,
+      user_id: sessionUser.id,
       package_id: formData.packageId,
       event_date: formData.date,
       event_time: formData.time,
@@ -983,7 +903,7 @@ export default function BookingPage() {
       });
 
       const fallbackPayload = {
-        user_id: authData.user.id,
+        user_id: sessionUser.id,
         package_id: formData.packageId,
         event_date: formData.date,
         event_time: formData.time,

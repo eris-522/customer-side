@@ -2,7 +2,6 @@ import { motion } from "motion/react";
 import MenuSlider, { MenuItem } from "../components/MenuSlider";
 import { Link } from "react-router-dom";
 import { useEffect, useState, useMemo } from "react";
-import { supabase } from "../utils/supabase";
 import { useCMS } from "../context/CMSContext";
 import { catalogCache } from "../utils/catalogCache";
 
@@ -25,47 +24,26 @@ export default function MenuPage() {
 
   // Feature: Triggers the database fetch the moment the customer navigates to the Menu page
   useEffect(() => {
-    const fetchMenu = async (forceRefresh = false) => {
-      if (!forceRefresh) {
-        const cached = catalogCache.getMenuItems();
-        if (cached) {
-          setRawItems(cached);
-          setLoading(false);
-          return;
-        }
-      }
+    let isMounted = true;
 
-      // Queries the 'menu_items' table with pruned columns
-      const { data, error } = await supabase
-        .from("menu_items")
-        .select("id, name, category, status, sub_category, image_url")
-        .neq("status", "Archived");
-
-      if (error) {
-        console.error("Error fetching menu data:", error.message);
-      } else if (data) {
-        catalogCache.setMenuItems(data);
-        setRawItems(data);
-      }
+    const loadMenu = async (forceRefresh = false) => {
+      const items = await catalogCache.fetchMenuItems(forceRefresh);
+      if (!isMounted) return;
+      setRawItems(items);
       setLoading(false);
     };
 
-    fetchMenu();
+    loadMenu(false);
 
-    const channel = supabase
-      .channel(`menu-changes-${Date.now()}-${Math.random().toString(36).slice(2)}`)
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "menu_items" },
-        () => {
-          catalogCache.invalidate("menu");
-          fetchMenu(true);
-        },
-      )
-      .subscribe();
+    const unsubscribe = catalogCache.subscribe((changedKey) => {
+      if (changedKey === "menu") {
+        loadMenu(true);
+      }
+    });
 
     return () => {
-      supabase.removeChannel(channel);
+      isMounted = false;
+      unsubscribe();
     };
   }, []);
 

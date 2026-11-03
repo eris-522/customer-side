@@ -19,6 +19,11 @@ import {
   EyeOff,
 } from "lucide-react";
 import { supabase } from "../utils/supabase";
+import {
+  getSessionUser,
+  checkAccountStatus,
+  clearSessionGuardCache,
+} from "../utils/sessionGuard";
 
 // Helper function to calculate edit distance between two strings
 const getLevenshteinDistance = (a: string, b: string): number => {
@@ -197,17 +202,13 @@ export default function AuthPage() {
         return;
       }
 
-      // If already signed in, check account status before skipping auth page
-      const { data } = await supabase.auth.getUser();
-      if (data.user) {
-        const { data: profile } = await supabase
-          .from("profiles")
-          .select("status")
-          .eq("id", data.user.id)
-          .maybeSingle();
+      // If already signed in locally, check account status (deduplicated) before skipping auth page
+      const sessionUser = await getSessionUser();
+      if (sessionUser) {
+        const statusLower = await checkAccountStatus(sessionUser.id);
 
-        const statusLower = (profile?.status || "").toLowerCase().trim();
         if (statusLower === "inactive") {
+          clearSessionGuardCache(sessionUser.id);
           await supabase.auth.signOut();
           setError(
             <span>
@@ -222,6 +223,7 @@ export default function AuthPage() {
         }
 
         if (statusLower === "archived") {
+          clearSessionGuardCache(sessionUser.id);
           await supabase.auth.signOut();
           setError(
             <span>
@@ -434,15 +436,11 @@ export default function AuthPage() {
           }
         } else if (authData.user) {
           // Check if the user's account has been deactivated or archived by the admin
-          const { data: profile } = await supabase
-            .from("profiles")
-            .select("status")
-            .eq("id", authData.user.id)
-            .maybeSingle();
-
-          const statusLower = (profile?.status || "").toLowerCase().trim();
+          // (Also seeds sessionGuard cache so Navbar, App, and BookingPage don't re-query immediately)
+          const statusLower = await checkAccountStatus(authData.user.id, true);
 
           if (statusLower === "inactive") {
+            clearSessionGuardCache(authData.user.id);
             await supabase.auth.signOut();
             setError(
               <span>
@@ -457,6 +455,7 @@ export default function AuthPage() {
           }
 
           if (statusLower === "archived") {
+            clearSessionGuardCache(authData.user.id);
             await supabase.auth.signOut();
             setError(
               <span>
@@ -843,28 +842,13 @@ export default function AuthPage() {
                           if (!err) setEmailError("");
                         }
                       }}
-                      onBlur={async (e) => {
+                      onBlur={(e) => {
                         const val = e.target.value.trim();
                         if (val) {
                           const formatErr = validateEmailFormat(val);
                           if (formatErr) {
                             setEmailError(formatErr);
                             return;
-                          }
-                          if (!isLogin) {
-                            try {
-                              const { data: existingUser } = await supabase
-                                .from("profiles")
-                                .select("id")
-                                .eq("email", val)
-                                .maybeSingle();
-                              if (existingUser) {
-                                setEmailError("This email is already in use.");
-                                return;
-                              }
-                            } catch {
-                              // Ignore query error on blur
-                            }
                           }
                           setEmailError("");
                         } else {

@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { Suspense, lazy, useEffect } from "react";
+import React, { Suspense, lazy, useEffect, useRef } from "react";
 import { BrowserRouter as Router, Routes, Route, useNavigate, useLocation } from "react-router-dom";
 import HomePage from "./pages/HomePage";
 import Navbar from "./components/Navbar";
@@ -11,6 +11,12 @@ import Footer from "./components/Footer";
 import { ScrollToTop } from "./components/ScrollToTop";
 import { CMSProvider } from "./context/CMSContext";
 import { supabase } from "./utils/supabase";
+import {
+  getSessionUser,
+  checkAccountStatus,
+  setCachedAccountStatus,
+  clearSessionGuardCache,
+} from "./utils/sessionGuard";
 
 // Lazy-load secondary routes to drastically reduce initial bundle size and Vercel bandwidth consumption
 const MenuPage = lazy(() => import("./pages/MenuPage"));
@@ -35,8 +41,13 @@ function RouteLoadingFallback() {
 function AuthRoutingHandler() {
   const navigate = useNavigate();
   const location = useLocation();
+  const pathnameRef = useRef(location.pathname);
+  const navigateRef = useRef(navigate);
 
   useEffect(() => {
+    pathnameRef.current = location.pathname;
+    navigateRef.current = navigate;
+
     const isRecovery =
       window.location.hash.includes("type=recovery") ||
       window.location.search.includes("type=recovery") ||
@@ -53,60 +64,71 @@ function AuthRoutingHandler() {
     } else if (isSignup && location.pathname !== "/auth") {
       navigate(`/auth?mode=login&confirmed=true${window.location.hash}`, { replace: true });
     }
+  }, [location.pathname, navigate]);
 
+  // Mount auth & profile status guard ONCE across the entire SPA session
+  // instead of re-querying Auth/Postgres and tearing down WebSockets on every route change.
+  useEffect(() => {
     let isCancelled = false;
-    let profileChannel: any = null;
+    let profileChannel: ReturnType<typeof supabase.channel> | null = null;
+    let subscribedUserId: string | null = null;
 
-    // Check if the current user profile is inactive or archived
+    const cleanupProfileChannel = () => {
+      if (profileChannel) {
+        const ch = profileChannel;
+        profileChannel = null;
+        subscribedUserId = null;
+        supabase.removeChannel(ch);
+      }
+    };
+
     const verifyUserActiveStatus = async () => {
-      const { data } = await supabase.auth.getUser();
-      if (isCancelled || !data?.user) return;
+      const user = await getSessionUser();
+      if (isCancelled || !user) return;
 
-      const { data: profile } = await supabase
-        .from("profiles")
-        .select("status")
-        .eq("id", data.user.id)
-        .maybeSingle();
-
+      const statusLower = await checkAccountStatus(user.id);
       if (isCancelled) return;
 
-      const statusLower = (profile?.status || "").toLowerCase().trim();
       if (statusLower === "inactive") {
+        clearSessionGuardCache(user.id);
         await supabase.auth.signOut();
-        if (location.pathname !== "/auth") {
-          navigate("/auth?mode=login&deactivated=true", { replace: true });
+        if (pathnameRef.current !== "/auth") {
+          navigateRef.current("/auth?mode=login&deactivated=true", { replace: true });
         }
       } else if (statusLower === "archived") {
+        clearSessionGuardCache(user.id);
         await supabase.auth.signOut();
-        if (location.pathname !== "/auth") {
-          navigate("/auth?mode=login&archived=true", { replace: true });
+        if (pathnameRef.current !== "/auth") {
+          navigateRef.current("/auth?mode=login&archived=true", { replace: true });
         }
-      } else {
-        // Subscribe to real-time status updates on this user's profile row
-        if (!profileChannel) {
-          profileChannel = supabase
-            .channel(`profile-status-guard-${data.user.id}`)
-            .on(
-              "postgres_changes",
-              {
-                event: "UPDATE",
-                schema: "public",
-                table: "profiles",
-                filter: `id=eq.${data.user.id}`,
-              },
-              async (payload: any) => {
-                const newStatus = (payload.new?.status || "").toLowerCase().trim();
-                if (newStatus === "inactive") {
-                  await supabase.auth.signOut();
-                  navigate("/auth?mode=login&deactivated=true", { replace: true });
-                } else if (newStatus === "archived") {
-                  await supabase.auth.signOut();
-                  navigate("/auth?mode=login&archived=true", { replace: true });
-                }
+      } else if (subscribedUserId !== user.id) {
+        cleanupProfileChannel();
+        subscribedUserId = user.id;
+        profileChannel = supabase
+          .channel(`profile-status-guard-${user.id}`)
+          .on(
+            "postgres_changes",
+            {
+              event: "UPDATE",
+              schema: "public",
+              table: "profiles",
+              filter: `id=eq.${user.id}`,
+            },
+            async (payload: any) => {
+              const newStatus = (payload.new?.status || "").toLowerCase().trim();
+              setCachedAccountStatus(user.id, newStatus);
+              if (newStatus === "inactive") {
+                clearSessionGuardCache(user.id);
+                await supabase.auth.signOut();
+                navigateRef.current("/auth?mode=login&deactivated=true", { replace: true });
+              } else if (newStatus === "archived") {
+                clearSessionGuardCache(user.id);
+                await supabase.auth.signOut();
+                navigateRef.current("/auth?mode=login&archived=true", { replace: true });
               }
-            )
-            .subscribe();
-        }
+            },
+          )
+          .subscribe();
       }
     };
 
@@ -119,27 +141,27 @@ function AuthRoutingHandler() {
         try {
           sessionStorage.setItem("supabase_recovery_mode", "true");
         } catch {}
-        if (location.pathname !== "/auth") {
-          navigate("/auth?mode=reset", { replace: true });
+        if (pathnameRef.current !== "/auth") {
+          navigateRef.current("/auth?mode=reset", { replace: true });
         }
       } else if (event === "SIGNED_IN") {
-        // Defer async verification to prevent Supabase Auth client deadlock
         setTimeout(() => {
           if (!isCancelled) {
             verifyUserActiveStatus();
           }
         }, 0);
+      } else if (event === "SIGNED_OUT") {
+        clearSessionGuardCache();
+        cleanupProfileChannel();
       }
     });
 
     return () => {
       isCancelled = true;
       subscription.unsubscribe();
-      if (profileChannel) {
-        supabase.removeChannel(profileChannel);
-      }
+      cleanupProfileChannel();
     };
-  }, [location.pathname, navigate]);
+  }, []);
 
   return null;
 }

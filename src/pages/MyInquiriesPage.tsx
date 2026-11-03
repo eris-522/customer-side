@@ -31,6 +31,12 @@ import { Link, useNavigate } from "react-router-dom";
 import { compressReceiptImage, uploadReceiptImage } from "../utils/receiptUploader";
 import { calculateServiceWindow, OVERTIME_SERVICE_RATES } from "../utils/overtimeBilling";
 import { restoreBookingInventoryOnCancellation } from "../utils/inventoryReturn";
+import { catalogCache } from "../utils/catalogCache";
+import {
+  getSessionUser,
+  checkAccountStatus,
+  clearSessionGuardCache,
+} from "../utils/sessionGuard";
 
 // Helper to check if event is within 14 days
 const getRuleCategory = (dbCategory: string, itemName: string) => {
@@ -179,51 +185,54 @@ export default function MyInquiriesPage() {
 
   useEffect(() => {
     let isMounted = true;
-    let activeChannel: any = null;
-    let pollTimer: ReturnType<typeof setInterval> | null = null;
+    let customDishesChannel: ReturnType<typeof supabase.channel> | null = null;
+    let customDishesDebounce: ReturnType<typeof setTimeout> | null = null;
+    const FOCUS_COOLDOWN_MS = 60_000;
+    let lastFetchTimestamp = 0;
+    let inFlightSilent = false;
 
     const fetchInquiries = async (silent = false) => {
+      if (silent && inFlightSilent) return null;
+      if (silent) inFlightSilent = true;
       const reqId = ++latestFetchIdRef.current;
       try {
         if (!silent) setLoading(true);
-        const { data: authData, error: authError } =
-          await supabase.auth.getUser();
-        if (authError || !authData?.user) {
+        const authUser = await getSessionUser();
+        if (!authUser) {
           if (isMounted && !silent) setLoading(false);
           return null;
         }
 
-        const { data: profileCheck } = await supabase
-          .from("profiles")
-          .select("status")
-          .eq("id", authData.user.id)
-          .maybeSingle();
-
-        const inquiriesStatus = (profileCheck?.status || "").toLowerCase().trim();
+        // Uses cached status (0 DB round-trips within 60s TTL; live deactivation handled by App's Realtime guard)
+        const inquiriesStatus = await checkAccountStatus(authUser.id);
         if (inquiriesStatus === "archived" || inquiriesStatus === "inactive") {
+          clearSessionGuardCache(authUser.id);
           await supabase.auth.signOut();
-          navigate(inquiriesStatus === "inactive" ? "/auth?mode=login&deactivated=true" : "/auth?mode=login&archived=true");
+          navigate(
+            inquiriesStatus === "inactive"
+              ? "/auth?mode=login&deactivated=true"
+              : "/auth?mode=login&archived=true",
+          );
           return null;
         }
 
-        const [bookingsRes, menuRes] = await Promise.all([
+        lastFetchTimestamp = Date.now();
+
+        const [bookingsRes, cachedOrFreshMenu] = await Promise.all([
           supabase
             .from("bookings")
             .select("*, packages (id, name, price, additional_pax_price, category_limits, inclusions)")
-            .eq("user_id", authData.user.id),
-          supabase
-            .from("menu_items")
-            .select("id, name, category, status")
-            .neq("status", "Archived"),
+            .eq("user_id", authUser.id),
+          catalogCache.fetchMenuItems(),
         ]);
 
-        if (!isMounted || reqId !== latestFetchIdRef.current) return authData.user;
+        if (!isMounted || reqId !== latestFetchIdRef.current) return authUser;
 
         const { data: bookingsData, error } = bookingsRes;
         if (error) throw error;
 
-        if (menuRes.data) {
-          setMenuItems(menuRes.data);
+        if (cachedOrFreshMenu) {
+          setMenuItems(cachedOrFreshMenu);
         }
 
         if (bookingsData && bookingsData.length > 0) {
@@ -232,7 +241,7 @@ export default function MyInquiriesPage() {
             .from("booking_custom_dishes")
             .select("id, booking_id, name, category, replaces_dish")
             .in("booking_id", bookingIds);
-          if (!isMounted || reqId !== latestFetchIdRef.current) return authData.user;
+          if (!isMounted || reqId !== latestFetchIdRef.current) return authUser;
           setCustomDishes(customData || []);
 
           const sorted = [...bookingsData].sort((a, b) => {
@@ -248,8 +257,9 @@ export default function MyInquiriesPage() {
           });
         } else {
           setBookings([]);
+          setCustomDishes([]);
         }
-        return authData.user;
+        return authUser;
       } catch (err: any) {
         console.error("Critical error in fetchInquiries:", err);
         if (!silent && isMounted) {
@@ -260,67 +270,66 @@ export default function MyInquiriesPage() {
         }
         return null;
       } finally {
+        if (silent) inFlightSilent = false;
         if (isMounted && !silent) setLoading(false);
       }
     };
 
-    const handleSilentRefresh = () => {
-      if (document.visibilityState === "visible") {
+    // Instant refresh when Navbar's user-bookings Realtime channel detects an update
+    const handleRealtimeBookingUpdate = () => {
+      fetchInquiries(true);
+    };
+
+    // Throttled refresh when tab regains focus/visibility (60s cooldown prevents tab-switch query storms)
+    const handleFocusOrVisibility = () => {
+      if (
+        document.visibilityState === "visible" &&
+        Date.now() - lastFetchTimestamp >= FOCUS_COOLDOWN_MS
+      ) {
         fetchInquiries(true);
       }
     };
 
-    window.addEventListener("bookingsRealtimeUpdated", handleSilentRefresh);
-    window.addEventListener("focus", handleSilentRefresh);
-    document.addEventListener("visibilitychange", handleSilentRefresh);
+    window.addEventListener("bookingsRealtimeUpdated", handleRealtimeBookingUpdate);
+    window.addEventListener("focus", handleFocusOrVisibility);
+    document.addEventListener("visibilitychange", handleFocusOrVisibility);
+
+    // Subscribe to shared catalog cache for live menu item updates
+    const unsubscribeCatalog = catalogCache.subscribe((changedKey) => {
+      if (changedKey === "menu") {
+        catalogCache.fetchMenuItems(true).then((items) => {
+          if (isMounted) setMenuItems(items);
+        });
+      }
+    });
 
     fetchInquiries(false).then((authUser) => {
       if (!isMounted || !authUser) return;
 
-      activeChannel = supabase
-        .channel(`my-inquiries-live-${authUser.id}-${Date.now()}-${Math.random().toString(36).slice(2)}`)
-        .on(
-          "postgres_changes",
-          {
-            event: "*",
-            schema: "public",
-            table: "bookings",
-            filter: `user_id=eq.${authUser.id}`,
-          },
-          () => {
-            fetchInquiries(true);
-          },
-        )
-        .on(
-          "postgres_changes",
-          { event: "*", schema: "public", table: "menu_items" },
-          () => {
-            fetchInquiries(true);
-          },
-        )
+      // Only subscribe to `booking_custom_dishes` here (bookings & menu are already covered globally)
+      customDishesChannel = supabase
+        .channel(`my-inquiries-dishes-${authUser.id}-${Date.now()}-${Math.random().toString(36).slice(2)}`)
         .on(
           "postgres_changes",
           { event: "*", schema: "public", table: "booking_custom_dishes" },
           () => {
-            fetchInquiries(true);
+            if (customDishesDebounce) clearTimeout(customDishesDebounce);
+            customDishesDebounce = setTimeout(() => {
+              fetchInquiries(true);
+            }, 300);
           },
         )
         .subscribe();
-
-      pollTimer = setInterval(() => {
-        if (document.visibilityState === "visible") {
-          fetchInquiries(true);
-        }
-      }, 5000);
     });
 
     return () => {
       isMounted = false;
-      window.removeEventListener("bookingsRealtimeUpdated", handleSilentRefresh);
-      window.removeEventListener("focus", handleSilentRefresh);
-      document.removeEventListener("visibilitychange", handleSilentRefresh);
-      if (pollTimer) clearInterval(pollTimer);
-      if (activeChannel) supabase.removeChannel(activeChannel);
+      if (customDishesDebounce) clearTimeout(customDishesDebounce);
+      unsubscribeCatalog();
+      window.removeEventListener("bookingsRealtimeUpdated", handleRealtimeBookingUpdate);
+      window.removeEventListener("focus", handleFocusOrVisibility);
+      document.removeEventListener("visibilitychange", handleFocusOrVisibility);
+      if (customDishesChannel) supabase.removeChannel(customDishesChannel);
     };
   }, []);
 
@@ -328,11 +337,9 @@ export default function MyInquiriesPage() {
     if (!modifyingBooking) return;
     if (menuItems.length === 0 && !isLoadingMenu) {
       setIsLoadingMenu(true);
-      supabase
-        .from("menu_items")
-        .select("id, name, category, status")
-        .neq("status", "Archived")
-        .then(({ data }) => {
+      catalogCache
+        .fetchMenuItems()
+        .then((data) => {
           if (data) setMenuItems(data);
           setIsLoadingMenu(false);
         });
@@ -474,7 +481,7 @@ export default function MyInquiriesPage() {
       try {
         const [mRes, pRes] = await Promise.all([
           needsMenu
-            ? supabase.from("menu_items").select("id, name, category, status").neq("status", "Archived")
+            ? catalogCache.fetchMenuItems().then((data) => ({ data }))
             : Promise.resolve({ data: null }),
           needsLimits
             ? supabase.from("packages").select("id, name, price, additional_pax_price, category_limits, inclusions").eq("id", booking.package_id).single()

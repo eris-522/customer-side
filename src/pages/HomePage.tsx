@@ -2,7 +2,6 @@ import { motion } from "motion/react";
 import { ChevronRight, Quote, ChevronDown, FileText } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useState, useEffect } from "react";
-import { supabase } from "../utils/supabase";
 import { useCMS } from "../context/CMSContext";
 import { catalogCache } from "../utils/catalogCache";
 
@@ -56,85 +55,36 @@ export default function HomePage() {
     .slice(0, 4);
 
   useEffect(() => {
-    const fetchPackages = async (forceRefresh = false) => {
-      // 1. Read from in-memory cache if available (0 egress)
-      if (!forceRefresh) {
-        const cachedPkgs = catalogCache.getPackages();
-        const cachedInc = catalogCache.getInclusions();
-        if (cachedPkgs && cachedInc) {
-          setPackages(cachedPkgs.slice(0, 3));
-          setInclusionCategories(cachedInc);
-          return;
-        }
-      }
+    let isMounted = true;
 
-      const { data } = await supabase
-        .from("packages")
-        .select("id, name, price, pax, additional_pax_price, inclusions, status, tag, image_url, category_limits")
-        .neq("status", "Archived")
-        .neq("status", "none")
-        .neq("status", "None");
-
-      if (data) {
-        // Sort packages by price (lowest to highest) and take the top 3 for the Featured section
-        const sortedPackages = (data as CateringPackage[]).sort((a, b) => {
-          const priceA = parseFloat(
-            String(a.price || "0").replace(/[^0-9.-]+/g, ""),
-          );
-          const priceB = parseFloat(
-            String(b.price || "0").replace(/[^0-9.-]+/g, ""),
-          );
-          return priceA - priceB;
-        });
-        catalogCache.setPackages(sortedPackages);
-        setPackages(sortedPackages.slice(0, 3));
-      }
-
-      const incResponse = await supabase
-        .from("inclusions")
-        .select("id, category, items")
-        .not("category", "like", "__CMS_%");
-      if (incResponse.data) {
-        const grouped: Record<string, string[]> = {};
-        incResponse.data.forEach((row: any) => {
-          if (row.category && !row.category.startsWith("__CMS_")) {
-            if (!grouped[row.category]) grouped[row.category] = [];
-            if (row.items && row.items.trim() !== "" && row.items !== "-") {
-              if (!grouped[row.category].includes(row.items)) {
-                grouped[row.category].push(row.items);
-              }
-            }
-          }
-        });
-        catalogCache.setInclusions(grouped);
-        setInclusionCategories(grouped);
-      }
+    const loadCatalog = async (forceRefresh = false) => {
+      const [pkgs, inc] = await Promise.all([
+        catalogCache.fetchPackages(forceRefresh),
+        catalogCache.fetchInclusions(forceRefresh),
+      ]);
+      if (!isMounted) return;
+      setPackages((pkgs as CateringPackage[]).slice(0, 3));
+      setInclusionCategories(inc);
     };
-    fetchPackages();
 
-    // Feature: Subscribe to real-time changes so package updates reflect instantly on the Home Page
-    const channel = supabase
-      .channel(`packages-home-${Date.now()}-${Math.random().toString(36).slice(2)}`)
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "packages" },
-        () => {
-          catalogCache.invalidate("packages");
-          fetchPackages(true);
-        },
-      )
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "inclusions" },
-        () => {
-          catalogCache.invalidate("inclusions");
-          fetchPackages(true);
-        },
-      )
-      .subscribe();
+    loadCatalog(false);
+
+    // Subscribe to the single multiplexed catalog Realtime channel
+    const unsubscribe = catalogCache.subscribe((changedKey) => {
+      if (changedKey === "packages") {
+        catalogCache.fetchPackages(true).then((pkgs) => {
+          if (isMounted) setPackages((pkgs as CateringPackage[]).slice(0, 3));
+        });
+      } else if (changedKey === "inclusions") {
+        catalogCache.fetchInclusions(true).then((inc) => {
+          if (isMounted) setInclusionCategories(inc);
+        });
+      }
+    });
 
     return () => {
-      supabase.removeChannel(channel);
+      isMounted = false;
+      unsubscribe();
     };
   }, []);
 

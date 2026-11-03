@@ -3,6 +3,11 @@ import { Menu as MenuIcon, X, Bell, ChevronDown } from "lucide-react";
 import { useState, useEffect, useRef } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { supabase } from "../utils/supabase";
+import {
+  getSessionUser,
+  checkAccountStatus,
+  clearSessionGuardCache,
+} from "../utils/sessionGuard";
 import { NotificationCenter } from "./NotificationCenter";
 import { AnnouncementBanner } from "./AnnouncementBanner";
 
@@ -87,25 +92,20 @@ export default function Navbar() {
     let isMounted = true;
 
     const initAuth = async () => {
-      const { data } = await supabase.auth.getUser();
+      const sessionUser = await getSessionUser();
       if (!isMounted) return;
 
-      if (data?.user) {
-        const { data: profile } = await supabase
-          .from("profiles")
-          .select("status")
-          .eq("id", data.user.id)
-          .maybeSingle();
-
-        const statusLower = (profile?.status || "").toLowerCase().trim();
+      if (sessionUser) {
+        const statusLower = await checkAccountStatus(sessionUser.id);
         if (statusLower === "inactive" || statusLower === "archived") {
+          clearSessionGuardCache(sessionUser.id);
           await supabase.auth.signOut();
           if (isMounted) setUser(null);
           return;
         }
       }
 
-      setUser(data.user ?? null);
+      if (isMounted) setUser(sessionUser ?? null);
     };
 
     initAuth();
@@ -120,19 +120,16 @@ export default function Navbar() {
         if (event === "PASSWORD_RECOVERY" && window.location.pathname !== "/auth") {
           navigate("/auth?mode=reset", { replace: true });
         }
-        if (session?.user) {
+        if (event === "SIGNED_OUT") {
+          clearSessionGuardCache();
+        } else if (event === "SIGNED_IN" && session?.user) {
           // Defer async database calls to avoid Supabase Auth mutex deadlock
           setTimeout(async () => {
             if (!isMounted) return;
             try {
-              const { data: profile } = await supabase
-                .from("profiles")
-                .select("status")
-                .eq("id", session.user.id)
-                .maybeSingle();
-
-              const statusLower = (profile?.status || "").toLowerCase().trim();
+              const statusLower = await checkAccountStatus(session.user.id);
               if (statusLower === "inactive" || statusLower === "archived") {
+                clearSessionGuardCache(session.user.id);
                 await supabase.auth.signOut();
                 if (isMounted) setUser(null);
               }
@@ -299,24 +296,45 @@ export default function Navbar() {
         setNotifications(sorted);
       }
     };
-    fetchNotifications();
 
-    // Fast lightweight polling (6s) when visible so Admin updates reflect even if WebSocket reconnects
-    const intervalId = setInterval(() => {
-      if (document.visibilityState === 'visible') {
-        fetchNotifications();
-      }
-    }, 6000);
+    const FOCUS_COOLDOWN_MS = 60_000;
+    let lastNotifFetchTime = 0;
+    let inFlightNotif = false;
+    let realtimeDebounce: ReturnType<typeof setTimeout> | null = null;
+    let realtimeConnected = false;
 
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible') {
-        fetchNotifications();
+    const triggerNotificationsFetch = async (force = false) => {
+      if (inFlightNotif) return;
+      if (!force && Date.now() - lastNotifFetchTime < FOCUS_COOLDOWN_MS) return;
+      inFlightNotif = true;
+      lastNotifFetchTime = Date.now();
+      try {
+        await fetchNotifications();
+      } finally {
+        inFlightNotif = false;
       }
     };
-    const handleLocalBookingSync = () => fetchNotifications();
 
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    window.addEventListener('focus', handleLocalBookingSync);
+    triggerNotificationsFetch(true);
+
+    // Gentle fallback heartbeat (60s) ONLY when Realtime WebSocket is disconnected
+    const fallbackPollId = setInterval(() => {
+      if (!realtimeConnected && document.visibilityState === 'visible') {
+        triggerNotificationsFetch(true);
+      }
+    }, 60_000);
+
+    const handleVisibilityOrFocus = () => {
+      if (document.visibilityState === 'visible') {
+        triggerNotificationsFetch(false);
+      }
+    };
+    const handleLocalBookingSync = () => {
+      triggerNotificationsFetch(true);
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityOrFocus);
+    window.addEventListener('focus', handleVisibilityOrFocus);
     window.addEventListener('customerBookingsUpdated', handleLocalBookingSync);
 
     // Real-time subscription to catch instant Admin updates or status changes
@@ -324,19 +342,25 @@ export default function Navbar() {
     const channel = supabase
       .channel(channelName)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'bookings', filter: `user_id=eq.${user.id}` }, () => {
-        fetchNotifications();
-        window.dispatchEvent(new CustomEvent('bookingsRealtimeUpdated'));
+        if (realtimeDebounce) clearTimeout(realtimeDebounce);
+        realtimeDebounce = setTimeout(() => {
+          triggerNotificationsFetch(true);
+          window.dispatchEvent(new CustomEvent('bookingsRealtimeUpdated'));
+        }, 250);
       })
-      .subscribe();
+      .subscribe((status: string) => {
+        realtimeConnected = status === 'SUBSCRIBED';
+      });
 
     return () => {
-      clearInterval(intervalId);
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-      window.removeEventListener('focus', handleLocalBookingSync);
+      clearInterval(fallbackPollId);
+      if (realtimeDebounce) clearTimeout(realtimeDebounce);
+      document.removeEventListener('visibilitychange', handleVisibilityOrFocus);
+      window.removeEventListener('focus', handleVisibilityOrFocus);
       window.removeEventListener('customerBookingsUpdated', handleLocalBookingSync);
       supabase.removeChannel(channel);
     };
-  }, [user]);
+  }, [user?.id]);
 
   const handleLogoutClick = () => {
     setIsMobileMenuOpen(false);

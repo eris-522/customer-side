@@ -2,7 +2,6 @@ import { motion } from "motion/react";
 import { ChevronRight, Check } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useState, useEffect } from "react";
-import { supabase } from "../utils/supabase";
 import { useCMS } from "../context/CMSContext";
 import { catalogCache } from "../utils/catalogCache";
 
@@ -48,92 +47,36 @@ export default function PackagesPage() {
 
   // Feature: Executes the database query as soon as the user navigates to this page
   useEffect(() => {
-    const fetchOfferings = async (forceRefresh = false) => {
-      // 1. Check in-memory catalogCache first
-      let currentPackages = catalogCache.getPackages();
-      if (!currentPackages || forceRefresh) {
-        const pkgResponse = await supabase
-          .from("packages")
-          .select("id, name, price, pax, additional_pax_price, inclusions, status, tag, image_url, category_limits")
-          .neq("status", "Archived")
-          .neq("status", "none")
-          .neq("status", "None");
+    let isMounted = true;
 
-        if (pkgResponse.error) {
-          console.error("Error fetching packages:", pkgResponse.error.message);
-        } else if (pkgResponse.data) {
-          const sortedPackages = (pkgResponse.data as CateringPackage[]).sort(
-            (a, b) => {
-              const priceA = parseFloat(
-                String(a.price || "0").replace(/[^0-9.-]+/g, ""),
-              );
-              const priceB = parseFloat(
-                String(b.price || "0").replace(/[^0-9.-]+/g, ""),
-              );
-              return priceA - priceB;
-            },
-          );
-          currentPackages = sortedPackages;
-          catalogCache.setPackages(sortedPackages);
-        }
-      }
-      if (currentPackages) setPackages(currentPackages);
-
-      // 2. Check inclusions cache
-      let currentInclusions = catalogCache.getInclusions();
-      if (!currentInclusions || forceRefresh) {
-        const incResponse = await supabase
-          .from("inclusions")
-          .select("id, category, items")
-          .not("category", "like", "__CMS_%");
-        if (incResponse.error) {
-          console.error("Error fetching inclusions:", incResponse.error.message);
-        } else if (incResponse.data) {
-          const grouped: Record<string, string[]> = {};
-          incResponse.data.forEach((row: any) => {
-            if (row.category && !row.category.startsWith("__CMS_")) {
-              if (!grouped[row.category]) grouped[row.category] = [];
-              if (row.items && row.items.trim() !== "" && row.items !== "-") {
-                if (!grouped[row.category].includes(row.items)) {
-                  grouped[row.category].push(row.items);
-                }
-              }
-            }
-          });
-          currentInclusions = grouped;
-          catalogCache.setInclusions(grouped);
-        }
-      }
-      if (currentInclusions) setInclusionCategories(currentInclusions);
-
+    const loadOfferings = async (forceRefresh = false) => {
+      const [pkgs, inc] = await Promise.all([
+        catalogCache.fetchPackages(forceRefresh),
+        catalogCache.fetchInclusions(forceRefresh),
+      ]);
+      if (!isMounted) return;
+      setPackages(pkgs as CateringPackage[]);
+      setInclusionCategories(inc);
       setLoading(false);
     };
 
-    fetchOfferings();
+    loadOfferings(false);
 
-    // Feature: Subscribe to real-time changes so package updates reflect instantly
-    const channel = supabase
-      .channel(`packages-changes-${Date.now()}-${Math.random().toString(36).slice(2)}`)
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "packages" },
-        () => {
-          catalogCache.invalidate("packages");
-          fetchOfferings(true);
-        },
-      )
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "inclusions" },
-        () => {
-          catalogCache.invalidate("inclusions");
-          fetchOfferings(true);
-        },
-      )
-      .subscribe();
+    const unsubscribe = catalogCache.subscribe((changedKey) => {
+      if (changedKey === "packages") {
+        catalogCache.fetchPackages(true).then((pkgs) => {
+          if (isMounted) setPackages(pkgs as CateringPackage[]);
+        });
+      } else if (changedKey === "inclusions") {
+        catalogCache.fetchInclusions(true).then((inc) => {
+          if (isMounted) setInclusionCategories(inc);
+        });
+      }
+    });
 
     return () => {
-      supabase.removeChannel(channel);
+      isMounted = false;
+      unsubscribe();
     };
   }, []);
 
