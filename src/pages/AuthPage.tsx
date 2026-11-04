@@ -152,6 +152,35 @@ export default function AuthPage() {
   const [recoveryEmailError, setRecoveryEmailError] = useState("");
   const [showEmailConfirmModal, setShowEmailConfirmModal] = useState(false);
   const [registeredEmail, setRegisteredEmail] = useState("");
+  const [resendingConfirm, setResendingConfirm] = useState(false);
+
+  const handleResendConfirmation = async (targetEmail: string) => {
+    const cleanEmail = targetEmail.trim().toLowerCase();
+    if (!cleanEmail) return;
+    setResendingConfirm(true);
+    setError("");
+    setMessage("");
+    try {
+      const { error: resendErr } = await supabase.auth.resend({
+        type: "signup",
+        email: cleanEmail,
+        options: {
+          emailRedirectTo: "https://rpcatering.vercel.app/auth?confirmed=true",
+        },
+      });
+      if (resendErr) {
+        setError(`Failed to resend confirmation email: ${resendErr.message}`);
+      } else {
+        setMessage(
+          `Confirmation email resent to ${cleanEmail}. Please check your inbox and spam folder.`
+        );
+      }
+    } catch {
+      setError("Failed to resend confirmation email. Please try again.");
+    } finally {
+      setResendingConfirm(false);
+    }
+  };
 
   useEffect(() => {
     // Listen for password recovery redirect from email links
@@ -316,7 +345,46 @@ export default function AuthPage() {
           return;
         }
 
-        // 10-second timeout promise to guarantee UI never deadlocks or hangs indefinitely
+        // 1. Verify if the account exists and whether its email has been confirmed
+        const checkConfirmPromise = supabase.rpc("check_user_email_confirmed", {
+          lookup_email: currentRecoveryEmail,
+        });
+
+        const confirmTimeoutPromise = new Promise<{ data: any; error: any }>((_, reject) =>
+          setTimeout(
+            () => reject(new Error("Request timed out. Please check your internet connection and try again.")),
+            10000
+          )
+        );
+
+        const { data: confirmStatus, error: confirmErr } = await Promise.race([
+          checkConfirmPromise,
+          confirmTimeoutPromise,
+        ]);
+
+        if (!confirmErr && confirmStatus) {
+          if (!confirmStatus.exists) {
+            setError("Account not found. Please check your email address.");
+            return;
+          }
+          if (!confirmStatus.confirmed) {
+            setError(
+              <span>
+                Your account has not been confirmed yet. You cannot reset your password until your email address is verified.{" "}
+                <button
+                  type="button"
+                  onClick={() => handleResendConfirmation(currentRecoveryEmail)}
+                  className="underline font-bold text-gold-400 hover:text-white transition-colors cursor-pointer ml-1 inline-block"
+                >
+                  {resendingConfirm ? "Resending..." : "Resend Confirmation Email"}
+                </button>
+              </span>
+            );
+            return;
+          }
+        }
+
+        // 2. Account is confirmed — retrieve security question answer
         const queryPromise = supabase
           .from("profiles")
           .select("security_answer")
@@ -342,6 +410,27 @@ export default function AuthPage() {
         }
       } else if (forgotPasswordStep === "question") {
         if (recoveryAnswer.toLowerCase().trim() === fetchedAnswer) {
+          // Double-check confirmation status before dispatching recovery email
+          const { data: confirmStatus } = await supabase.rpc("check_user_email_confirmed", {
+            lookup_email: recoveryEmail.trim().toLowerCase(),
+          });
+
+          if (confirmStatus && !confirmStatus.confirmed) {
+            setError(
+              <span>
+                Your account has not been confirmed yet. You cannot reset your password until your email address is verified.{" "}
+                <button
+                  type="button"
+                  onClick={() => handleResendConfirmation(recoveryEmail.trim())}
+                  className="underline font-bold text-gold-400 hover:text-white transition-colors cursor-pointer ml-1 inline-block"
+                >
+                  {resendingConfirm ? "Resending..." : "Resend Confirmation Email"}
+                </button>
+              </span>
+            );
+            return;
+          }
+
           // Send the recovery email pointing directly to the Vercel deployment (no query params so Supabase Redirect URL matching never rejects it)
           const resetPromise = supabase.auth.resetPasswordForEmail(recoveryEmail.trim(), {
             redirectTo: "https://rpcatering.vercel.app/auth",
@@ -429,7 +518,16 @@ export default function AuthPage() {
         if (error) {
           if (error.message.toLowerCase().includes("email not confirmed")) {
             setError(
-              "Your email is not confirmed yet. Please check your email inbox to confirm your account before signing in.",
+              <span>
+                Your email is not confirmed yet. Please check your email inbox to confirm your account before signing in.{" "}
+                <button
+                  type="button"
+                  onClick={() => handleResendConfirmation(currentEmail)}
+                  className="underline font-bold text-gold-400 hover:text-white transition-colors cursor-pointer ml-1 inline-block"
+                >
+                  {resendingConfirm ? "Resending..." : "Resend Confirmation Email"}
+                </button>
+              </span>
             );
           } else {
             setError(error.message);
