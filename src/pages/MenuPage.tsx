@@ -14,6 +14,56 @@ const fallbackImages = [
   "https://images.unsplash.com/photo-1432139555190-58524dae6a55?auto=format&fit=crop&q=80&w=600",
 ];
 
+const CATEGORY_ORDER = [
+  "Appetizers",
+  "Soup",
+  "Vegetables",
+  "Main Course",
+  "Pasta",
+  "Desserts",
+  "Beverages",
+];
+
+export const resolveMenuCategory = (item: any): string => {
+  const cat = (item.category || "").trim();
+  const sub = (item.sub_category || "").trim().toLowerCase();
+  const name = (item.name || "").trim().toLowerCase();
+
+  if (
+    sub === "soup" ||
+    cat.toLowerCase() === "soup" ||
+    name.includes("soup") ||
+    name.includes("broth") ||
+    name.includes("chowder") ||
+    name.includes("sinigang") ||
+    name.includes("nilaga") ||
+    name.includes("sopas") ||
+    name.includes("mami")
+  ) {
+    return "Soup";
+  }
+
+  if (
+    sub === "vegetables" ||
+    sub === "vegetable" ||
+    cat.toLowerCase() === "vegetables" ||
+    cat.toLowerCase() === "vegetable" ||
+    name.includes("vegetable") ||
+    name.includes("veggie") ||
+    name.includes("chopseuy") ||
+    name.includes("chopsuey") ||
+    name.includes("lumpiang sariwa")
+  ) {
+    return "Vegetables";
+  }
+
+  if (cat.toLowerCase().includes("appetizer")) {
+    return "Appetizers";
+  }
+
+  return cat || "Main Course";
+};
+
 export default function MenuPage() {
   const { cms } = useCMS();
   const menuCms = cms?.menu;
@@ -58,13 +108,14 @@ export default function MenuPage() {
             id: item.id,
             name: item.name,
             category: item.category,
+            sub_category: item.sub_category,
             status: "Available",
             description: item.description,
             image_url: item.image,
           }));
 
     sourceItems.forEach((item, index) => {
-      const category = item.category || "Main Course";
+      const category = resolveMenuCategory(item);
       if (!grouped[category]) {
         grouped[category] = [];
       }
@@ -88,7 +139,22 @@ export default function MenuPage() {
       });
     });
 
-    return grouped;
+    // Sort grouped categories into intuitive culinary order
+    const sortedGrouped: Record<string, MenuItem[]> = {};
+    const presentCategories = Object.keys(grouped).sort((a, b) => {
+      const idxA = CATEGORY_ORDER.indexOf(a);
+      const idxB = CATEGORY_ORDER.indexOf(b);
+      if (idxA !== -1 && idxB !== -1) return idxA - idxB;
+      if (idxA !== -1) return -1;
+      if (idxB !== -1) return 1;
+      return a.localeCompare(b);
+    });
+
+    presentCategories.forEach((cat) => {
+      sortedGrouped[cat] = grouped[cat];
+    });
+
+    return sortedGrouped;
   }, [rawItems, menuCms]);
 
   return (
