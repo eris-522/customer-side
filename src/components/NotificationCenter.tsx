@@ -19,6 +19,12 @@ export function NotificationCenter({ isOpen, onClose, notifications, unreadCount
 
   const getNotifKey = (item: any) => {
     if (item.notifKey) return item.notifKey;
+    if (item.notifType === "excess_headcount") {
+      return `${item.id}-excess-headcount-${item.excessBilling?.excess_guest_fee}-${item.notifTimestamp}`;
+    }
+    if (item.notifType === "excess_headcount_removed") {
+      return `${item.id}-excess-removed-${item.notifTimestamp}`;
+    }
     if (item.notifType === "rain_laundry") {
       return `${item.id}-rain-laundry-${item.rainAction}-${item.notifTimestamp || item.logistics_info?.rainLaundryLastActionAt}`;
     }
@@ -155,6 +161,20 @@ export function NotificationCenter({ isOpen, onClose, notifications, unreadCount
                                 {notif.modStatus === 'Approved' ? "Confirmed by Coordinator" : "Declined / Reverted"}
                               </span>
                             </>
+                          ) : notif.notifType === 'excess_headcount' ? (
+                            <>
+                              Excess Headcount Surcharge Applied for {notif.event_date}:{" "}
+                              <span className="text-rose-400 font-bold">
+                                +₱{Number(notif.excessFee ?? notif.excessBilling?.excess_guest_fee ?? 0).toLocaleString()}
+                              </span>
+                            </>
+                          ) : notif.notifType === 'excess_headcount_removed' ? (
+                            <>
+                              Excess Headcount Surcharge Removed for {notif.event_date}:{" "}
+                              <span className="text-emerald-400 font-bold">
+                                Waived / Cleared
+                              </span>
+                            </>
                           ) : notif.notifType === 'day_of_overtime' ? (
                             <>
                               Overtime Surcharge Applied for {notif.event_date}:{" "}
@@ -220,6 +240,36 @@ export function NotificationCenter({ isOpen, onClose, notifications, unreadCount
 
                     {isExpanded && (
                       <div className="mt-3 pt-3 border-t border-white/10 animate-in slide-in-from-top-1 fade-in duration-200">
+                        {notif.notifType === 'excess_headcount' && (
+                          <div className="mb-3 p-3 bg-rose-500/10 border border-rose-500/20 rounded-md space-y-1.5 text-xs text-rose-200">
+                            <div className="flex justify-between items-center text-rose-300 font-bold">
+                              <span>Excess Headcount Surcharge: +₱{Number(notif.excessFee ?? notif.excessBilling?.excess_guest_fee ?? 0).toLocaleString()}</span>
+                              <span className="text-[10px] uppercase px-1.5 py-0.5 rounded bg-rose-500/20">Post-Event</span>
+                            </div>
+                            <p className="text-[11px] text-white/80">
+                              Actual headcount served was <strong>{notif.excessActual ?? notif.excessBilling?.actual_headcount_served} guests</strong> vs <strong>{notif.excessGuaranteed ?? notif.excessBilling?.guaranteed_headcount} guaranteed</strong> (+{notif.excessGuests ?? notif.excessBilling?.excess_guests} attendee(s) beyond guaranteed count @ ₱500/pax).
+                            </p>
+                            <p className="text-[10px] text-rose-300/80">
+                              Due Date: {notif.excessDueDate || notif.excessBilling?.due_date || "Next Day"} • Status: <strong>{notif.excessBilling?.payment_status || "Unpaid"}</strong>
+                            </p>
+                            <p className="text-[10px] text-gold-400 font-medium pt-1 border-t border-rose-500/20">
+                              ✓ You can settle this excess surcharge directly in the Payments section below.
+                            </p>
+                          </div>
+                        )}
+                        {notif.notifType === 'excess_headcount_removed' && (
+                          <div className="mb-3 p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-md space-y-1.5 text-xs text-emerald-200">
+                            <div className="font-bold text-emerald-300">
+                              Excess Headcount Surcharge Removed (Waived)
+                            </div>
+                            <p className="text-[11px] text-white/80">
+                              The post-event excess headcount surcharge for {notif.event_date} was waived/cleared by the catering coordinator.
+                            </p>
+                            <p className="text-[10px] text-gold-400 font-medium pt-1 border-t border-emerald-500/20">
+                              ✓ Surcharge cleared. No further excess balance is due.
+                            </p>
+                          </div>
+                        )}
                         {notif.notifType === 'day_of_overtime' && (
                           <div className="mb-3 p-3 bg-amber-500/10 border border-amber-500/20 rounded-md space-y-1.5 text-xs">
                             <div className="flex justify-between items-center text-amber-300 font-bold">

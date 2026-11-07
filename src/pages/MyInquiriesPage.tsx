@@ -177,6 +177,13 @@ export default function MyInquiriesPage() {
     amount: number;
     dueDate?: string;
   } | null>(null);
+  const [payingExcessSurcharge, setPayingExcessSurcharge] = useState<{
+    amount: number;
+    dueDate?: string;
+    excessGuests: number;
+    guaranteedPax: number;
+    actualPax: number;
+  } | null>(null);
   const [balancePaymentMethod, setBalancePaymentMethod] = useState<"GCash" | "Bank Transfer">("GCash");
   const [balanceRef, setBalanceRef] = useState<string>("");
   const [balanceReceiptImage, setBalanceReceiptImage] = useState<string>("");
@@ -876,6 +883,7 @@ export default function MyInquiriesPage() {
       }
     }
     setPayingBalanceBooking(booking);
+    setPayingExcessSurcharge(null);
     if (milestoneIndex !== undefined && milestone) {
       setPayingMilestone({
         index: milestoneIndex,
@@ -892,6 +900,32 @@ export default function MyInquiriesPage() {
       setBalanceRef(booking.paymentData?.balanceRef || "");
       setBalanceReceiptImage(booking.paymentData?.balanceReceipt || "");
     }
+    setBalanceReceiptBlob(null);
+    setBalanceReceiptName("");
+    setBalanceError("");
+    setCopiedBalanceAccount("");
+  };
+
+  const handleOpenExcessPaymentModal = (booking: any, postEventBilling: any) => {
+    if (!postEventBilling) return;
+    setPayingBalanceBooking(booking);
+    setPayingMilestone(null);
+    setPayingExcessSurcharge({
+      amount: Number(postEventBilling.excess_guest_fee) || 0,
+      dueDate: postEventBilling.due_date || "",
+      excessGuests: Number(postEventBilling.excess_guests) || 0,
+      guaranteedPax:
+        Number(postEventBilling.guaranteed_headcount) ||
+        (Number(booking.guest_count) || 50) + (Number(booking.additional_pax) || 0),
+      actualPax:
+        Number(postEventBilling.actual_headcount_served) ||
+        (Number(booking.guest_count) || 50) + (Number(booking.additional_pax) || 0),
+    });
+    setBalancePaymentMethod(
+      postEventBilling.payment_method === "Bank Transfer" ? "Bank Transfer" : "GCash"
+    );
+    setBalanceRef(postEventBilling.reference_number || "");
+    setBalanceReceiptImage(postEventBilling.receipt_url || "");
     setBalanceReceiptBlob(null);
     setBalanceReceiptName("");
     setBalanceError("");
@@ -939,7 +973,99 @@ export default function MyInquiriesPage() {
         }
       }
 
-      if (payingMilestone !== null) {
+      if (payingExcessSurcharge !== null) {
+        // === SUBMITTING PAYMENT PROOF FOR POST-EVENT EXCESS HEADCOUNT SURCHARGE ===
+        const nowIso = new Date().toISOString();
+        let currentLogistics: any =
+          payingBalanceBooking.logistics_info &&
+          typeof payingBalanceBooking.logistics_info === "object"
+            ? { ...payingBalanceBooking.logistics_info }
+            : {};
+
+        let baseAllergies = payingBalanceBooking.food_allergies || "";
+        let currentMeta: any = null;
+        if (
+          typeof baseAllergies === "string" &&
+          baseAllergies.includes("__PAYMENT_METADATA__:")
+        ) {
+          const parts = baseAllergies.split("__PAYMENT_METADATA__:");
+          baseAllergies = parts[0].trim();
+          try {
+            currentMeta = JSON.parse(parts[1]);
+            if (Object.keys(currentLogistics).length === 0 && currentMeta?.logistics) {
+              currentLogistics = { ...currentMeta.logistics };
+            }
+          } catch (e) {}
+        }
+
+        const existingPostEvent =
+          currentLogistics.post_event_billing ||
+          (payingBalanceBooking as any)?.post_event_billing ||
+          {};
+
+        const updatedPostEvent = {
+          ...existingPostEvent,
+          payment_status: "Pending Verification",
+          payment_method: balancePaymentMethod,
+          reference_number: balanceRef.trim(),
+          receipt_url: finalReceiptUrl,
+          submitted_at: nowIso,
+          updated_at: nowIso,
+        };
+
+        const updatedLogistics = {
+          ...currentLogistics,
+          post_event_billing: updatedPostEvent,
+          updated_at: nowIso,
+        };
+
+        const updatePayload: any = {
+          logistics_info: updatedLogistics,
+        };
+
+        let updatedAllergies = payingBalanceBooking.food_allergies || "";
+        if (currentMeta) {
+          currentMeta.logistics = updatedLogistics;
+          updatedAllergies = `${baseAllergies ? baseAllergies + "\n" : ""}__PAYMENT_METADATA__:${JSON.stringify(currentMeta)}`;
+          updatePayload.food_allergies = updatedAllergies;
+        }
+
+        const { error } = await supabase
+          .from("bookings")
+          .update(updatePayload)
+          .eq("id", payingBalanceBooking.id);
+
+        if (error) throw error;
+
+        setBookings((prev) =>
+          prev.map((b) =>
+            b.id === payingBalanceBooking.id
+              ? {
+                  ...b,
+                  logistics_info: updatedLogistics,
+                  food_allergies: updatedAllergies,
+                }
+              : b
+          )
+        );
+
+        try {
+          const bc = new BroadcastChannel("roxan_catering_events");
+          bc.postMessage({
+            type: "BOOKINGS_UPDATED",
+            bookingId: payingBalanceBooking.id,
+            action: "excess_payment_submitted",
+          });
+          bc.close();
+        } catch (e) {}
+        try {
+          localStorage.setItem("roxan_last_booking_update", String(Date.now()));
+        } catch (e) {}
+
+        triggerModSuccessToast(
+          "Excess headcount surcharge receipt submitted! Our coordinator will verify your payment shortly."
+        );
+      } else if (payingMilestone !== null) {
         // === SUBMITTING PAYMENT PROOF FOR AN INDIVIDUAL INSTALLMENT MILESTONE ===
         const currentSchedule: any[] =
           payingBalanceBooking.installment_schedule ||
@@ -1119,6 +1245,7 @@ export default function MyInquiriesPage() {
 
       setPayingBalanceBooking(null);
       setPayingMilestone(null);
+      setPayingExcessSurcharge(null);
     } catch (err: any) {
       console.error("Error submitting payment proof:", err);
       setBalanceError(err.message || "Failed to submit payment receipt.");
@@ -1314,8 +1441,21 @@ export default function MyInquiriesPage() {
               const rainLaundryFee = Number(logData?.rainLaundryFee) || (logData?.rainLaundryApplied ? 2000 : 0);
               const postEventBilling = logData?.post_event_billing || (booking as any)?.post_event_billing || null;
               const excessGuestFee = Number(postEventBilling?.excess_guest_fee) || 0;
+              const isExcessSettled = Boolean(
+                postEventBilling &&
+                  (postEventBilling.payment_status === "Verified" ||
+                    postEventBilling.payment_status === "Paid")
+              );
+              const isExcessUnderReview = Boolean(
+                postEventBilling &&
+                  !isExcessSettled &&
+                  excessGuestFee > 0 &&
+                  (postEventBilling.payment_status === "Pending Verification" ||
+                    Boolean(postEventBilling.receipt_url))
+              );
+              const excessReceiptUrl = String(postEventBilling?.receipt_url || "");
 
-              const totalAdditionalFees = travelFee + haulingFee + corkageFee + totalOTFee + rainLaundryFee + excessGuestFee;
+      const totalAdditionalFees = travelFee + haulingFee + corkageFee + totalOTFee + rainLaundryFee;
               const totalEventCost = basePrice + additionalPaxTotal + totalAdditionalFees;
 
               const paymentData = (() => {
@@ -1357,7 +1497,7 @@ export default function MyInquiriesPage() {
                 // Fixed date-lock deposit strictly excludes post-booking additions (out-of-town travel fee & day-of overtime)
                 const effectiveDownpayment = downpayment > 0
                   ? downpayment
-                  : Math.round(Math.max(0, totalEventCost - travelFee - dayOfOTFee - rainLaundryFee - excessGuestFee) * (is50Percent ? 0.5 : 0.2));
+                  : Math.round(Math.max(0, totalEventCost - travelFee - dayOfOTFee - rainLaundryFee) * (is50Percent ? 0.5 : 0.2));
 
                 // If customer is on installment plan, sum verified/paid milestones
                 let paidMilestones = 0;
@@ -1528,7 +1668,7 @@ export default function MyInquiriesPage() {
                 badge?: string;
                 alertDot?: boolean;
               }[] = [
-                ...(paymentData
+                ...((paymentData || excessGuestFee > 0)
                   ? [
                       {
                         key: "payments" as InquiryTab,
@@ -1538,10 +1678,11 @@ export default function MyInquiriesPage() {
                           : undefined,
                         alertDot: Boolean(
                           !isCancelled &&
-                            !isBalanceSettled &&
-                            !isBalanceUnderReview &&
-                            daysUntilDeadline !== null &&
-                            daysUntilDeadline <= 7
+                            ((!isBalanceSettled &&
+                              !isBalanceUnderReview &&
+                              daysUntilDeadline !== null &&
+                              daysUntilDeadline <= 7) ||
+                              (excessGuestFee > 0 && !isExcessSettled && !isExcessUnderReview))
                         ),
                       },
                     ]
@@ -1562,7 +1703,7 @@ export default function MyInquiriesPage() {
               ];
 
               const defaultTab: InquiryTab =
-                !isCancelled && paymentData ? "payments" : "breakdown";
+                !isCancelled && (paymentData || excessGuestFee > 0) ? "payments" : "breakdown";
               const storedTab = activeTabByBooking[bookingKey];
               const activeTab: InquiryTab =
                 storedTab && availableTabs.some((t) => t.key === storedTab)
@@ -1822,7 +1963,7 @@ export default function MyInquiriesPage() {
                   )}
 
                   {/* 3. Unified 3-Column Financial Summary Strip */}
-                  <div className="mx-5 sm:mx-6 mb-4 rounded-md bg-white/[0.03] border border-white/10 grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-white/10">
+                  <div className={`mx-5 sm:mx-6 mb-4 rounded-md bg-white/[0.03] border border-white/10 grid grid-cols-1 ${excessGuestFee > 0 ? "sm:grid-cols-2 lg:grid-cols-4" : "sm:grid-cols-3"} divide-y sm:divide-y-0 sm:divide-x divide-white/10`}>
                     <div className="px-4 py-3">
                       <p className="text-[10px] uppercase tracking-wider font-semibold text-white/45">
                         Estimated Total
@@ -1924,6 +2065,52 @@ export default function MyInquiriesPage() {
                         )}
                       </p>
                     </div>
+
+                    {excessGuestFee > 0 && (
+                      <div className="px-4 py-3 bg-rose-500/[0.03]">
+                        <div className="flex items-center justify-between gap-2">
+                          <p className="text-[10px] uppercase tracking-wider font-semibold text-rose-300/80">
+                            Excess Surcharge
+                          </p>
+                          {excessReceiptUrl && (
+                            <button
+                              type="button"
+                              aria-describedby={cardHeadingId}
+                              onClick={() => setViewingReceiptUrl(excessReceiptUrl)}
+                              className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-gold-400 hover:text-gold-200 transition-colors min-h-6 px-1.5 -my-1 rounded focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-400 cursor-pointer"
+                            >
+                              <Eye size={11} aria-hidden="true" /> View Slip
+                            </button>
+                          )}
+                        </div>
+                        <p
+                          className={`text-lg sm:text-xl font-serif font-bold tabular-nums mt-0.5 ${
+                            isCancelled
+                              ? "text-white/40"
+                              : isExcessSettled
+                              ? "text-emerald-400"
+                              : isExcessUnderReview
+                              ? "text-amber-300"
+                              : "text-rose-400"
+                          }`}
+                        >
+                          ₱{excessGuestFee.toLocaleString()}
+                        </p>
+                        <p className="text-[11px] mt-0.5">
+                          {isCancelled ? (
+                            <span className="text-white/40">Booking cancelled</span>
+                          ) : isExcessSettled ? (
+                            <span className="text-emerald-400 font-medium">Settled &amp; Verified</span>
+                          ) : isExcessUnderReview ? (
+                            <span className="text-amber-300 font-medium">Receipt under review</span>
+                          ) : (
+                            <span className="text-rose-300 font-medium">
+                              Unpaid{postEventBilling?.due_date ? ` · Due ${postEventBilling.due_date}` : ""}
+                            </span>
+                          )}
+                        </p>
+                      </div>
+                    )}
                   </div>
 
                   {/* 4. Accessible Tab Navigation Bar */}
@@ -1993,8 +2180,10 @@ export default function MyInquiriesPage() {
                     className="p-5 sm:p-6"
                   >
                     {/* TAB 1: PAYMENTS & INSTALLMENT SCHEDULE */}
-                    {activeTab === "payments" && paymentData && (
+                    {activeTab === "payments" && (paymentData || excessGuestFee > 0) && (
                       <div className="space-y-4">
+                        {paymentData && (
+                          <>
                         {/* Quiet Initial Deposit Record Line */}
                         <div className="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-white/10 text-xs">
                           <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-white/75">
@@ -2300,6 +2489,91 @@ export default function MyInquiriesPage() {
                                   );
                                 });
                               })()}
+                            </div>
+                          </div>
+                        )}
+                          </>
+                        )}
+
+                        {/* Post-Event Excess Headcount Surcharge Payment Section (Separate Balance) */}
+                        {!isCancelled && excessGuestFee > 0 && (
+                          <div className="p-4 rounded-md bg-rose-500/[0.04] border border-rose-500/25 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                            <div className="space-y-1">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <h3 className="text-sm font-sans font-bold text-white tracking-wide flex items-center gap-1.5">
+                                  <Users size={14} className="text-rose-400" aria-hidden="true" />
+                                  Excess Headcount Surcharge
+                                </h3>
+                                {isExcessSettled ? (
+                                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-emerald-500/15 text-emerald-400 border border-emerald-500/35 inline-flex items-center gap-1">
+                                    <CheckCircle size={11} aria-hidden="true" /> Settled
+                                  </span>
+                                ) : isExcessUnderReview ? (
+                                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-amber-500/15 text-amber-300 border border-amber-500/35 inline-flex items-center gap-1">
+                                    <Clock size={11} aria-hidden="true" /> Under Review
+                                  </span>
+                                ) : (
+                                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-rose-500/15 text-rose-300 border border-rose-500/35">
+                                    Unpaid · Post-Event Balance
+                                  </span>
+                                )}
+                              </div>
+                              <p className="text-xs text-white/70">
+                                Amount Due:{" "}
+                                <strong className="text-rose-300 font-serif text-sm tabular-nums">
+                                  ₱{excessGuestFee.toLocaleString()}
+                                </strong>
+                                <span>
+                                  {" "}· +{postEventBilling?.excess_guests || 0} excess pax ({postEventBilling?.actual_headcount_served} served vs {postEventBilling?.guaranteed_headcount} guaranteed)
+                                </span>
+                                {postEventBilling?.due_date && (
+                                  <span>
+                                    {" "}· Due{" "}
+                                    <strong className="text-white/90 font-medium">
+                                      {postEventBilling.due_date}
+                                    </strong>
+                                  </span>
+                                )}
+                              </p>
+                              {(postEventBilling?.payment_method || postEventBilling?.reference_number) && (
+                                <p className="text-[11px] text-white/50 flex flex-wrap items-center gap-2 pt-0.5">
+                                  {postEventBilling?.payment_method && (
+                                    <span className="px-1.5 py-0.5 rounded bg-white/10 text-[10px] font-bold uppercase tracking-wider text-white/75">
+                                      {postEventBilling.payment_method}
+                                    </span>
+                                  )}
+                                  {postEventBilling?.reference_number && (
+                                    <span className="font-mono text-white/55">
+                                      Ref: {postEventBilling.reference_number}
+                                    </span>
+                                  )}
+                                </p>
+                              )}
+                            </div>
+
+                            <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto shrink-0">
+                              {excessReceiptUrl && (
+                                <button
+                                  type="button"
+                                  aria-describedby={cardHeadingId}
+                                  onClick={() => setViewingReceiptUrl(excessReceiptUrl)}
+                                  className="px-3 py-2 min-h-9 border border-white/20 hover:border-gold-400/50 text-white/80 hover:text-white text-[10px] font-bold uppercase tracking-wider rounded transition-colors inline-flex items-center gap-1.5 cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-400"
+                                >
+                                  <Eye size={12} aria-hidden="true" /> Excess Slip
+                                </button>
+                              )}
+
+                              {!isExcessSettled && (
+                                <button
+                                  type="button"
+                                  aria-describedby={cardHeadingId}
+                                  onClick={() => handleOpenExcessPaymentModal({ ...booking, paymentData }, postEventBilling)}
+                                  className="px-4 py-2 min-h-9 gold-gradient text-black hover:brightness-110 text-xs font-bold uppercase tracking-wider rounded transition-all shadow-md inline-flex items-center gap-1.5 cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-400"
+                                >
+                                  <CreditCard size={13} aria-hidden="true" />
+                                  {isExcessUnderReview ? "Re-upload Excess Slip" : "Pay Excess Surcharge"}
+                                </button>
+                              )}
                             </div>
                           </div>
                         )}
@@ -2621,26 +2895,9 @@ export default function MyInquiriesPage() {
                             </div>
                           )}
 
-                          {/* Excess Headcount Served Surcharge (when post-event excess guests billed) */}
-                          {excessGuestFee > 0 && (
-                            <div className="py-2.5 flex items-baseline justify-between gap-4">
-                              <div>
-                                <dt className="text-rose-300 font-medium flex items-center gap-1.5">
-                                  <Users size={13} className="text-rose-400" />
-                                  Excess Headcount Served Surcharge
-                                </dt>
-                                <dd className="text-[11px] text-white/60 mt-0.5">
-                                  {postEventBilling?.excess_guests} attendee(s) beyond guaranteed count ({postEventBilling?.guaranteed_headcount} pax) @ ₱500/pax · Due {postEventBilling?.due_date || "next day"}
-                                </dd>
-                              </div>
-                              <dd className="font-semibold text-rose-300 tabular-nums shrink-0">
-                                +₱{excessGuestFee.toLocaleString()}
-                              </dd>
-                            </div>
-                          )}
                         </dl>
 
-                        {/* Receipt Totals Reconciliation */}
+                        {/* Contract Receipt Totals Reconciliation (Pre-Event Settled Balance) */}
                         <div className="pt-3 border-t border-white/15 space-y-1.5 text-xs tabular-nums">
                           <div className="flex items-center justify-between text-white/80">
                             <span>Estimated Event Total</span>
@@ -2662,17 +2919,86 @@ export default function MyInquiriesPage() {
                                   <span>−₱{paymentData.paidMilestones.toLocaleString()}</span>
                                 </div>
                               )}
-                              <div className="pt-2 border-t border-white/10 flex items-baseline justify-between">
-                                <span className="font-bold uppercase tracking-wider text-white/90 text-[11px]">
-                                  Remaining Balance
+                              <div className="pt-2 border-t border-white/10 flex items-baseline justify-between gap-2">
+                                <span className="font-bold uppercase tracking-wider text-white/90 text-[11px] flex items-center gap-2">
+                                  <span>{isBalanceSettled ? "Contract Balance" : "Remaining Balance"}</span>
+                                  {isBalanceSettled && (
+                                    <span className="px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider bg-emerald-500/15 text-emerald-400 border border-emerald-500/35">
+                                      Settled &amp; Verified
+                                    </span>
+                                  )}
                                 </span>
-                                <span className="font-serif font-bold text-base text-gold-400">
+                                <span
+                                  className={`font-serif font-bold text-base ${
+                                    isBalanceSettled ? "text-emerald-400" : "text-gold-400"
+                                  }`}
+                                >
                                   ₱{paymentData.balanceAmount.toLocaleString()}
                                 </span>
                               </div>
                             </>
                           )}
                         </div>
+
+                        {/* Separate Post-Event Excess Headcount Surcharge Balance (Not counted in settled balance) */}
+                        {excessGuestFee > 0 && (
+                          <div className="mt-3 p-3.5 rounded-md bg-rose-500/[0.04] border border-rose-500/25 space-y-2.5 text-xs tabular-nums">
+                            <div className="flex items-baseline justify-between gap-4">
+                              <div>
+                                <p className="text-rose-300 font-semibold flex items-center gap-1.5">
+                                  <Users size={13} className="text-rose-400" />
+                                  Excess Headcount Served Surcharge
+                                </p>
+                                <p className="text-[11px] text-white/60 mt-0.5">
+                                  {postEventBilling?.excess_guests} attendee(s) beyond guaranteed count ({postEventBilling?.guaranteed_headcount} pax) @ ₱500/pax · Due {postEventBilling?.due_date || "next day"}
+                                </p>
+                              </div>
+                              <span className="font-semibold text-rose-300 shrink-0">
+                                +₱{excessGuestFee.toLocaleString()}
+                              </span>
+                            </div>
+                            <div className="pt-2 border-t border-rose-500/20 flex flex-wrap items-center justify-between gap-2">
+                              <span className="font-bold uppercase tracking-wider text-white/90 text-[11px] flex items-center gap-2">
+                                <span>Excess Surcharge Balance</span>
+                                {isExcessSettled ? (
+                                  <span className="px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider bg-emerald-500/15 text-emerald-400 border border-emerald-500/35">
+                                    Settled &amp; Verified
+                                  </span>
+                                ) : isExcessUnderReview ? (
+                                  <span className="px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider bg-amber-500/15 text-amber-300 border border-amber-500/35">
+                                    Under Review
+                                  </span>
+                                ) : (
+                                  <span className="px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider bg-rose-500/15 text-rose-300 border border-rose-500/35">
+                                    Unpaid
+                                  </span>
+                                )}
+                              </span>
+                              <div className="flex items-center gap-2.5">
+                                {!isCancelled && !isExcessSettled && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleOpenExcessPaymentModal({ ...booking, paymentData }, postEventBilling)}
+                                    className="px-2.5 py-1 rounded gold-gradient text-black text-[10px] font-bold uppercase tracking-wider hover:brightness-110 transition-all cursor-pointer"
+                                  >
+                                    {isExcessUnderReview ? "Update Slip" : "Pay Now →"}
+                                  </button>
+                                )}
+                                <span
+                                  className={`font-serif font-bold text-base ${
+                                    isExcessSettled
+                                      ? "text-emerald-400"
+                                      : isExcessUnderReview
+                                      ? "text-amber-300"
+                                      : "text-rose-300"
+                                  }`}
+                                >
+                                  ₱{excessGuestFee.toLocaleString()}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>
@@ -2867,10 +3193,10 @@ export default function MyInquiriesPage() {
                   </div>
                   <div>
                     <h2 id="balance-modal-title" className="text-xl sm:text-2xl font-serif text-white italic">
-                      Pay <span className="gold-text-gradient font-bold not-italic">{payingMilestone ? payingMilestone.title : "Final Balance"}</span>
+                      Pay <span className="gold-text-gradient font-bold not-italic">{payingExcessSurcharge ? "Excess Headcount Surcharge" : payingMilestone ? payingMilestone.title : "Final Balance"}</span>
                     </h2>
                     <p className="text-xs text-white/60 uppercase tracking-widest font-semibold mt-0.5">
-                      {payingMilestone ? `Milestone Installment • Due: ${payingMilestone.dueDate || "As scheduled"}` : "Due 15 Days Before Event Date"}
+                      {payingExcessSurcharge ? `Post-Event Excess Surcharge • Due: ${payingExcessSurcharge.dueDate || "Next Day"}` : payingMilestone ? `Milestone Installment • Due: ${payingMilestone.dueDate || "As scheduled"}` : "Due 15 Days Before Event Date"}
                     </p>
                   </div>
                 </div>
@@ -2880,6 +3206,7 @@ export default function MyInquiriesPage() {
                   onClick={() => {
                     setPayingBalanceBooking(null);
                     setPayingMilestone(null);
+                    setPayingExcessSurcharge(null);
                   }}
                   className="text-white/40 hover:text-white p-2 rounded-lg hover:bg-white/5 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-400"
                 >
@@ -2901,29 +3228,37 @@ export default function MyInquiriesPage() {
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
                       <p className="text-[10px] uppercase font-bold tracking-widest text-gold-400 mb-1">
-                        {payingMilestone ? `${payingMilestone.title} Amount Due` : "Final Balance Amount Due"}
+                        {payingExcessSurcharge ? "Excess Headcount Surcharge Due" : payingMilestone ? `${payingMilestone.title} Amount Due` : "Final Balance Amount Due"}
                       </p>
                       <p className="text-3xl font-serif text-gold-400 font-bold tabular-nums">
-                        ₱{Number(payingMilestone ? payingMilestone.amount : (payingBalanceBooking.paymentData?.balanceAmount || payingBalanceBooking.final_balance_amount || 0)).toLocaleString()}
+                        ₱{Number(payingExcessSurcharge ? payingExcessSurcharge.amount : payingMilestone ? payingMilestone.amount : (payingBalanceBooking.paymentData?.balanceAmount || payingBalanceBooking.final_balance_amount || 0)).toLocaleString()}
                       </p>
                       <span className="text-[11px] text-white/60">
-                        {payingBalanceBooking.packages?.name || "Catering Event Package"}
+                        {payingExcessSurcharge ? `+${payingExcessSurcharge.excessGuests} excess pax (${payingExcessSurcharge.actualPax} served vs ${payingExcessSurcharge.guaranteedPax} guaranteed)` : (payingBalanceBooking.packages?.name || "Catering Event Package")}
                       </span>
                     </div>
                     <div className="sm:border-l sm:border-white/10 sm:pl-4">
                       <p className="text-[10px] uppercase font-bold tracking-widest text-white/50 mb-1">
-                        {payingMilestone ? "Milestone Scheduled Due Date" : "Event Date & Settlement Deadline"}
+                        {payingExcessSurcharge ? "Post-Event Payment Due Date" : payingMilestone ? "Milestone Scheduled Due Date" : "Event Date & Settlement Deadline"}
                       </p>
                       <p className="text-sm font-bold text-white">
-                        {payingMilestone ? payingMilestone.dueDate : (payingBalanceBooking.event_date || "Event Date")}
+                        {payingExcessSurcharge ? (payingExcessSurcharge.dueDate || "Next Day") : payingMilestone ? payingMilestone.dueDate : (payingBalanceBooking.event_date || "Event Date")}
                       </p>
                       <span className="text-[10px] text-amber-300 font-semibold block mt-1">
-                        {payingMilestone ? "Scheduled Installment Milestone" : "Due at least 15 days before event"}
+                        {payingExcessSurcharge ? "Separate Post-Event Headcount Balance" : payingMilestone ? "Scheduled Installment Milestone" : "Due at least 15 days before event"}
                       </span>
                     </div>
                   </div>
                   <p className="text-[11px] text-white/65 leading-relaxed pt-3 border-t border-white/10">
-                    Per contract policy, full balance settlement is strictly required at least <strong className="text-white/90">15 days before your event date</strong> to finalize procurement, kitchen preparation, and staffing. Upload your transfer receipt below for coordinator verification.
+                    {payingExcessSurcharge ? (
+                      <>
+                        This post-event surcharge covers additional attendees served beyond your guaranteed guest count and is tracked separately from your settled contract balance. Upload your transfer receipt below for coordinator verification.
+                      </>
+                    ) : (
+                      <>
+                        Per contract policy, full balance settlement is strictly required at least <strong className="text-white/90">15 days before your event date</strong> to finalize procurement, kitchen preparation, and staffing. Upload your transfer receipt below for coordinator verification.
+                      </>
+                    )}
                   </p>
                 </div>
 
@@ -3069,7 +3404,7 @@ export default function MyInquiriesPage() {
                 {/* Upload Receipt */}
                 <div className="space-y-3 text-left">
                   <label className="text-xs font-bold uppercase tracking-wider text-white/90 block">
-                    Upload {payingMilestone ? `${payingMilestone.title} Receipt` : "Final Balance Receipt"} <span className="text-red-400">*</span>
+                    Upload {payingExcessSurcharge ? "Excess Surcharge Receipt" : payingMilestone ? `${payingMilestone.title} Receipt` : "Final Balance Receipt"} <span className="text-red-400">*</span>
                   </label>
                   {balanceReceiptImage ? (
                     <div className="p-4 bg-white/5 border border-gold-400/40 rounded-xl flex items-center justify-between gap-4">
@@ -3106,7 +3441,7 @@ export default function MyInquiriesPage() {
                   ) : (
                     <label className="border-2 border-dashed border-white/20 hover:border-gold-400/60 transition-colors p-6 rounded-xl flex flex-col items-center justify-center cursor-pointer bg-white/[0.02] hover:bg-white/[0.04]">
                       <UploadCloud size={32} className="text-gold-400 mb-2" />
-                      <p className="text-sm font-bold text-white">Click to upload {payingMilestone ? `${payingMilestone.title} slip` : "balance receipt slip"}</p>
+                      <p className="text-sm font-bold text-white">Click to upload {payingExcessSurcharge ? "excess surcharge slip" : payingMilestone ? `${payingMilestone.title} slip` : "balance receipt slip"}</p>
                       <p className="text-xs text-white/50 mt-1">PNG, JPG, or WEBP transaction confirmation</p>
                       <input
                         type="file"
@@ -3140,6 +3475,7 @@ export default function MyInquiriesPage() {
                   onClick={() => {
                     setPayingBalanceBooking(null);
                     setPayingMilestone(null);
+                    setPayingExcessSurcharge(null);
                   }}
                   className="w-full sm:w-auto px-6 py-3 border border-white/20 text-white/70 text-xs font-bold uppercase tracking-wider hover:bg-white/5 transition-colors rounded-sm"
                 >
@@ -3153,6 +3489,8 @@ export default function MyInquiriesPage() {
                 >
                   {isSubmittingBalance
                     ? "Submitting Receipt..."
+                    : payingExcessSurcharge
+                    ? "Submit Proof of Excess Surcharge"
                     : payingMilestone
                     ? `Submit Proof for ${payingMilestone.title}`
                     : "Submit Proof of Final Balance"}

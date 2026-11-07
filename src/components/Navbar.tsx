@@ -1,5 +1,5 @@
 import { motion, AnimatePresence } from "motion/react";
-import { Menu as MenuIcon, X, Bell, ChevronDown, CloudRain, Check } from "lucide-react";
+import { Menu as MenuIcon, X, Bell, ChevronDown, CloudRain, Check, Users } from "lucide-react";
 import { useState, useEffect, useRef } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { supabase } from "../utils/supabase";
@@ -78,6 +78,12 @@ export default function Navbar() {
 
   const getNotifKey = (b: any) => {
     if (b.notifKey) return b.notifKey;
+    if (b.notifType === "excess_headcount") {
+      return `${b.id}-excess-headcount-${b.excessBilling?.excess_guest_fee}-${b.notifTimestamp}`;
+    }
+    if (b.notifType === "excess_headcount_removed") {
+      return `${b.id}-excess-removed-${b.notifTimestamp}`;
+    }
     if (b.notifType === "rain_laundry") {
       return `${b.id}-rain-laundry-${b.rainAction}-${b.notifTimestamp || b.logistics_info?.rainLaundryLastActionAt}`;
     }
@@ -344,6 +350,65 @@ export default function Navbar() {
               notifTimestamp: b.logistics_info?.updated_at || b.created_at,
             });
           }
+
+          // Check for post-event excess headcount surcharge applied or removed by coordinator
+          const postLog = b.logistics_info;
+          if (Array.isArray(postLog?.excessHeadcountHistory) && postLog.excessHeadcountHistory.length > 0 && !isCustomerCancelled) {
+            postLog.excessHeadcountHistory.forEach((item: any) => {
+              const feeVal = Number(item.fee) || 0;
+              if (item.action === 'charged' && feeVal > 0) {
+                expandedNotifications.push({
+                  ...b,
+                  notifType: 'excess_headcount',
+                  notifKey: `${b.id}-excess-headcount-${feeVal}-${item.timestamp}`,
+                  notifTimestamp: item.timestamp || b.created_at,
+                  excessAction: item.action,
+                  excessFee: feeVal,
+                  excessBilling: postLog.post_event_billing || {
+                    excess_guest_fee: feeVal,
+                    actual_headcount_served: item.actual_headcount,
+                    guaranteed_headcount: item.guaranteed_headcount,
+                    excess_guests: item.excess_guests,
+                    due_date: item.due_date,
+                    payment_status: postLog.post_event_billing?.payment_status || "Unpaid",
+                  },
+                });
+              } else if (item.action === 'removed') {
+                expandedNotifications.push({
+                  ...b,
+                  notifType: 'excess_headcount_removed',
+                  notifKey: `${b.id}-excess-removed-${item.timestamp}`,
+                  notifTimestamp: item.timestamp || b.created_at,
+                  excessAction: item.action,
+                  excessFee: 0,
+                  excessBilling: postLog.post_event_billing,
+                });
+              }
+            });
+          } else {
+            const postEvent = postLog?.post_event_billing || (b as any)?.post_event_billing;
+            const excessFee = Number(postEvent?.excess_guest_fee) || 0;
+            if (postEvent && excessFee > 0 && !isCustomerCancelled) {
+              const notifTs = postEvent.updated_at || postEvent.billed_at || postEvent.last_action_at || b.created_at;
+              const notifKey = `${b.id}-excess-headcount-${excessFee}-${notifTs}`;
+              expandedNotifications.push({
+                ...b,
+                notifType: 'excess_headcount',
+                notifKey,
+                notifTimestamp: notifTs,
+                excessBilling: postEvent,
+              });
+            } else if (postEvent?.last_action === 'removed' && postEvent?.last_action_at && !isCustomerCancelled) {
+              const notifKey = `${b.id}-excess-removed-${postEvent.last_action_at}`;
+              expandedNotifications.push({
+                ...b,
+                notifType: 'excess_headcount_removed',
+                notifKey,
+                notifTimestamp: postEvent.last_action_at,
+                excessBilling: postEvent,
+              });
+            }
+          }
         });
 
         // Sort primarily by the most recent update so new confirmations sit at the top
@@ -354,8 +419,26 @@ export default function Navbar() {
         });
         setNotifications(sorted);
 
-        // Check for live toast trigger for recently updated rain laundry fee
-        if (!initialMountRef.current) {
+        // Check for live toast trigger for recently updated excess headcount or rain laundry fee
+        const unreadExcess = expandedNotifications.find(
+          (n: any) =>
+            (n.notifType === "excess_headcount" || n.notifType === "excess_headcount_removed") &&
+            !readIds.includes(n.notifKey)
+        );
+        if (unreadExcess) {
+          const isRemoved = unreadExcess.notifType === "excess_headcount_removed";
+          const excessAmount = Number(unreadExcess.excessFee ?? unreadExcess.excessBilling?.excess_guest_fee ?? 0);
+          setLiveToast({
+            id: unreadExcess.notifKey,
+            title: isRemoved
+              ? "Excess Headcount Surcharge Removed (Waived)"
+              : `Excess Headcount Surcharge Applied (+₱${excessAmount.toLocaleString()})`,
+            subtitle: isRemoved
+              ? `Waived by coordinator for ${unreadExcess.event_date}.`
+              : `Applied for ${unreadExcess.event_date} (${unreadExcess.excessGuests ?? unreadExcess.excessBilling?.excess_guests ?? 0} excess attendee(s)). Settle in My Inquiries.`,
+            action: isRemoved ? "excess_removed" : "excess",
+          });
+        } else if (!initialMountRef.current) {
           const unreadRain = expandedNotifications.find(
             (n: any) => n.notifType === "rain_laundry" && !readIds.includes(n.notifKey)
           );
@@ -439,12 +522,15 @@ export default function Navbar() {
     const channelName = `user-bookings-${user.id}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
     const channel = supabase
       .channel(channelName)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'bookings', filter: `user_id=eq.${user.id}` }, () => {
-        if (realtimeDebounce) clearTimeout(realtimeDebounce);
-        realtimeDebounce = setTimeout(() => {
-          triggerNotificationsFetch(true);
-          window.dispatchEvent(new CustomEvent('bookingsRealtimeUpdated'));
-        }, 250);
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'bookings' }, (payload: any) => {
+        const payloadUserId = payload.new?.user_id || payload.old?.user_id;
+        if (!payloadUserId || payloadUserId === user.id) {
+          if (realtimeDebounce) clearTimeout(realtimeDebounce);
+          realtimeDebounce = setTimeout(() => {
+            triggerNotificationsFetch(true);
+            window.dispatchEvent(new CustomEvent('bookingsRealtimeUpdated'));
+          }, 200);
+        }
       })
       .subscribe((status: string) => {
         realtimeConnected = status === 'SUBSCRIBED';
@@ -785,17 +871,29 @@ export default function Navbar() {
             <div className="flex items-start gap-3">
               <div
                 className={`p-2 rounded-lg shrink-0 ${
-                  liveToast.action === "removed"
+                  liveToast.action === "removed" || liveToast.action === "excess_removed"
                     ? "bg-emerald-500/20 text-emerald-400"
+                    : liveToast.action === "excess"
+                    ? "bg-rose-500/20 text-rose-400"
                     : "bg-amber-500/20 text-amber-400"
                 }`}
               >
-                {liveToast.action === "removed" ? <Check size={18} /> : <CloudRain size={18} />}
+                {liveToast.action === "removed" || liveToast.action === "excess_removed" ? (
+                  <Check size={18} />
+                ) : liveToast.action === "excess" ? (
+                  <Users size={18} />
+                ) : (
+                  <CloudRain size={18} />
+                )}
               </div>
               <div className="flex-1 min-w-0">
                 <p
                   className={`text-xs font-bold uppercase tracking-wider ${
-                    liveToast.action === "removed" ? "text-emerald-300" : "text-amber-300"
+                    liveToast.action === "removed" || liveToast.action === "excess_removed"
+                      ? "text-emerald-300"
+                      : liveToast.action === "excess"
+                      ? "text-rose-300"
+                      : "text-amber-300"
                   }`}
                 >
                   {liveToast.title}
