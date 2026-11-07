@@ -1,5 +1,5 @@
 import { motion, AnimatePresence } from "motion/react";
-import { Menu as MenuIcon, X, Bell, ChevronDown, CloudRain, Check, Users } from "lucide-react";
+import { Menu as MenuIcon, X, Bell, ChevronDown } from "lucide-react";
 import { useState, useEffect, useRef } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { supabase } from "../utils/supabase";
@@ -45,19 +45,6 @@ export default function Navbar() {
   const desktopNotifRef = useRef<HTMLDivElement>(null);
   const mobileNotifRef = useRef<HTMLDivElement>(null);
   const fetchNotifsRef = useRef<((force?: boolean) => Promise<void>) | null>(null);
-  const [liveToast, setLiveToast] = useState<{
-    id: string;
-    title: string;
-    subtitle: string;
-    action?: string;
-  } | null>(null);
-  const initialMountRef = useRef(true);
-
-  useEffect(() => {
-    if (!liveToast) return;
-    const timer = setTimeout(() => setLiveToast(null), 7000);
-    return () => clearTimeout(timer);
-  }, [liveToast]);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -418,44 +405,6 @@ export default function Navbar() {
           return timeB - timeA;
         });
         setNotifications(sorted);
-
-        // Check for live toast trigger for recently updated excess headcount or rain laundry fee
-        const unreadExcess = expandedNotifications.find(
-          (n: any) =>
-            (n.notifType === "excess_headcount" || n.notifType === "excess_headcount_removed") &&
-            !readIds.includes(n.notifKey)
-        );
-        if (unreadExcess) {
-          const isRemoved = unreadExcess.notifType === "excess_headcount_removed";
-          const excessAmount = Number(unreadExcess.excessFee ?? unreadExcess.excessBilling?.excess_guest_fee ?? 0);
-          setLiveToast({
-            id: unreadExcess.notifKey,
-            title: isRemoved
-              ? "Excess Headcount Surcharge Removed (Waived)"
-              : `Excess Headcount Surcharge Applied (+₱${excessAmount.toLocaleString()})`,
-            subtitle: isRemoved
-              ? `Waived by coordinator for ${unreadExcess.event_date}.`
-              : `Applied for ${unreadExcess.event_date} (${unreadExcess.excessGuests ?? unreadExcess.excessBilling?.excess_guests ?? 0} excess attendee(s)). Settle in My Inquiries.`,
-            action: isRemoved ? "excess_removed" : "excess",
-          });
-        } else if (!initialMountRef.current) {
-          const unreadRain = expandedNotifications.find(
-            (n: any) => n.notifType === "rain_laundry" && !readIds.includes(n.notifKey)
-          );
-          if (unreadRain) {
-            setLiveToast({
-              id: unreadRain.notifKey,
-              title: unreadRain.rainAction === "removed"
-                ? "Rain Laundry Surcharge Removed (-₱2,000)"
-                : "Outdoor Rain / Laundry Surcharge (+₱2,000)",
-              subtitle: unreadRain.rainAction === "removed"
-                ? `Waived by coordinator for ${unreadRain.event_date}. Invoice balance reduced.`
-                : `Applied for ${unreadRain.event_date} for soiled linens due to rain without client tents.`,
-              action: unreadRain.rainAction,
-            });
-          }
-        }
-        initialMountRef.current = false;
       }
     };
 
@@ -854,72 +803,6 @@ export default function Navbar() {
                 </button>
               </div>
             </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* Floating In-App Toast Alert for Real-time Customer Notifications */}
-      <AnimatePresence>
-        {liveToast && (
-          <motion.div
-            initial={{ opacity: 0, y: -20, scale: 0.95 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: -20, scale: 0.95 }}
-            transition={{ duration: 0.25 }}
-            className="fixed top-20 right-4 sm:right-8 z-[9999] max-w-sm w-full bg-[#121212]/95 border border-amber-500/40 rounded-xl shadow-2xl p-4 backdrop-blur-md pointer-events-auto text-left"
-          >
-            <div className="flex items-start gap-3">
-              <div
-                className={`p-2 rounded-lg shrink-0 ${
-                  liveToast.action === "removed" || liveToast.action === "excess_removed"
-                    ? "bg-emerald-500/20 text-emerald-400"
-                    : liveToast.action === "excess"
-                    ? "bg-rose-500/20 text-rose-400"
-                    : "bg-amber-500/20 text-amber-400"
-                }`}
-              >
-                {liveToast.action === "removed" || liveToast.action === "excess_removed" ? (
-                  <Check size={18} />
-                ) : liveToast.action === "excess" ? (
-                  <Users size={18} />
-                ) : (
-                  <CloudRain size={18} />
-                )}
-              </div>
-              <div className="flex-1 min-w-0">
-                <p
-                  className={`text-xs font-bold uppercase tracking-wider ${
-                    liveToast.action === "removed" || liveToast.action === "excess_removed"
-                      ? "text-emerald-300"
-                      : liveToast.action === "excess"
-                      ? "text-rose-300"
-                      : "text-amber-300"
-                  }`}
-                >
-                  {liveToast.title}
-                </p>
-                <p className="text-xs text-white/80 mt-0.5 leading-snug">
-                  {liveToast.subtitle}
-                </p>
-                <div className="flex items-center gap-3 mt-2.5">
-                  <button
-                    onClick={() => {
-                      setIsNotifOpen(true);
-                      setLiveToast(null);
-                    }}
-                    className="text-[11px] font-bold text-gold-400 hover:text-white uppercase tracking-wider transition-colors"
-                  >
-                    View in Notifications →
-                  </button>
-                </div>
-              </div>
-              <button
-                onClick={() => setLiveToast(null)}
-                className="text-white/40 hover:text-white transition-colors p-1 -mr-1 -mt-1"
-              >
-                <X size={16} />
-              </button>
-            </div>
           </motion.div>
         )}
       </AnimatePresence>

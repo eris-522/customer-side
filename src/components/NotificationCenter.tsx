@@ -242,9 +242,8 @@ export function NotificationCenter({ isOpen, onClose, notifications, unreadCount
                       <div className="mt-3 pt-3 border-t border-white/10 animate-in slide-in-from-top-1 fade-in duration-200">
                         {notif.notifType === 'excess_headcount' && (
                           <div className="mb-3 p-3 bg-rose-500/10 border border-rose-500/20 rounded-md space-y-1.5 text-xs text-rose-200">
-                            <div className="flex justify-between items-center text-rose-300 font-bold">
+                            <div className="text-rose-300 font-bold">
                               <span>Excess Headcount Surcharge: +₱{Number(notif.excessFee ?? notif.excessBilling?.excess_guest_fee ?? 0).toLocaleString()}</span>
-                              <span className="text-[10px] uppercase px-1.5 py-0.5 rounded bg-rose-500/20">Post-Event</span>
                             </div>
                             <p className="text-[11px] text-white/80">
                               Actual headcount served was <strong>{notif.excessActual ?? notif.excessBilling?.actual_headcount_served} guests</strong> vs <strong>{notif.excessGuaranteed ?? notif.excessBilling?.guaranteed_headcount} guaranteed</strong> (+{notif.excessGuests ?? notif.excessBilling?.excess_guests} attendee(s) beyond guaranteed count @ ₱500/pax).
