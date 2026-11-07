@@ -2,6 +2,7 @@ import { motion, AnimatePresence } from "motion/react";
 import { useState, useEffect, useRef } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import {
+  CloudRain,
   ChevronRight,
   ChevronLeft,
   ChevronDown,
@@ -262,6 +263,7 @@ export default function BookingPage() {
   const [isSecondFloorOrHigher, setIsSecondFloorOrHigher] = useState<boolean>(false);
   const [floorLevel, setFloorLevel] = useState<number>(2);
   const [hasElevator, setHasElevator] = useState<boolean>(false);
+  const [isOutdoorVenue, setIsOutdoorVenue] = useState<boolean>(false);
 
   // Feature: Dedicated Corkage & Additional Services State (Contract Term 8 & 15)
   // Feature: Pre-Booked Service Duration & Overtime Add-ons (Contract Rate Sheet)
@@ -835,6 +837,8 @@ export default function BookingPage() {
         floorLevel: isSecondFloorOrHigher ? floorLevel : 1,
         hasElevator,
         requiresStairsIngress,
+        venueType: isOutdoorVenue ? "Outdoor" : "Indoor",
+        isOutdoor: isOutdoorVenue,
         waiterCount: waiterCountCalc,
         haulingFee: calculatedHaulingFee,
         travelFee: 0,
@@ -874,6 +878,8 @@ export default function BookingPage() {
           floorLevel: isSecondFloorOrHigher ? floorLevel : 1,
           hasElevator,
           requiresStairsIngress,
+          venueType: isOutdoorVenue ? "Outdoor" : "Indoor",
+          isOutdoor: isOutdoorVenue,
           waiterCount: waiterCountCalc,
           haulingFee: calculatedHaulingFee,
           travelFee: 0,
@@ -1610,6 +1616,64 @@ export default function BookingPage() {
                         </div>
                       </div>
                     )}
+
+                    {/* 3. Venue Setting & Environment (Indoor vs Outdoor with Weather Advisory) */}
+                    <div className="pt-4 border-t border-white/10 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <label className="block text-sm font-bold text-white/90">
+                          3. Venue Environment &amp; Setting
+                        </label>
+                        <span className="text-xs text-white/50">
+                          Weather &amp; Setup Advisory
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <button
+                          type="button"
+                          onClick={() => setIsOutdoorVenue(false)}
+                          className={`py-3 px-4 text-sm font-bold border transition-all flex items-center justify-center gap-2 ${
+                            !isOutdoorVenue
+                              ? "bg-gold-400 text-obsidian border-gold-400 shadow-md"
+                              : "bg-white/5 text-white/70 border-white/10 hover:border-white/30"
+                          }`}
+                        >
+                          {!isOutdoorVenue && <Check size={15} />}
+                          Indoor (Covered / Hall)
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setIsOutdoorVenue(true)}
+                          className={`py-3 px-4 text-sm font-bold border transition-all flex items-center justify-center gap-2 ${
+                            isOutdoorVenue
+                              ? "bg-gold-400 text-obsidian border-gold-400 shadow-md"
+                              : "bg-white/5 text-white/70 border-white/10 hover:border-white/30"
+                          }`}
+                        >
+                          {isOutdoorVenue && <Check size={15} />}
+                          Outdoor (Garden / Open Air)
+                        </button>
+                      </div>
+
+                      {/* Outdoor Weather Advisory Callout */}
+                      {isOutdoorVenue && (
+                        <div className="p-4 bg-amber-500/15 border border-amber-500/40 text-amber-200 flex items-start gap-3 rounded transition-all">
+                          <CloudRain className="text-amber-400 shrink-0 mt-0.5" size={20} />
+                          <div className="space-y-1">
+                            <div className="flex items-center gap-2">
+                              <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 bg-amber-500/25 text-amber-300 border border-amber-400/40 rounded">
+                                Outdoor Weather Advisory
+                              </span>
+                            </div>
+                            <p className="text-xs text-white/95 leading-relaxed font-semibold italic">
+                              &ldquo;Php 2,000.00 laundry charge applies in case of rain without client-provided tents.&rdquo;
+                            </p>
+                            <p className="text-[11px] text-white/65 leading-relaxed">
+                              For outdoor banquet setups (garden, poolside, or open lawn), client must ensure adequate weather-proof tents or covered shelters are provided to protect buffet line and dining table linens from rain.
+                            </p>
+                          </div>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
                 <div className="col-span-full space-y-2">
@@ -2532,7 +2596,17 @@ export default function BookingPage() {
                                 Floor {floorLevel} (Elevator Available)
                               </span>
                             )}
+                            {isOutdoorVenue && (
+                              <span className="text-[10px] font-bold uppercase tracking-widest px-2.5 py-1 bg-amber-500/20 border border-amber-400/40 text-amber-300 flex items-center gap-1">
+                                <CloudRain size={12} /> Outdoor Venue (Weather Advisory Applies)
+                              </span>
+                            )}
                           </div>
+                          {isOutdoorVenue && (
+                            <p className="mt-2 text-xs text-amber-200/90 italic bg-amber-500/10 border border-amber-500/20 p-2.5 rounded">
+                              &ldquo;Php 2,000.00 laundry charge applies in case of rain without client-provided tents.&rdquo;
+                            </p>
+                          )}
                           <p className="hidden">
                           </p>
                         </div>

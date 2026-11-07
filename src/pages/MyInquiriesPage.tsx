@@ -2,6 +2,7 @@ import { motion, AnimatePresence } from "motion/react";
 import { useState, useEffect, useRef } from "react";
 import { supabase } from "../utils/supabase";
 import {
+  CloudRain,
   Calendar,
   MapPin,
   Users,
@@ -1304,7 +1305,17 @@ export default function MyInquiriesPage() {
               const dayOfOTFee = Number(dayOfOT?.total_day_of_fee) || 0;
               const totalOTFee = Number(otData?.total_overtime_fee) || (prebookedOTFee + dayOfOTFee);
 
-              const totalAdditionalFees = travelFee + haulingFee + corkageFee + totalOTFee;
+              const isOutdoor = Boolean(
+                logData?.isOutdoor ||
+                logData?.venueType === "Outdoor" ||
+                (booking.event_location || "").toLowerCase().includes("outdoor") ||
+                (booking.event_location || "").toLowerCase().includes("garden")
+              );
+              const rainLaundryFee = Number(logData?.rainLaundryFee) || (logData?.rainLaundryApplied ? 2000 : 0);
+              const postEventBilling = logData?.post_event_billing || (booking as any)?.post_event_billing || null;
+              const excessGuestFee = Number(postEventBilling?.excess_guest_fee) || 0;
+
+              const totalAdditionalFees = travelFee + haulingFee + corkageFee + totalOTFee + rainLaundryFee + excessGuestFee;
               const totalEventCost = basePrice + additionalPaxTotal + totalAdditionalFees;
 
               const paymentData = (() => {
@@ -1346,7 +1357,7 @@ export default function MyInquiriesPage() {
                 // Fixed date-lock deposit strictly excludes post-booking additions (out-of-town travel fee & day-of overtime)
                 const effectiveDownpayment = downpayment > 0
                   ? downpayment
-                  : Math.round(Math.max(0, totalEventCost - travelFee - dayOfOTFee) * (is50Percent ? 0.5 : 0.2));
+                  : Math.round(Math.max(0, totalEventCost - travelFee - dayOfOTFee - rainLaundryFee - excessGuestFee) * (is50Percent ? 0.5 : 0.2));
 
                 // If customer is on installment plan, sum verified/paid milestones
                 let paidMilestones = 0;
@@ -1712,6 +1723,7 @@ export default function MyInquiriesPage() {
                           </span>
                         </div>
                       )}
+
 
                       {!isCancelled && substitutions.length > 0 && (
                         <div className="p-3 bg-amber-500/10 border border-amber-500/30 rounded-md flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
@@ -2587,6 +2599,42 @@ export default function MyInquiriesPage() {
                               </div>
                               <dd className="font-semibold text-amber-300 tabular-nums shrink-0">
                                 +₱{dayOfOTFee.toLocaleString()}
+                              </dd>
+                            </div>
+                          )}
+
+                          {/* Rain / Laundry Fee (when applied) */}
+                          {rainLaundryFee > 0 && (
+                            <div className="py-2.5 flex items-baseline justify-between gap-4">
+                              <div>
+                                <dt className="text-amber-300 font-medium flex items-center gap-1.5">
+                                  <CloudRain size={13} className="text-amber-400" />
+                                  Rain / Laundry Surcharge
+                                </dt>
+                                <dd className="text-[11px] text-white/60 mt-0.5">
+                                  Soiled linens due to rain without client-provided tents (Outdoor weather policy)
+                                </dd>
+                              </div>
+                              <dd className="font-semibold text-amber-300 tabular-nums shrink-0">
+                                +₱{rainLaundryFee.toLocaleString()}
+                              </dd>
+                            </div>
+                          )}
+
+                          {/* Excess Headcount Served Surcharge (when post-event excess guests billed) */}
+                          {excessGuestFee > 0 && (
+                            <div className="py-2.5 flex items-baseline justify-between gap-4">
+                              <div>
+                                <dt className="text-rose-300 font-medium flex items-center gap-1.5">
+                                  <Users size={13} className="text-rose-400" />
+                                  Excess Headcount Served Surcharge
+                                </dt>
+                                <dd className="text-[11px] text-white/60 mt-0.5">
+                                  {postEventBilling?.excess_guests} attendee(s) beyond guaranteed count ({postEventBilling?.guaranteed_headcount} pax) @ ₱500/pax · Due {postEventBilling?.due_date || "next day"}
+                                </dd>
+                              </div>
+                              <dd className="font-semibold text-rose-300 tabular-nums shrink-0">
+                                +₱{excessGuestFee.toLocaleString()}
                               </dd>
                             </div>
                           )}

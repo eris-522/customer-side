@@ -1,5 +1,5 @@
 import { motion, AnimatePresence } from "motion/react";
-import { Menu as MenuIcon, X, Bell, ChevronDown } from "lucide-react";
+import { Menu as MenuIcon, X, Bell, ChevronDown, CloudRain, Check } from "lucide-react";
 import { useState, useEffect, useRef } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { supabase } from "../utils/supabase";
@@ -44,6 +44,20 @@ export default function Navbar() {
 
   const desktopNotifRef = useRef<HTMLDivElement>(null);
   const mobileNotifRef = useRef<HTMLDivElement>(null);
+  const fetchNotifsRef = useRef<((force?: boolean) => Promise<void>) | null>(null);
+  const [liveToast, setLiveToast] = useState<{
+    id: string;
+    title: string;
+    subtitle: string;
+    action?: string;
+  } | null>(null);
+  const initialMountRef = useRef(true);
+
+  useEffect(() => {
+    if (!liveToast) return;
+    const timer = setTimeout(() => setLiveToast(null), 7000);
+    return () => clearTimeout(timer);
+  }, [liveToast]);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -64,10 +78,16 @@ export default function Navbar() {
 
   const getNotifKey = (b: any) => {
     if (b.notifKey) return b.notifKey;
+    if (b.notifType === "rain_laundry") {
+      return `${b.id}-rain-laundry-${b.rainAction}-${b.notifTimestamp || b.logistics_info?.rainLaundryLastActionAt}`;
+    }
+    if (b.notifType === "day_of_overtime") {
+      return `${b.id}-dayof-ot-${b.dayOfOT?.total_day_of_fee}-${b.notifTimestamp}`;
+    }
     if (b.notifType === "logistics") {
       const travelFee = Number(b.logistics_info?.travelFee) || 0;
       const haulingFee = Number(b.logistics_info?.haulingFee) || 0;
-      const logTimestamp = b.logistics_info?.updated_at || "";
+      const logTimestamp = b.logistics_info?.logistics_fees_updated_at || "";
       return `${b.id}-logistics-${travelFee}-${haulingFee}${logTimestamp ? `-${logTimestamp}` : ""}`;
     }
     return `${b.id}-${b.status}`;
@@ -161,6 +181,11 @@ export default function Navbar() {
         // Filter out bookings cancelled by the customer so they don't receive a notification for their own action
         const normalizedData = data.map((b: any) => {
           let logInfo = b.logistics_info;
+          if (typeof logInfo === "string") {
+            try {
+              logInfo = JSON.parse(logInfo);
+            } catch {}
+          }
           if ((!logInfo || Object.keys(logInfo).length === 0) && typeof b.food_allergies === 'string' && b.food_allergies.includes('__PAYMENT_METADATA__:')) {
             try {
               const parsed = JSON.parse(b.food_allergies.split('__PAYMENT_METADATA__:')[1]);
@@ -193,15 +218,49 @@ export default function Navbar() {
 
           const travelFee = Number(b.logistics_info?.travelFee) || 0;
           const haulingFee = Number(b.logistics_info?.haulingFee) || 0;
-          const logTimestamp = b.logistics_info?.updated_at || '';
-          const hasLogisticsUpdate = Boolean(logTimestamp || travelFee > 0 || haulingFee > 0);
+          const logisticsFeesUpdatedAt = b.logistics_info?.logistics_fees_updated_at;
+          const hasLogisticsUpdate = Boolean(logisticsFeesUpdatedAt && (travelFee > 0 || haulingFee > 0));
 
           if (hasLogisticsUpdate && !isCustomerCancelled) {
             expandedNotifications.push({
               ...b,
               notifType: 'logistics',
-              notifKey: `${b.id}-logistics-${travelFee}-${haulingFee}${logTimestamp ? `-${logTimestamp}` : ''}`,
-              notifTimestamp: logTimestamp || b.created_at,
+              notifKey: `${b.id}-logistics-${travelFee}-${haulingFee}-${logisticsFeesUpdatedAt}`,
+              notifTimestamp: logisticsFeesUpdatedAt,
+            });
+          }
+
+          // Check for rain / laundry fee charged or removed by coordinator
+          const rainLog = b.logistics_info;
+          if (Array.isArray(rainLog?.rainLaundryHistory) && rainLog.rainLaundryHistory.length > 0 && !isCustomerCancelled) {
+            rainLog.rainLaundryHistory.forEach((item: any) => {
+              expandedNotifications.push({
+                ...b,
+                notifType: 'rain_laundry',
+                notifKey: `${b.id}-rain-laundry-${item.action}-${item.timestamp}`,
+                notifTimestamp: item.timestamp || b.created_at,
+                rainAction: item.action,
+                rainFee: item.fee ?? 2000,
+                rainNote: item.note,
+              });
+            });
+          } else if (rainLog?.rainLaundryLastAction && rainLog?.rainLaundryLastActionAt && !isCustomerCancelled) {
+            expandedNotifications.push({
+              ...b,
+              notifType: 'rain_laundry',
+              notifKey: `${b.id}-rain-laundry-${rainLog.rainLaundryLastAction}-${rainLog.rainLaundryLastActionAt}`,
+              notifTimestamp: rainLog.rainLaundryLastActionAt,
+              rainAction: rainLog.rainLaundryLastAction,
+              rainFee: rainLog.rainLaundryLastAction === 'charged' ? (Number(rainLog.rainLaundryFee) || 2000) : 0,
+            });
+          } else if (rainLog?.rainLaundryApplied && rainLog?.rainLaundryAppliedAt && !isCustomerCancelled) {
+            expandedNotifications.push({
+              ...b,
+              notifType: 'rain_laundry',
+              notifKey: `${b.id}-rain-laundry-charged-${rainLog.rainLaundryAppliedAt}`,
+              notifTimestamp: rainLog.rainLaundryAppliedAt,
+              rainAction: 'charged',
+              rainFee: Number(rainLog.rainLaundryFee) || 2000,
             });
           }
 
@@ -294,10 +353,30 @@ export default function Navbar() {
           return timeB - timeA;
         });
         setNotifications(sorted);
+
+        // Check for live toast trigger for recently updated rain laundry fee
+        if (!initialMountRef.current) {
+          const unreadRain = expandedNotifications.find(
+            (n: any) => n.notifType === "rain_laundry" && !readIds.includes(n.notifKey)
+          );
+          if (unreadRain) {
+            setLiveToast({
+              id: unreadRain.notifKey,
+              title: unreadRain.rainAction === "removed"
+                ? "Rain Laundry Surcharge Removed (-₱2,000)"
+                : "Outdoor Rain / Laundry Surcharge (+₱2,000)",
+              subtitle: unreadRain.rainAction === "removed"
+                ? `Waived by coordinator for ${unreadRain.event_date}. Invoice balance reduced.`
+                : `Applied for ${unreadRain.event_date} for soiled linens due to rain without client tents.`,
+              action: unreadRain.rainAction,
+            });
+          }
+        }
+        initialMountRef.current = false;
       }
     };
 
-    const FOCUS_COOLDOWN_MS = 60_000;
+    const FOCUS_COOLDOWN_MS = 1_500;
     let lastNotifFetchTime = 0;
     let inFlightNotif = false;
     let realtimeDebounce: ReturnType<typeof setTimeout> | null = null;
@@ -315,27 +394,46 @@ export default function Navbar() {
       }
     };
 
+    fetchNotifsRef.current = triggerNotificationsFetch;
     triggerNotificationsFetch(true);
 
-    // Gentle fallback heartbeat (60s) ONLY when Realtime WebSocket is disconnected
+    // Active polling heartbeat every 6 seconds while tab is open/visible
     const fallbackPollId = setInterval(() => {
-      if (!realtimeConnected && document.visibilityState === 'visible') {
+      if (document.visibilityState === "visible") {
         triggerNotificationsFetch(true);
       }
-    }, 60_000);
+    }, 6_000);
 
     const handleVisibilityOrFocus = () => {
-      if (document.visibilityState === 'visible') {
-        triggerNotificationsFetch(false);
+      if (document.visibilityState === "visible") {
+        triggerNotificationsFetch(true);
       }
     };
     const handleLocalBookingSync = () => {
       triggerNotificationsFetch(true);
     };
 
-    document.addEventListener('visibilitychange', handleVisibilityOrFocus);
-    window.addEventListener('focus', handleVisibilityOrFocus);
-    window.addEventListener('customerBookingsUpdated', handleLocalBookingSync);
+    document.addEventListener("visibilitychange", handleVisibilityOrFocus);
+    window.addEventListener("focus", handleVisibilityOrFocus);
+    window.addEventListener("customerBookingsUpdated", handleLocalBookingSync);
+
+    // Instant cross-tab sync via BroadcastChannel and localStorage
+    let bc: BroadcastChannel | null = null;
+    try {
+      bc = new BroadcastChannel("roxan_catering_events");
+      bc.onmessage = (ev) => {
+        if (ev.data?.type === "BOOKINGS_UPDATED") {
+          triggerNotificationsFetch(true);
+        }
+      };
+    } catch (e) {}
+
+    const handleStorageChange = (ev: StorageEvent) => {
+      if (ev.key === "roxan_last_booking_update") {
+        triggerNotificationsFetch(true);
+      }
+    };
+    window.addEventListener("storage", handleStorageChange);
 
     // Real-time subscription to catch instant Admin updates or status changes
     const channelName = `user-bookings-${user.id}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -355,9 +453,13 @@ export default function Navbar() {
     return () => {
       clearInterval(fallbackPollId);
       if (realtimeDebounce) clearTimeout(realtimeDebounce);
-      document.removeEventListener('visibilitychange', handleVisibilityOrFocus);
-      window.removeEventListener('focus', handleVisibilityOrFocus);
-      window.removeEventListener('customerBookingsUpdated', handleLocalBookingSync);
+      document.removeEventListener("visibilitychange", handleVisibilityOrFocus);
+      window.removeEventListener("focus", handleVisibilityOrFocus);
+      window.removeEventListener("customerBookingsUpdated", handleLocalBookingSync);
+      window.removeEventListener("storage", handleStorageChange);
+      try {
+        bc?.close();
+      } catch (e) {}
       supabase.removeChannel(channel);
     };
   }, [user?.id]);
@@ -374,7 +476,11 @@ export default function Navbar() {
   };
 
   const handleNotifClick = () => {
-    setIsNotifOpen(!isNotifOpen);
+    const nextState = !isNotifOpen;
+    setIsNotifOpen(nextState);
+    if (nextState && fetchNotifsRef.current) {
+      fetchNotifsRef.current(true);
+    }
   };
 
   const handleDismissNotif = (id: string) => {
@@ -662,6 +768,60 @@ export default function Navbar() {
                 </button>
               </div>
             </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Floating In-App Toast Alert for Real-time Customer Notifications */}
+      <AnimatePresence>
+        {liveToast && (
+          <motion.div
+            initial={{ opacity: 0, y: -20, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -20, scale: 0.95 }}
+            transition={{ duration: 0.25 }}
+            className="fixed top-20 right-4 sm:right-8 z-[9999] max-w-sm w-full bg-[#121212]/95 border border-amber-500/40 rounded-xl shadow-2xl p-4 backdrop-blur-md pointer-events-auto text-left"
+          >
+            <div className="flex items-start gap-3">
+              <div
+                className={`p-2 rounded-lg shrink-0 ${
+                  liveToast.action === "removed"
+                    ? "bg-emerald-500/20 text-emerald-400"
+                    : "bg-amber-500/20 text-amber-400"
+                }`}
+              >
+                {liveToast.action === "removed" ? <Check size={18} /> : <CloudRain size={18} />}
+              </div>
+              <div className="flex-1 min-w-0">
+                <p
+                  className={`text-xs font-bold uppercase tracking-wider ${
+                    liveToast.action === "removed" ? "text-emerald-300" : "text-amber-300"
+                  }`}
+                >
+                  {liveToast.title}
+                </p>
+                <p className="text-xs text-white/80 mt-0.5 leading-snug">
+                  {liveToast.subtitle}
+                </p>
+                <div className="flex items-center gap-3 mt-2.5">
+                  <button
+                    onClick={() => {
+                      setIsNotifOpen(true);
+                      setLiveToast(null);
+                    }}
+                    className="text-[11px] font-bold text-gold-400 hover:text-white uppercase tracking-wider transition-colors"
+                  >
+                    View in Notifications →
+                  </button>
+                </div>
+              </div>
+              <button
+                onClick={() => setLiveToast(null)}
+                className="text-white/40 hover:text-white transition-colors p-1 -mr-1 -mt-1"
+              >
+                <X size={16} />
+              </button>
+            </div>
           </motion.div>
         )}
       </AnimatePresence>

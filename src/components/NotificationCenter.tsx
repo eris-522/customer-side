@@ -19,11 +19,14 @@ export function NotificationCenter({ isOpen, onClose, notifications, unreadCount
 
   const getNotifKey = (item: any) => {
     if (item.notifKey) return item.notifKey;
-    if (item.notifType === "day_of_overtime") return item.notifKey || `${item.id}-dayof-ot-${item.dayOfOT?.total_day_of_fee}`;
+    if (item.notifType === "rain_laundry") {
+      return `${item.id}-rain-laundry-${item.rainAction}-${item.notifTimestamp || item.logistics_info?.rainLaundryLastActionAt}`;
+    }
+    if (item.notifType === "day_of_overtime") return item.notifKey || `${item.id}-dayof-ot-${item.dayOfOT?.total_day_of_fee}-${item.notifTimestamp}`;
     if (item.notifType === "logistics") {
       const travel = Number(item.logistics_info?.travelFee) || 0;
       const hauling = Number(item.logistics_info?.haulingFee) || 0;
-      const logTimestamp = item.logistics_info?.updated_at || "";
+      const logTimestamp = item.logistics_info?.logistics_fees_updated_at || "";
       return `${item.id}-logistics-${travel}-${hauling}${logTimestamp ? `-${logTimestamp}` : ""}`;
     }
     return `${item.id}-${item.status}`;
@@ -43,7 +46,7 @@ export function NotificationCenter({ isOpen, onClose, notifications, unreadCount
     return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
   };
 
-  const sortedNotifications = [...notifications].sort((a, b) => {
+  const sortedNotifications = [...notifications].sort((a: any, b: any) => {
     const keyA = getNotifKey(a);
     const keyB = getNotifKey(b);
     const isUnreadA = !readIds.includes(keyA) || readDuringSession.includes(keyA);
@@ -74,12 +77,12 @@ export function NotificationCenter({ isOpen, onClose, notifications, unreadCount
                 <button 
                   onClick={() => {
                     const newlyRead: string[] = [];
-                    notifications.forEach(n => {
+                    notifications.forEach((n: any) => {
                       const key = getNotifKey(n);
                       if (!readIds.includes(key)) newlyRead.push(key);
                     });
                     setReadDuringSession(prev => [...prev, ...newlyRead]);
-                    newlyRead.forEach(id => onDismiss && onDismiss(id));
+                    newlyRead.forEach((id: string) => onDismiss && onDismiss(id));
                   }}
                   className="text-[10px] font-bold text-gold-400 hover:text-white uppercase tracking-widest transition-colors"
                 >
@@ -99,19 +102,18 @@ export function NotificationCenter({ isOpen, onClose, notifications, unreadCount
                 <p className="text-white/40 text-sm font-medium">No updates right now.</p>
               </div>
             ) : (
-              sortedNotifications.map((notif) => {
+              sortedNotifications.map((notif: any) => {
                 const notifKey = getNotifKey(notif);
                 const isExpanded = expandedId === notifKey;
                 const travelFeeVal = Number(notif.logistics_info?.travelFee) || 0;
                 const haulingFeeVal = Number(notif.logistics_info?.haulingFee) || 0;
-                const isLogisticsUpdate =
-                  notif.notifType === 'logistics' ||
-                  (!notif.notifType && (travelFeeVal > 0 || haulingFeeVal > 0));
+                const isLogisticsUpdate = notif.notifType === 'logistics';
                 const isCancelled =
                   !isLogisticsUpdate &&
                   ['Cancelled', 'Declined', 'Rejected'].includes(notif.status);
                 const isConfirmed =
                   !isLogisticsUpdate &&
+                  notif.notifType === 'status' &&
                   ['Confirmed', 'Accepted', 'Approved'].includes(notif.status);
                 const reason = notif.reason || notif.reject_reason || notif.cancellation_reason || notif.admin_notes;
                 const isUnreadNotif = !readIds.includes(notifKey);
@@ -159,6 +161,24 @@ export function NotificationCenter({ isOpen, onClose, notifications, unreadCount
                               <span className="text-amber-400 font-bold">
                                 +{notif.dayOfOT?.billable_ot_hours}h OT (₱{Number(notif.dayOfOT?.total_day_of_fee || 0).toLocaleString()})
                               </span>
+                            </>
+                          ) : notif.notifType === 'rain_laundry' ? (
+                            <>
+                              {notif.rainAction === 'removed' ? (
+                                <>
+                                  Rain Laundry Surcharge Removed for {notif.event_date}:{" "}
+                                  <span className="text-emerald-400 font-bold">
+                                    -₱{Number(notif.rainFee || 2000).toLocaleString()} (Waived)
+                                  </span>
+                                </>
+                              ) : (
+                                <>
+                                  Rain Laundry Surcharge Applied for {notif.event_date}:{" "}
+                                  <span className="text-amber-400 font-bold">
+                                    +₱{Number(notif.rainFee || 2000).toLocaleString()}
+                                  </span>
+                                </>
+                              )}
                             </>
                           ) : notif.notifType === 'balance_verified' ? (
                             <>
@@ -211,11 +231,36 @@ export function NotificationCenter({ isOpen, onClose, notifications, unreadCount
                             </p>
                             {Array.isArray(notif.dayOfOT?.services_billed) && notif.dayOfOT.services_billed.length > 0 && (
                               <p className="text-[10px] text-white/60">
-                                Extended Services: {notif.dayOfOT.services_billed.map((s) => `${s.name} (+₱${Number(s.subtotal).toLocaleString()})`).join(" • ")}
+                                Extended Services: {notif.dayOfOT.services_billed.map((s: any) => `${s.name} (+₱${Number(s.subtotal).toLocaleString()})`).join(" • ")}
                               </p>
                             )}
                             <p className="text-[10px] text-gold-400 font-medium pt-1 border-t border-amber-500/20">
                               ✓ Added to your final invoice balance. You can review the updated ledger below.
+                            </p>
+                          </div>
+                        )}
+                        {notif.notifType === 'rain_laundry' && (
+                          <div className={`mb-3 p-3 border rounded-md space-y-1.5 text-xs ${
+                            notif.rainAction === 'removed'
+                              ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-200"
+                              : "bg-amber-500/10 border-amber-500/20 text-amber-200"
+                          }`}>
+                            <div className="font-bold">
+                              <span className={notif.rainAction === 'removed' ? "text-emerald-300" : "text-amber-300"}>
+                                {notif.rainAction === 'removed'
+                                  ? "Rain Laundry Charge Removed (-₱2,000)"
+                                  : "Outdoor Rain / Laundry Surcharge (+₱2,000)"}
+                              </span>
+                            </div>
+                            <p className="text-[11px] text-white/80">
+                              {notif.rainAction === 'removed'
+                                ? "The ₱2,000.00 rain laundry surcharge was removed by the catering coordinator. Your final invoice balance has been adjusted."
+                                : "A ₱2,000.00 laundry charge was applied for soiled banquet linens due to rain without client-provided tents at your outdoor venue."}
+                            </p>
+                            <p className="text-[10px] text-gold-400 font-medium pt-1 border-t border-white/10">
+                              {notif.rainAction === 'removed'
+                                ? "✓ Final balance recalculated and reduced in your ledger."
+                                : "✓ Added to your final invoice balance. You can review the updated breakdown below."}
                             </p>
                           </div>
                         )}
