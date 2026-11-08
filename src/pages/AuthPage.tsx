@@ -135,13 +135,17 @@ export default function AuthPage() {
 
   // Forgot password flow
   const [forgotPasswordStep, setForgotPasswordStep] = useState<
-    "none" | "email" | "question" | "reset"
+    "none" | "email" | "question" | "otp" | "reset"
   >("none");
   const [recoveryEmail, setRecoveryEmail] = useState("");
   const [recoveryAnswer, setRecoveryAnswer] = useState("");
   const [fetchedAnswer, setFetchedAnswer] = useState("");
+  const [recoveryOtp, setRecoveryOtp] = useState("");
+  const [resendingRecoveryOtp, setResendingRecoveryOtp] = useState(false);
   const [newPassword, setNewPassword] = useState("");
+  const [confirmNewPassword, setConfirmNewPassword] = useState("");
   const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmNewPassword, setShowConfirmNewPassword] = useState(false);
 
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
@@ -242,8 +246,8 @@ export default function AuthPage() {
           setError(
             <span>
               Your account has been deactivated. Please contact the administrator at{" "}
-              <a href="mailto:santoskyleerica@gmail.com" className="underline hover:text-gold-400 transition-colors">
-                santoskyleerica@gmail.com
+              <a href="mailto:roxanpolicarpio.events@gmail.com" className="underline hover:text-gold-400 transition-colors">
+                roxanpolicarpio.events@gmail.com
               </a>{" "}
               or +63 921 469 7142 to reactivate your account.
             </span>
@@ -257,8 +261,8 @@ export default function AuthPage() {
           setError(
             <span>
               Your account has been archived. Please contact support at{" "}
-              <a href="mailto:santoskyleerica@gmail.com" className="underline hover:text-red-300 transition-colors">
-                santoskyleerica@gmail.com
+              <a href="mailto:roxanpolicarpio.events@gmail.com" className="underline hover:text-red-300 transition-colors">
+                roxanpolicarpio.events@gmail.com
               </a>{" "}
               or +63 921 469 7142.
             </span>
@@ -288,7 +292,9 @@ export default function AuthPage() {
       setForgotPasswordStep("reset");
     } else if (mode === "forgot") {
       setIsLogin(true);
-      setForgotPasswordStep((prev) => (prev === "question" ? "question" : "email"));
+      setForgotPasswordStep((prev) =>
+        prev === "question" || prev === "otp" || prev === "reset" ? prev : "email"
+      );
     } else {
       setIsLogin(mode !== "signup");
       setForgotPasswordStep("none");
@@ -311,8 +317,8 @@ export default function AuthPage() {
       setError(
         <span>
           Your account has been deactivated. Please contact the administrator at{" "}
-          <a href="mailto:santoskyleerica@gmail.com" className="underline hover:text-gold-400 transition-colors">
-            santoskyleerica@gmail.com
+          <a href="mailto:roxanpolicarpio.events@gmail.com" className="underline hover:text-gold-400 transition-colors">
+            roxanpolicarpio.events@gmail.com
           </a>{" "}
           or +63 921 469 7142 to reactivate your account.
         </span>
@@ -321,14 +327,34 @@ export default function AuthPage() {
       setError(
         <span>
           Your account has been archived. Please contact support at{" "}
-          <a href="mailto:santoskyleerica@gmail.com" className="underline hover:text-red-300 transition-colors">
-            santoskyleerica@gmail.com
+          <a href="mailto:roxanpolicarpio.events@gmail.com" className="underline hover:text-red-300 transition-colors">
+            roxanpolicarpio.events@gmail.com
           </a>{" "}
           or +63 921 469 7142.
         </span>
       );
     }
   }, [searchParams]);
+
+  const handleResendRecoveryOtp = async () => {
+    const cleanTarget = recoveryEmail.trim().toLowerCase();
+    if (!cleanTarget) return;
+    setResendingRecoveryOtp(true);
+    setError("");
+    setMessage("");
+    try {
+      const { error: resendErr } = await supabase.auth.resetPasswordForEmail(cleanTarget);
+      if (resendErr) {
+        setError(`Failed to resend OTP: ${resendErr.message}`);
+      } else {
+        setMessage(`A new OTP code has been sent to ${cleanTarget}. Please check your inbox and spam folder.`);
+      }
+    } catch {
+      setError("Failed to resend OTP code. Please try again.");
+    } finally {
+      setResendingRecoveryOtp(false);
+    }
+  };
 
   const handleForgotSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -410,7 +436,7 @@ export default function AuthPage() {
         }
       } else if (forgotPasswordStep === "question") {
         if (recoveryAnswer.toLowerCase().trim() === fetchedAnswer) {
-          // Double-check confirmation status before dispatching recovery email
+          // Double-check confirmation status before dispatching recovery OTP email
           const { data: confirmStatus } = await supabase.rpc("check_user_email_confirmed", {
             lookup_email: recoveryEmail.trim().toLowerCase(),
           });
@@ -431,14 +457,14 @@ export default function AuthPage() {
             return;
           }
 
-          // Send the recovery email pointing directly to the Vercel deployment (no query params so Supabase Redirect URL matching never rejects it)
-          const resetPromise = supabase.auth.resetPasswordForEmail(recoveryEmail.trim(), {
-            redirectTo: "https://rpcatering.vercel.app/auth",
-          });
+          // Send the recovery OTP email via Supabase Auth
+          const resetPromise = supabase.auth.resetPasswordForEmail(
+            recoveryEmail.trim().toLowerCase(),
+          );
 
           const timeoutPromise = new Promise<{ data: any; error: any }>((_, reject) =>
             setTimeout(
-              () => reject(new Error("Request timed out sending reset email. Please try again.")),
+              () => reject(new Error("Request timed out sending OTP email. Please try again.")),
               12000
             )
           );
@@ -446,15 +472,75 @@ export default function AuthPage() {
           const { error } = await Promise.race([resetPromise, timeoutPromise]);
 
           if (error) {
-            setError(`Failed to send reset email: ${error.message}`);
+            setError(`Failed to send OTP email: ${error.message}`);
           } else {
-            setMessage("Security answer verified! We've sent a password reset link to your email. Please check your inbox (and spam folder) to reset your password.");
+            setRecoveryOtp("");
+            setForgotPasswordStep("otp");
+            setMessage(
+              `Security answer verified! We've sent a verification OTP code to ${recoveryEmail.trim().toLowerCase()}. Please enter the code below.`
+            );
           }
         } else {
           setError("Incorrect answer. Please check your spelling and try again.");
         }
+      } else if (forgotPasswordStep === "otp") {
+        const cleanOtp = recoveryOtp.replace(/\D/g, "").trim();
+        if (!cleanOtp || cleanOtp.length < 6) {
+          setError("Please enter the 6-digit OTP code sent to your email.");
+          return;
+        }
+
+        const cleanTargetEmail = recoveryEmail.trim().toLowerCase();
+        try {
+          sessionStorage.setItem("supabase_recovery_mode", "true");
+        } catch {}
+
+        const { data: recData, error: recError } = await supabase.auth.verifyOtp({
+          email: cleanTargetEmail,
+          token: cleanOtp,
+          type: "recovery",
+        });
+
+        let otpVerified = !recError && !!recData?.session;
+        let otpErrorMsg = recError?.message || "";
+
+        if (!otpVerified) {
+          const { data: emailData, error: emailOtpErr } = await supabase.auth.verifyOtp({
+            email: cleanTargetEmail,
+            token: cleanOtp,
+            type: "email",
+          });
+          if (!emailOtpErr && emailData?.session) {
+            otpVerified = true;
+          } else if (emailOtpErr?.message && !otpErrorMsg) {
+            otpErrorMsg = emailOtpErr.message;
+          }
+        }
+
+        if (!otpVerified) {
+          try {
+            sessionStorage.removeItem("supabase_recovery_mode");
+          } catch {}
+          setError(
+            otpErrorMsg ||
+              "Invalid or expired OTP code. Please check the code sent to your email and try again."
+          );
+          return;
+        }
+
+        setForgotPasswordStep("reset");
+        setMessage("OTP verified! Please enter your new password below.");
       } else if (forgotPasswordStep === "reset") {
-        // After clicking the email link, a recovery session is established, allowing updateUser to succeed.
+        if (!newPassword || newPassword.length < 6) {
+          setError("Password must be at least 6 characters long.");
+          return;
+        }
+        if (confirmNewPassword !== newPassword) {
+          setError("Passwords do not match. Please re-enter your new password.");
+          return;
+        }
+
+        // After verifying the OTP, a recovery session is established, allowing updateUser to succeed.
         const updatePromise = supabase.auth.updateUser({
           password: newPassword,
         });
@@ -470,7 +556,7 @@ export default function AuthPage() {
 
         if (error) {
           setError(
-            `Supabase Error: ${error.message}. (Please ensure you clicked the reset link from your email.)`,
+            `Failed to update password: ${error.message}. Please verify your OTP again.`,
           );
         } else {
           setMessage("Password reset successful. You can now log in.");
@@ -483,7 +569,9 @@ export default function AuthPage() {
           setSearchParams({ mode: "login" });
           setRecoveryEmail("");
           setRecoveryAnswer("");
+          setRecoveryOtp("");
           setNewPassword("");
+          setConfirmNewPassword("");
         }
       }
     } catch (err: any) {
@@ -543,8 +631,8 @@ export default function AuthPage() {
             setError(
               <span>
                 Your account has been deactivated. Please contact the administrator at{" "}
-                <a href="mailto:santoskyleerica@gmail.com" className="underline hover:text-gold-400 transition-colors">
-                  santoskyleerica@gmail.com
+                <a href="mailto:roxanpolicarpio.events@gmail.com" className="underline hover:text-gold-400 transition-colors">
+                  roxanpolicarpio.events@gmail.com
                 </a>{" "}
                 or +63 921 469 7142 to reactivate your account.
               </span>
@@ -558,8 +646,8 @@ export default function AuthPage() {
             setError(
               <span>
                 Your account has been archived. Please contact support at{" "}
-                <a href="mailto:santoskyleerica@gmail.com" className="underline hover:text-red-300 transition-colors">
-                  santoskyleerica@gmail.com
+                <a href="mailto:roxanpolicarpio.events@gmail.com" className="underline hover:text-red-300 transition-colors">
+                  roxanpolicarpio.events@gmail.com
                 </a>{" "}
                 or +63 921 469 7142.
               </span>
@@ -1139,33 +1227,154 @@ export default function AuthPage() {
                   </div>
                 )}
 
-                {forgotPasswordStep === "reset" && (
+                {forgotPasswordStep === "otp" && (
                   <div className="space-y-2">
-                    <label className="text-base text-white/80 font-bold ml-1">
-                      New Password
-                    </label>
-                    <div className="relative group">
-                      <Lock
-                        className="absolute left-4 top-1/2 -translate-y-1/2 text-white/20 group-focus-within:text-gold-400 transition-colors"
-                        size={16}
-                      />
-                      <input
-                        type={showNewPassword ? "text" : "password"}
-                        placeholder="Enter new password"
-                        value={newPassword}
-                        onChange={(e) => setNewPassword(e.target.value)}
-                        required
-                        className="w-full bg-white/5 border border-white/10 pl-12 pr-12 py-4 text-lg focus:outline-none focus:border-gold-400/50 transition-all placeholder:text-white/40"
-                      />
+                    <div className="flex items-center justify-between px-1">
+                      <label
+                        htmlFor="customer-recovery-otp"
+                        className="text-base text-white/80 font-bold"
+                      >
+                        Verification OTP Code
+                      </label>
                       <button
                         type="button"
-                        onClick={() => setShowNewPassword((prev) => !prev)}
-                        className="absolute right-4 top-1/2 -translate-y-1/2 text-white/40 hover:text-gold-400 transition-colors cursor-pointer p-1"
-                        aria-label={showNewPassword ? "Hide password" : "Show password"}
-                        title={showNewPassword ? "Hide password" : "Show password"}
+                        onClick={handleResendRecoveryOtp}
+                        disabled={resendingRecoveryOtp || loading}
+                        className="text-xs tracking-wide text-gold-400 hover:text-white font-bold transition-colors cursor-pointer disabled:opacity-50"
                       >
-                        {showNewPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                        {resendingRecoveryOtp ? "Resending..." : "Resend OTP"}
                       </button>
+                    </div>
+                    <p
+                      id="customer-recovery-otp-hint"
+                      className="text-sm text-white/70 ml-1"
+                    >
+                      Enter the 6-digit OTP code sent to{" "}
+                      <span className="text-gold-400 font-semibold">
+                        {recoveryEmail.trim().toLowerCase()}
+                      </span>
+                      .
+                    </p>
+                    <div className="relative group">
+                      <input
+                        id="customer-recovery-otp"
+                        name="recovery_otp"
+                        type="text"
+                        inputMode="numeric"
+                        autoComplete="one-time-code"
+                        autoCorrect="off"
+                        autoCapitalize="off"
+                        spellCheck={false}
+                        pattern="\d{6,8}"
+                        maxLength={8}
+                        placeholder="123456"
+                        value={recoveryOtp}
+                        aria-describedby="customer-recovery-otp-hint"
+                        onChange={(e) => {
+                          const digits = e.target.value.replace(/\D/g, "").slice(0, 8);
+                          setRecoveryOtp(digits);
+                          if (error && digits.length >= 6) {
+                            setError("");
+                          }
+                        }}
+                        required
+                        className="w-full bg-white/5 border border-white/10 px-6 py-4 text-center font-mono text-2xl tracking-[0.4em] focus:outline-none focus:border-gold-400/50 transition-all placeholder:text-white/30"
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {forgotPasswordStep === "reset" && (
+                  <div className="space-y-5">
+                    <div className="space-y-2">
+                      <label
+                        htmlFor="customer-new-password"
+                        className="text-base text-white/80 font-bold ml-1 block"
+                      >
+                        New Password
+                      </label>
+                      <p
+                        id="customer-new-password-hint"
+                        className="text-xs text-white/60 ml-1"
+                      >
+                        Must be at least 6 characters long.
+                      </p>
+                      <div className="relative group">
+                        <Lock
+                          className="absolute left-4 top-1/2 -translate-y-1/2 text-white/20 group-focus-within:text-gold-400 transition-colors"
+                          size={16}
+                        />
+                        <input
+                          id="customer-new-password"
+                          name="new_password"
+                          type={showNewPassword ? "text" : "password"}
+                          autoComplete="new-password"
+                          minLength={6}
+                          placeholder="Enter new password"
+                          value={newPassword}
+                          aria-describedby="customer-new-password-hint"
+                          onChange={(e) => setNewPassword(e.target.value)}
+                          required
+                          className="w-full bg-white/5 border border-white/10 pl-12 pr-12 py-4 text-lg focus:outline-none focus:border-gold-400/50 transition-all placeholder:text-white/40"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowNewPassword((prev) => !prev)}
+                          className="absolute right-4 top-1/2 -translate-y-1/2 text-white/40 hover:text-gold-400 transition-colors cursor-pointer p-1"
+                          aria-label={showNewPassword ? "Hide password" : "Show password"}
+                          title={showNewPassword ? "Hide password" : "Show password"}
+                        >
+                          {showNewPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      <label
+                        htmlFor="customer-confirm-new-password"
+                        className="text-base text-white/80 font-bold ml-1 block"
+                      >
+                        Confirm New Password
+                      </label>
+                      <div className="relative group">
+                        <Lock
+                          className="absolute left-4 top-1/2 -translate-y-1/2 text-white/20 group-focus-within:text-gold-400 transition-colors"
+                          size={16}
+                        />
+                        <input
+                          id="customer-confirm-new-password"
+                          name="confirm_new_password"
+                          type={showConfirmNewPassword ? "text" : "password"}
+                          autoComplete="new-password"
+                          minLength={6}
+                          placeholder="Confirm new password"
+                          value={confirmNewPassword}
+                          onChange={(e) => setConfirmNewPassword(e.target.value)}
+                          required
+                          className="w-full bg-white/5 border border-white/10 pl-12 pr-12 py-4 text-lg focus:outline-none focus:border-gold-400/50 transition-all placeholder:text-white/40"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowConfirmNewPassword((prev) => !prev)}
+                          className="absolute right-4 top-1/2 -translate-y-1/2 text-white/40 hover:text-gold-400 transition-colors cursor-pointer p-1"
+                          aria-label={
+                            showConfirmNewPassword
+                              ? "Hide confirm password"
+                              : "Show confirm password"
+                          }
+                          title={
+                            showConfirmNewPassword
+                              ? "Hide confirm password"
+                              : "Show confirm password"
+                          }
+                        >
+                          {showConfirmNewPassword ? (
+                            <EyeOff size={18} />
+                          ) : (
+                            <Eye size={18} />
+                          )}
+                        </button>
+                      </div>
                     </div>
                   </div>
                 )}
@@ -1191,9 +1400,13 @@ export default function AuthPage() {
                 >
                   {loading
                     ? "Processing..."
-                    : forgotPasswordStep === "reset"
-                      ? "Update Password"
-                      : "Next"}{" "}
+                    : forgotPasswordStep === "question"
+                      ? "Send OTP to Email"
+                      : forgotPasswordStep === "otp"
+                        ? "Verify OTP"
+                        : forgotPasswordStep === "reset"
+                          ? "Update Password"
+                          : "Next"}{" "}
                   <ArrowRight size={14} />
                 </button>
               </motion.form>
@@ -1213,6 +1426,9 @@ export default function AuthPage() {
                   setMessage("");
                   setEmailError("");
                   setRecoveryEmailError("");
+                  setRecoveryOtp("");
+                  setNewPassword("");
+                  setConfirmNewPassword("");
                 }}
                 className="text-lg tracking-wide text-gold-400 font-bold hover:text-white transition-colors"
               >
