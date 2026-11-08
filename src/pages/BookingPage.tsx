@@ -204,11 +204,20 @@ export default function BookingPage() {
     };
   }, []);
 
-  // Feature: Terms of Service Modal State
+  // Feature: Terms of Service Modal State & Electronic Signature Capture
   const [showTermsModal, setShowTermsModal] = useState(false);
   const [termsAgreed, setTermsAgreed] = useState(false);
   const [termsModalCategory, setTermsModalCategory] = useState<string>("all");
   const [termsModalSearch, setTermsModalSearch] = useState<string>("");
+  const [signerFullName, setSignerFullName] = useState<string>("");
+  const [signerNameError, setSignerNameError] = useState<string>("");
+  const [signatureMode, setSignatureMode] = useState<"drawn" | "typed">("drawn");
+  const [hasDrawnSignature, setHasDrawnSignature] = useState<boolean>(false);
+  const [capturedSignatureDataUrl, setCapturedSignatureDataUrl] = useState<string>("");
+  const [signedAtIso, setSignedAtIso] = useState<string>("");
+  const [termsFormError, setTermsFormError] = useState<string>("");
+  const signatureCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const isDrawingSigRef = useRef<boolean>(false);
 
   // Feature: Downpayment & Payment Scheme Screen State
   const [showPaymentModal, setShowPaymentModal] = useState(false);
@@ -358,6 +367,7 @@ export default function BookingPage() {
       }
 
       setUserProfile(profile);
+      setSignerFullName((prev) => prev || profile?.full_name || profile?.name || "");
 
       const todayStr = new Date().toISOString().split("T")[0];
 
@@ -688,15 +698,122 @@ export default function BookingPage() {
   const handleInitiateBooking = () => {
     setSubmitError("");
     setStepError("");
+    setTermsFormError("");
+    setSignerNameError("");
     setShowTermsModal(true);
   };
 
-  // Feature: Accepts Terms and advances to the Downpayment Screen
-  const handleAcceptTerms = () => {
-    if (!termsAgreed) {
-      setPaymentError("You must agree to the Terms of Service to continue.");
+  // Signature pad pointer helpers
+  const clearSignatureCanvas = () => {
+    const canvas = signatureCanvasRef.current;
+    if (canvas) {
+      const ctx = canvas.getContext("2d");
+      if (ctx) {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+      }
+    }
+    setHasDrawnSignature(false);
+    setCapturedSignatureDataUrl("");
+  };
+
+  const getCanvasPoint = (
+    canvas: HTMLCanvasElement,
+    e: React.PointerEvent<HTMLCanvasElement>
+  ) => {
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = canvas.width / (rect.width || 1);
+    const scaleY = canvas.height / (rect.height || 1);
+    return {
+      x: (e.clientX - rect.left) * scaleX,
+      y: (e.clientY - rect.top) * scaleY,
+    };
+  };
+
+  const handleSigPointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    const canvas = signatureCanvasRef.current;
+    if (!canvas) return;
+    e.currentTarget.setPointerCapture(e.pointerId);
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    const pt = getCanvasPoint(canvas, e);
+    isDrawingSigRef.current = true;
+    ctx.strokeStyle = "#162447";
+    ctx.lineWidth = 2.6;
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    ctx.beginPath();
+    ctx.moveTo(pt.x, pt.y);
+    setHasDrawnSignature(true);
+    if (termsFormError) setTermsFormError("");
+  };
+
+  const handleSigPointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    if (!isDrawingSigRef.current) return;
+    const canvas = signatureCanvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    const pt = getCanvasPoint(canvas, e);
+    ctx.lineTo(pt.x, pt.y);
+    ctx.stroke();
+  };
+
+  const handleSigPointerUp = () => {
+    isDrawingSigRef.current = false;
+  };
+
+  const buildTypedSignaturePng = (nameText: string): string => {
+    const offscreen = document.createElement("canvas");
+    offscreen.width = 520;
+    offscreen.height = 140;
+    const ctx = offscreen.getContext("2d");
+    if (!ctx) return "";
+    ctx.clearRect(0, 0, offscreen.width, offscreen.height);
+    ctx.fillStyle = "#162447";
+    ctx.font = "italic 42px Georgia, 'Times New Roman', serif";
+    ctx.textBaseline = "middle";
+    ctx.fillText(nameText.trim(), 24, 72);
+    ctx.strokeStyle = "rgba(22, 36, 71, 0.4)";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(22, 102);
+    ctx.quadraticCurveTo(180, 92, 340, 104);
+    ctx.stroke();
+    return offscreen.toDataURL("image/png");
+  };
+
+  // Feature: Accepts Terms, captures client e-signature, and advances to the Downpayment Screen
+  const handleAcceptTerms = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+
+    const trimmedName = signerFullName.trim();
+    if (trimmedName.length < 2) {
+      setSignerNameError("Please enter the full legal name of the contract signer.");
+      setTermsFormError("Please enter the contract signer's full legal name before proceeding.");
       return;
     }
+
+    if (signatureMode === "drawn" && !hasDrawnSignature) {
+      setTermsFormError("Please draw your signature in the signature pad (or switch to Type Signature).");
+      return;
+    }
+
+    if (!termsAgreed) {
+      setTermsFormError("Please check the agreement box to confirm you accept all 20 contract clauses.");
+      return;
+    }
+
+    let sigDataUrl = "";
+    if (signatureMode === "drawn" && signatureCanvasRef.current) {
+      sigDataUrl = signatureCanvasRef.current.toDataURL("image/png");
+    } else {
+      sigDataUrl = buildTypedSignaturePng(trimmedName);
+    }
+
+    setCapturedSignatureDataUrl(sigDataUrl);
+    setSignedAtIso(new Date().toISOString());
+    setTermsFormError("");
+    setSignerNameError("");
     setShowTermsModal(false);
     setShowPaymentModal(true);
     setPaymentError("");
@@ -853,6 +970,14 @@ export default function BookingPage() {
           totalCorkageFee: totalCorkageFeeCalc,
           outsideFoodDisclaimerAgreed: corkageState.outsideFoodDisclaimerAgreed,
         },
+        contract_signature: {
+          signer_user_id: sessionUser.id,
+          signer_name: (signerFullName || userProfile?.full_name || userProfile?.name || "Client").trim(),
+          signer_email: sessionUser.email || userProfile?.email || "",
+          signature_mode: signatureMode,
+          signature_data_url: capturedSignatureDataUrl || "",
+          signed_at: signedAtIso || new Date().toISOString(),
+        },
       },
     };
 
@@ -893,6 +1018,14 @@ export default function BookingPage() {
             outsideFoodFee: outsideFoodFeeCalc,
             totalCorkageFee: totalCorkageFeeCalc,
             outsideFoodDisclaimerAgreed: corkageState.outsideFoodDisclaimerAgreed,
+          },
+          contract_signature: {
+            signer_user_id: sessionUser.id,
+            signer_name: (signerFullName || userProfile?.full_name || userProfile?.name || "Client").trim(),
+            signer_email: sessionUser.email || userProfile?.email || "",
+            signature_mode: signatureMode,
+            signature_data_url: capturedSignatureDataUrl || "",
+            signed_at: signedAtIso || new Date().toISOString(),
           },
         },
         corkage: {
@@ -2976,42 +3109,186 @@ export default function BookingPage() {
                 })()}
               </div>
 
-              {/* Agreement Acceptance & Actions */}
-              <div className="p-5 sm:p-6 border-t border-white/10 bg-black/70 flex flex-col gap-4 shrink-0">
-                <label className="flex items-start gap-3 cursor-pointer select-none group">
+              {/* Agreement E-Signature & Acceptance Form */}
+              <form
+                onSubmit={handleAcceptTerms}
+                noValidate
+                className="p-4 sm:p-6 border-t border-white/10 bg-black/80 flex flex-col gap-3.5 shrink-0"
+              >
+                <div className="grid grid-cols-1 md:grid-cols-12 gap-3.5 items-start">
+                  {/* Left: Signer Legal Name + Clause 19 Signer Notice */}
+                  <div className="md:col-span-5 space-y-2">
+                    <div>
+                      <label
+                        htmlFor="contract-signer-name"
+                        className="block text-[11px] font-bold uppercase tracking-wider text-gold-400 mb-1"
+                      >
+                        Contract Signer Full Legal Name *
+                      </label>
+                      <input
+                        id="contract-signer-name"
+                        type="text"
+                        required
+                        autoComplete="name"
+                        autoCorrect="off"
+                        spellCheck={false}
+                        value={signerFullName}
+                        aria-invalid={Boolean(signerNameError)}
+                        aria-describedby="contract-signer-hint contract-signer-error"
+                        onChange={(e) => {
+                          setSignerFullName(e.target.value);
+                          if (signerNameError) setSignerNameError("");
+                          if (termsFormError) setTermsFormError("");
+                        }}
+                        onBlur={() => {
+                          if (signerFullName.trim().length < 2) {
+                            setSignerNameError("Please enter the full legal name of the contract signer.");
+                          }
+                        }}
+                        placeholder="Enter your full legal name"
+                        className={`w-full bg-white/5 border px-3 py-2 text-xs text-white rounded-lg focus:outline-none ${
+                          signerNameError
+                            ? "border-red-500/70 focus:border-red-400"
+                            : "border-white/15 focus:border-gold-400/60"
+                        }`}
+                      />
+                      <p id="contract-signer-hint" className="text-[10px] text-white/50 mt-1 leading-snug">
+                        Per Clause 19, <strong>only this Contract Signer</strong> may file post-event feedback or disputes within the strict 24-hour window.
+                      </p>
+                      {signerNameError && (
+                        <p id="contract-signer-error" role="alert" className="text-[10px] text-red-400 font-semibold mt-1">
+                          {signerNameError}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Right: Signature Pad (Draw or Type) */}
+                  <div className="md:col-span-7 space-y-1.5">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-[11px] font-bold uppercase tracking-wider text-gold-400">
+                        Client Electronic Signature *
+                      </span>
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSignatureMode("drawn");
+                            if (termsFormError) setTermsFormError("");
+                          }}
+                          className={`px-2.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider cursor-pointer transition-colors ${
+                            signatureMode === "drawn"
+                              ? "bg-gold-400 text-black"
+                              : "bg-white/5 text-white/60 border border-white/10 hover:text-white"
+                          }`}
+                        >
+                          Draw
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSignatureMode("typed");
+                            if (termsFormError) setTermsFormError("");
+                          }}
+                          className={`px-2.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider cursor-pointer transition-colors ${
+                            signatureMode === "typed"
+                              ? "bg-gold-400 text-black"
+                              : "bg-white/5 text-white/60 border border-white/10 hover:text-white"
+                          }`}
+                        >
+                          Type
+                        </button>
+                        {signatureMode === "drawn" && hasDrawnSignature && (
+                          <button
+                            type="button"
+                            onClick={clearSignatureCanvas}
+                            className="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-red-500/15 text-red-300 border border-red-500/30 hover:bg-red-500/25 cursor-pointer"
+                          >
+                            Clear
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    {signatureMode === "drawn" ? (
+                      <div className="relative rounded-lg border border-gold-400/35 bg-[#faf8f3] overflow-hidden h-20">
+                        <canvas
+                          ref={signatureCanvasRef}
+                          width={520}
+                          height={140}
+                          onPointerDown={handleSigPointerDown}
+                          onPointerMove={handleSigPointerMove}
+                          onPointerUp={handleSigPointerUp}
+                          onPointerCancel={handleSigPointerUp}
+                          className="w-full h-full touch-none cursor-crosshair block"
+                          aria-label="Draw your contract signature"
+                        />
+                        {!hasDrawnSignature && (
+                          <span className="pointer-events-none absolute inset-0 flex items-center justify-center text-xs italic text-neutral-400 select-none">
+                            Sign here using mouse or touch
+                          </span>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="rounded-lg border border-gold-400/35 bg-[#faf8f3] h-20 px-4 flex items-center justify-between">
+                        <span className="font-serif italic text-2xl text-[#162447] truncate">
+                          {signerFullName.trim() || "Your Signature Preview"}
+                        </span>
+                        <span className="text-[10px] uppercase tracking-wider font-bold text-neutral-500 shrink-0 ml-2">
+                          E-Signature
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <label htmlFor="contract-terms-checkbox" className="flex items-start gap-3 cursor-pointer select-none group">
                   <input
+                    id="contract-terms-checkbox"
                     type="checkbox"
                     checked={termsAgreed}
-                    onChange={(e) => setTermsAgreed(e.target.checked)}
-                    className="mt-1 w-4 h-4 rounded border-white/20 text-gold-400 focus:ring-gold-400/20 accent-[#c5a059] cursor-pointer"
+                    onChange={(e) => {
+                      setTermsAgreed(e.target.checked);
+                      if (termsFormError) setTermsFormError("");
+                    }}
+                    className="mt-0.5 w-4 h-4 rounded border-white/20 text-gold-400 focus:ring-gold-400/20 accent-[#c5a059] cursor-pointer"
                   />
                   <span className="text-xs text-white/80 font-medium group-hover:text-white transition-colors">
-                    I have read, understood, and agree to the full <strong>Terms of Service & Catering Agreement</strong>, including the non-refundable deposit, cancellation forfeit, 4-hour limit, overtime fees, and liability policies.
+                    I have read, understood, and agree to the full <strong>20-Clause Catering Service Agreement</strong>, including the non-refundable deposit, 4-hour service limit, post-event damage appraisal (Clause 13), and strict 24-hour signer-only dispute &amp; social media policy (Clause 19).
                   </span>
                 </label>
 
-                <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-1">
-                  <p className="text-[10px] text-white/40">
-                    Signing as: <span className="text-white/70 font-semibold">{userProfile?.full_name || userProfile?.name || "Client"}</span>
+                <div aria-live="polite" className="min-h-0">
+                  {termsFormError && (
+                    <div role="alert" className="p-2.5 rounded-lg bg-red-500/15 border border-red-500/40 text-red-200 text-xs font-semibold flex items-center gap-2">
+                      <AlertTriangle size={14} className="text-red-400 shrink-0" />
+                      <span>{termsFormError}</span>
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
+                  <p className="text-[10px] text-white/50">
+                    Executing Contract as: <span className="text-gold-300 font-semibold">{signerFullName.trim() || userProfile?.full_name || userProfile?.name || "Client"}</span>
                   </p>
 
                   <div className="flex items-center gap-3 w-full sm:w-auto">
                     <button
+                      type="button"
                       onClick={() => setShowTermsModal(false)}
                       className="w-full sm:w-auto px-6 py-2.5 border border-white/20 text-white/70 text-xs font-bold uppercase tracking-wider hover:bg-white/5 transition-colors rounded-sm cursor-pointer"
                     >
                       Decline / Return
                     </button>
                     <button
-                      onClick={handleAcceptTerms}
-                      disabled={!termsAgreed}
-                      className="w-full sm:w-auto px-8 py-2.5 gold-gradient text-black text-xs font-bold uppercase tracking-wider hover:brightness-110 transition-all disabled:opacity-40 disabled:cursor-not-allowed rounded-sm flex items-center justify-center gap-2 cursor-pointer shadow-lg whitespace-nowrap"
+                      type="submit"
+                      className="w-full sm:w-auto px-8 py-2.5 gold-gradient text-black text-xs font-bold uppercase tracking-wider hover:brightness-110 transition-all rounded-sm flex items-center justify-center gap-2 cursor-pointer shadow-lg whitespace-nowrap"
                     >
-                      I Agree & Proceed to Payment <ChevronRight size={14} />
+                      Sign &amp; Proceed to Payment <ChevronRight size={14} />
                     </button>
                   </div>
                 </div>
-              </div>
+              </form>
             </motion.div>
           </motion.div>
         )}

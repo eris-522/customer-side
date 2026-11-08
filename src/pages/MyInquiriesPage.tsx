@@ -27,6 +27,11 @@ import {
   AlertCircle,
   Utensils,
   Receipt,
+  ShieldCheck,
+  FileText,
+  MessageSquare,
+  Scale,
+  Camera,
 } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
 
@@ -36,6 +41,7 @@ import { restoreBookingInventoryOnCancellation } from "../utils/inventoryReturn"
 import { catalogCache } from "../utils/catalogCache";
 import {
   getSessionUser,
+  fetchUserProfile,
   checkAccountStatus,
   clearSessionGuardCache,
 } from "../utils/sessionGuard";
@@ -100,7 +106,10 @@ const getBookingDishCategory = (
 
 const categoryOrder = ["Appetizer", "Soup", "Main Course", "Pasta", "Vegetable", "Rice", "Dessert", "Drinks"];
 
-type InquiryTab = "payments" | "menu" | "breakdown";
+const cleanDueDate = (d?: string | null): string =>
+  d ? String(d).replace(/\s*\(Strictly.*?\)/i, "").trim() : "";
+
+type InquiryTab = "payments" | "menu" | "breakdown" | "complaints";
 
 export default function MyInquiriesPage() {
   const navigate = useNavigate();
@@ -184,7 +193,55 @@ export default function MyInquiriesPage() {
     guaranteedPax: number;
     actualPax: number;
   } | null>(null);
+  const [payingDamageInvoice, setPayingDamageInvoice] = useState<{
+    amount: number;
+    dueDate?: string;
+    itemCount: number;
+  } | null>(null);
   const [balancePaymentMethod, setBalancePaymentMethod] = useState<"GCash" | "Bank Transfer">("GCash");
+
+  // Post-Event 24-Hour Signer-Only Complaint State
+  const [currentUser, setCurrentUser] = useState<{
+    id: string;
+    email: string;
+    name: string;
+  } | null>(null);
+  const [nowMs, setNowMs] = useState<number>(() => Date.now());
+  const [complaintDraftByBooking, setComplaintDraftByBooking] = useState<
+    Record<
+      string,
+      {
+        category: string;
+        subject: string;
+        details: string;
+        signerName: string;
+        disputeAck: boolean;
+        photoDataUrl: string;
+        photoBlob: Blob | null;
+        photoName: string;
+      }
+    >
+  >({});
+  const [complaintErrorsByBooking, setComplaintErrorsByBooking] = useState<
+    Record<
+      string,
+      {
+        subject?: string;
+        details?: string;
+        signerName?: string;
+        disputeAck?: string;
+        form?: string;
+      }
+    >
+  >({});
+  const [submittingComplaintId, setSubmittingComplaintId] = useState<string | null>(null);
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setNowMs(Date.now());
+    }, 30_000);
+    return () => clearInterval(timer);
+  }, []);
   const [balanceRef, setBalanceRef] = useState<string>("");
   const [balanceReceiptImage, setBalanceReceiptImage] = useState<string>("");
   const [balanceReceiptBlob, setBalanceReceiptBlob] = useState<Blob | null>(null);
@@ -230,15 +287,22 @@ export default function MyInquiriesPage() {
 
         lastFetchTimestamp = Date.now();
 
-        const [bookingsRes, cachedOrFreshMenu] = await Promise.all([
+        const [bookingsRes, cachedOrFreshMenu, profileData] = await Promise.all([
           supabase
             .from("bookings")
             .select("*, packages (id, name, price, additional_pax_price, category_limits, inclusions)")
             .eq("user_id", authUser.id),
           catalogCache.fetchMenuItems(),
+          fetchUserProfile(authUser.id).catch(() => null),
         ]);
 
         if (!isMounted || reqId !== latestFetchIdRef.current) return authUser;
+
+        setCurrentUser({
+          id: authUser.id,
+          email: authUser.email || profileData?.email || "",
+          name: profileData?.full_name || profileData?.name || authUser.user_metadata?.full_name || "Client",
+        });
 
         const { data: bookingsData, error } = bookingsRes;
         if (error) throw error;
@@ -884,6 +948,7 @@ export default function MyInquiriesPage() {
     }
     setPayingBalanceBooking(booking);
     setPayingExcessSurcharge(null);
+    setPayingDamageInvoice(null);
     if (milestoneIndex !== undefined && milestone) {
       setPayingMilestone({
         index: milestoneIndex,
@@ -910,6 +975,7 @@ export default function MyInquiriesPage() {
     if (!postEventBilling) return;
     setPayingBalanceBooking(booking);
     setPayingMilestone(null);
+    setPayingDamageInvoice(null);
     setPayingExcessSurcharge({
       amount: Number(postEventBilling.excess_guest_fee) || 0,
       dueDate: postEventBilling.due_date || "",
@@ -930,6 +996,320 @@ export default function MyInquiriesPage() {
     setBalanceReceiptName("");
     setBalanceError("");
     setCopiedBalanceAccount("");
+  };
+
+  const handleOpenDamagePaymentModal = (booking: any, damageAppraisal: any) => {
+    if (!damageAppraisal) return;
+    setPayingBalanceBooking(booking);
+    setPayingMilestone(null);
+    setPayingExcessSurcharge(null);
+    setPayingDamageInvoice({
+      amount: Number(damageAppraisal.total_damage_fee) || 0,
+      dueDate: damageAppraisal.due_date || "Immediately Post-Event",
+      itemCount: Array.isArray(damageAppraisal.items) ? damageAppraisal.items.length : 1,
+    });
+    setBalancePaymentMethod(
+      damageAppraisal.payment_method === "Bank Transfer" ? "Bank Transfer" : "GCash"
+    );
+    setBalanceRef(damageAppraisal.reference_number || "");
+    setBalanceReceiptImage(damageAppraisal.receipt_url || "");
+    setBalanceReceiptBlob(null);
+    setBalanceReceiptName("");
+    setBalanceError("");
+    setCopiedBalanceAccount("");
+  };
+
+  const getComplaintDraft = (bookingKey: string, defaultSignerName: string) => {
+    return (
+      complaintDraftByBooking[bookingKey] || {
+        category: "Service & Staff",
+        subject: "",
+        details: "",
+        signerName: defaultSignerName,
+        disputeAck: false,
+        photoDataUrl: "",
+        photoBlob: null,
+        photoName: "",
+      }
+    );
+  };
+
+  const updateComplaintDraft = (
+    bookingKey: string,
+    defaultSignerName: string,
+    patch: Partial<{
+      category: string;
+      subject: string;
+      details: string;
+      signerName: string;
+      disputeAck: boolean;
+      photoDataUrl: string;
+      photoBlob: Blob | null;
+      photoName: string;
+    }>
+  ) => {
+    setComplaintDraftByBooking((prev) => {
+      const base = prev[bookingKey] || {
+        category: "Service & Staff",
+        subject: "",
+        details: "",
+        signerName: defaultSignerName,
+        disputeAck: false,
+        photoDataUrl: "",
+        photoBlob: null,
+        photoName: "",
+      };
+      return {
+        ...prev,
+        [bookingKey]: { ...base, ...patch },
+      };
+    });
+  };
+
+  const setComplaintFieldError = (
+    bookingKey: string,
+    field: "subject" | "details" | "signerName" | "disputeAck" | "form",
+    message?: string
+  ) => {
+    setComplaintErrorsByBooking((prev) => ({
+      ...prev,
+      [bookingKey]: {
+        ...(prev[bookingKey] || {}),
+        [field]: message,
+      },
+    }));
+  };
+
+  const handleComplaintPhotoUpload = async (
+    bookingKey: string,
+    defaultSignerName: string,
+    e: React.ChangeEvent<HTMLInputElement>
+  ) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      setComplaintFieldError(bookingKey, "form", "Please select a valid image file (JPG, PNG, WEBP).");
+      return;
+    }
+    try {
+      setComplaintFieldError(bookingKey, "form", undefined);
+      const { dataUrl, blob } = await compressReceiptImage(file);
+      updateComplaintDraft(bookingKey, defaultSignerName, {
+        photoDataUrl: dataUrl,
+        photoBlob: blob,
+        photoName: file.name,
+      });
+    } catch {
+      setComplaintFieldError(bookingKey, "form", "Could not process image. Please try another photo.");
+    }
+  };
+
+  const handleSubmitComplaint = async (
+    e: React.FormEvent,
+    booking: any,
+    bookingKey: string,
+    signerUserId: string,
+    defaultSignerName: string,
+    completedAtIso: string
+  ) => {
+    e.preventDefault();
+    if (!currentUser) return;
+
+    // 1. Strict 24-hour window re-check on submit
+    const completedMs = new Date(completedAtIso).getTime();
+    const elapsedMs = Date.now() - completedMs;
+    const windowMs = 24 * 60 * 60 * 1000;
+    if (!isNaN(completedMs) && elapsedMs > windowMs) {
+      setComplaintFieldError(
+        bookingKey,
+        "form",
+        "The 24-hour post-event feedback window has expired."
+      );
+      setNowMs(Date.now());
+      return;
+    }
+
+    // 2. Strict Contract Signer account check
+    if (String(currentUser.id) !== String(signerUserId)) {
+      setComplaintFieldError(
+        bookingKey,
+        "form",
+        "Only the original Contract Signer account is authorized to submit post-event feedback."
+      );
+      return;
+    }
+
+    const draft = getComplaintDraft(bookingKey, defaultSignerName);
+    const nextErrors: {
+      subject?: string;
+      details?: string;
+      signerName?: string;
+      disputeAck?: string;
+      form?: string;
+    } = {};
+
+    if (draft.signerName.trim().length < 2) {
+      nextErrors.signerName = "Please confirm your full legal name as the contract signer.";
+    } else if (
+      defaultSignerName &&
+      defaultSignerName !== "Client" &&
+      draft.signerName.trim().toLowerCase() !== defaultSignerName.trim().toLowerCase()
+    ) {
+      nextErrors.signerName = `Must match the recorded Contract Signer ("${defaultSignerName}").`;
+    }
+
+    if (draft.subject.trim().length < 4) {
+      nextErrors.subject = "Please provide a brief subject (at least 4 characters).";
+    }
+    if (draft.details.trim().length < 15) {
+      nextErrors.details = "Please describe the incident or concern in detail (at least 15 characters).";
+    }
+    if (!draft.disputeAck) {
+      nextErrors.disputeAck = "Please acknowledge the confirmation before submitting.";
+    }
+
+    if (Object.keys(nextErrors).length > 0) {
+      setComplaintErrorsByBooking((prev) => ({
+        ...prev,
+        [bookingKey]: {
+          ...nextErrors,
+          form: "Please review and complete the highlighted fields before submitting.",
+        },
+      }));
+      return;
+    }
+
+    setSubmittingComplaintId(String(booking.id));
+    setComplaintErrorsByBooking((prev) => ({ ...prev, [bookingKey]: {} }));
+
+    try {
+      let uploadedPhotoUrl = draft.photoDataUrl || "";
+      if (draft.photoBlob) {
+        const remoteUrl = await uploadReceiptImage(draft.photoBlob, currentUser.id);
+        if (remoteUrl) uploadedPhotoUrl = remoteUrl;
+      }
+
+      const submittedAt = new Date().toISOString();
+      const hoursElapsed = !isNaN(completedMs)
+        ? Math.max(0, Number(((Date.now() - completedMs) / (1000 * 60 * 60)).toFixed(2)))
+        : 0;
+
+      let currentLogistics: any =
+        booking.logistics_info && typeof booking.logistics_info === "object"
+          ? { ...booking.logistics_info }
+          : {};
+
+      let baseAllergies = booking.food_allergies || "";
+      let currentMeta: any = null;
+      if (typeof baseAllergies === "string" && baseAllergies.includes("__PAYMENT_METADATA__:")) {
+        const parts = baseAllergies.split("__PAYMENT_METADATA__:");
+        baseAllergies = parts[0].trim();
+        try {
+          currentMeta = JSON.parse(parts[1]);
+          if (Object.keys(currentLogistics).length === 0 && currentMeta?.logistics) {
+            currentLogistics = { ...currentMeta.logistics };
+          }
+        } catch {}
+      }
+
+      const existingComplaints: any[] = Array.isArray(currentLogistics.post_event_complaints)
+        ? currentLogistics.post_event_complaints
+        : [];
+
+      const newComplaint = {
+        id: `cmp-${Date.now()}`,
+        booking_id: booking.id,
+        category: draft.category,
+        subject: draft.subject.trim(),
+        details: draft.details.trim(),
+        photo_url: uploadedPhotoUrl || null,
+        submitted_at: submittedAt,
+        completed_at_reference: completedAtIso,
+        hours_after_completion: hoursElapsed,
+        within_24h_window: true,
+        submitter_user_id: currentUser.id,
+        submitter_email: currentUser.email,
+        submitter_name: draft.signerName.trim(),
+        recorded_contract_signer: defaultSignerName,
+        is_verified_signer: true,
+        dispute_clause_acknowledged: true,
+        status: "Pending Review",
+        resolution_notes: "",
+        resolved_by: "",
+        resolved_at: null,
+      };
+
+      const updatedLogistics = {
+        ...currentLogistics,
+        post_event_complaints: [...existingComplaints, newComplaint],
+        updated_at: submittedAt,
+      };
+
+      const updatePayload: any = {
+        logistics_info: updatedLogistics,
+      };
+
+      let updatedAllergies = booking.food_allergies || "";
+      if (currentMeta) {
+        currentMeta.logistics = updatedLogistics;
+        updatedAllergies = `${baseAllergies ? baseAllergies + "\n" : ""}__PAYMENT_METADATA__:${JSON.stringify(currentMeta)}`;
+        updatePayload.food_allergies = updatedAllergies;
+      }
+
+      const { error } = await supabase
+        .from("bookings")
+        .update(updatePayload)
+        .eq("id", booking.id);
+
+      if (error) throw error;
+
+      setBookings((prev) =>
+        prev.map((b) =>
+          b.id === booking.id
+            ? { ...b, logistics_info: updatedLogistics, food_allergies: updatedAllergies }
+            : b
+        )
+      );
+
+      setComplaintDraftByBooking((prev) => ({
+        ...prev,
+        [bookingKey]: {
+          category: "Service & Staff",
+          subject: "",
+          details: "",
+          signerName: defaultSignerName,
+          disputeAck: false,
+          photoDataUrl: "",
+          photoBlob: null,
+          photoName: "",
+        },
+      }));
+
+      try {
+        const bc = new BroadcastChannel("roxan_catering_events");
+        bc.postMessage({
+          type: "BOOKINGS_UPDATED",
+          bookingId: booking.id,
+          action: "complaint_submitted",
+        });
+        bc.close();
+      } catch {}
+      try {
+        localStorage.setItem("roxan_last_booking_update", String(Date.now()));
+      } catch {}
+
+      triggerModSuccessToast(
+        "Your post-event report has been submitted directly to our management team for official review."
+      );
+    } catch (err: any) {
+      setComplaintFieldError(
+        bookingKey,
+        "form",
+        err.message || "Failed to submit complaint. Please try again."
+      );
+    } finally {
+      setSubmittingComplaintId(null);
+    }
   };
 
   const handleBalanceReceiptUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -973,7 +1353,95 @@ export default function MyInquiriesPage() {
         }
       }
 
-      if (payingExcessSurcharge !== null) {
+      if (payingDamageInvoice !== null) {
+        // === SUBMITTING PAYMENT PROOF FOR POST-EVENT EQUIPMENT DAMAGE INVOICE ===
+        const nowIso = new Date().toISOString();
+        let currentLogistics: any =
+          payingBalanceBooking.logistics_info &&
+          typeof payingBalanceBooking.logistics_info === "object"
+            ? { ...payingBalanceBooking.logistics_info }
+            : {};
+
+        let baseAllergies = payingBalanceBooking.food_allergies || "";
+        let currentMeta: any = null;
+        if (
+          typeof baseAllergies === "string" &&
+          baseAllergies.includes("__PAYMENT_METADATA__:")
+        ) {
+          const parts = baseAllergies.split("__PAYMENT_METADATA__:");
+          baseAllergies = parts[0].trim();
+          try {
+            currentMeta = JSON.parse(parts[1]);
+            if (Object.keys(currentLogistics).length === 0 && currentMeta?.logistics) {
+              currentLogistics = { ...currentMeta.logistics };
+            }
+          } catch {}
+        }
+
+        const existingDamage = currentLogistics.damage_appraisal || {};
+        const updatedDamage = {
+          ...existingDamage,
+          payment_status: "Pending Verification",
+          payment_method: balancePaymentMethod,
+          reference_number: balanceRef.trim(),
+          receipt_url: finalReceiptUrl,
+          submitted_at: nowIso,
+          updated_at: nowIso,
+        };
+
+        const updatedLogistics = {
+          ...currentLogistics,
+          damage_appraisal: updatedDamage,
+          updated_at: nowIso,
+        };
+
+        const updatePayload: any = {
+          logistics_info: updatedLogistics,
+        };
+
+        let updatedAllergies = payingBalanceBooking.food_allergies || "";
+        if (currentMeta) {
+          currentMeta.logistics = updatedLogistics;
+          updatedAllergies = `${baseAllergies ? baseAllergies + "\n" : ""}__PAYMENT_METADATA__:${JSON.stringify(currentMeta)}`;
+          updatePayload.food_allergies = updatedAllergies;
+        }
+
+        const { error } = await supabase
+          .from("bookings")
+          .update(updatePayload)
+          .eq("id", payingBalanceBooking.id);
+
+        if (error) throw error;
+
+        setBookings((prev) =>
+          prev.map((b) =>
+            b.id === payingBalanceBooking.id
+              ? {
+                  ...b,
+                  logistics_info: updatedLogistics,
+                  food_allergies: updatedAllergies,
+                }
+              : b
+          )
+        );
+
+        try {
+          const bc = new BroadcastChannel("roxan_catering_events");
+          bc.postMessage({
+            type: "BOOKINGS_UPDATED",
+            bookingId: payingBalanceBooking.id,
+            action: "damage_payment_submitted",
+          });
+          bc.close();
+        } catch {}
+        try {
+          localStorage.setItem("roxan_last_booking_update", String(Date.now()));
+        } catch {}
+
+        triggerModSuccessToast(
+          "Equipment damage invoice receipt submitted! Our coordinator will verify your payment shortly."
+        );
+      } else if (payingExcessSurcharge !== null) {
         // === SUBMITTING PAYMENT PROOF FOR POST-EVENT EXCESS HEADCOUNT SURCHARGE ===
         const nowIso = new Date().toISOString();
         let currentLogistics: any =
@@ -1246,6 +1714,7 @@ export default function MyInquiriesPage() {
       setPayingBalanceBooking(null);
       setPayingMilestone(null);
       setPayingExcessSurcharge(null);
+      setPayingDamageInvoice(null);
     } catch (err: any) {
       console.error("Error submitting payment proof:", err);
       setBalanceError(err.message || "Failed to submit payment receipt.");
@@ -1271,6 +1740,7 @@ export default function MyInquiriesPage() {
       .trim();
     if (filter === "Confirmed")
       return ["accepted", "approved", "confirmed"].includes(status);
+    if (filter === "Completed") return status === "completed";
     if (filter === "Cancelled")
       return ["cancelled", "declined", "rejected"].includes(status);
     if (filter === "Pending") return ["pending"].includes(status);
@@ -1320,7 +1790,7 @@ export default function MyInquiriesPage() {
 
         {bookings.length > 0 && (
           <div className="flex flex-wrap justify-center gap-2 mb-10">
-            {["All", "Pending", "Confirmed", "Cancelled"].map((f) => (
+            {["All", "Pending", "Confirmed", "Completed", "Cancelled"].map((f) => (
               <button
                 key={f}
                 onClick={() => setFilter(f)}
@@ -1455,7 +1925,73 @@ export default function MyInquiriesPage() {
               );
               const excessReceiptUrl = String(postEventBilling?.receipt_url || "");
 
-      const totalAdditionalFees = travelFee + haulingFee + corkageFee + totalOTFee + rainLaundryFee;
+              const isCompleted = statusLower === "completed";
+              const completedAtIso = String(
+                logData?.completed_at ||
+                  postEventBilling?.billed_at ||
+                  logData?.updated_at ||
+                  booking.updated_at ||
+                  booking.created_at ||
+                  ""
+              );
+              const completedMs = completedAtIso ? new Date(completedAtIso).getTime() : NaN;
+              const complaintWindowTotalMs = 24 * 60 * 60 * 1000;
+              const remainingComplaintMs =
+                isCompleted && !isNaN(completedMs)
+                  ? Math.max(0, complaintWindowTotalMs - (nowMs - completedMs))
+                  : 0;
+              const isComplaintWindowOpen = isCompleted && remainingComplaintMs > 0;
+              const remainingHours = Math.floor(remainingComplaintMs / (1000 * 60 * 60));
+              const remainingMinutes = Math.floor(
+                (remainingComplaintMs % (1000 * 60 * 60)) / (1000 * 60)
+              );
+              const formattedComplaintCountdown = `${remainingHours}h ${String(
+                remainingMinutes
+              ).padStart(2, "0")}m`;
+
+              const contractSignature = logData?.contract_signature || null;
+              const signerUserId = String(
+                contractSignature?.signer_user_id || booking.user_id || ""
+              );
+              const signerName = String(
+                contractSignature?.signer_name ||
+                  currentUser?.name ||
+                  "Contract Signer"
+              ).trim();
+              const isVerifiedSigner = Boolean(
+                currentUser && signerUserId && String(currentUser.id) === signerUserId
+              );
+
+              const complaintsList: any[] = Array.isArray(logData?.post_event_complaints)
+                ? logData.post_event_complaints
+                : [];
+              const hasResolvedComplaintUpdate = complaintsList.some(
+                (c: any) =>
+                  c?.status === "Resolved" ||
+                  c?.status === "Under Investigation" ||
+                  Boolean(c?.resolution_notes)
+              );
+
+              const damageAppraisal = logData?.damage_appraisal || null;
+              const damageItems: any[] = Array.isArray(damageAppraisal?.items)
+                ? damageAppraisal.items
+                : [];
+              const damageFee = Number(damageAppraisal?.total_damage_fee) || 0;
+              const isDamageSettled = Boolean(
+                damageAppraisal &&
+                  (damageAppraisal.payment_status === "Verified" ||
+                    damageAppraisal.payment_status === "Paid")
+              );
+              const isDamageUnderReview = Boolean(
+                damageAppraisal &&
+                  !isDamageSettled &&
+                  damageFee > 0 &&
+                  (damageAppraisal.payment_status === "Pending Verification" ||
+                    Boolean(damageAppraisal.receipt_url))
+              );
+              const damageReceiptUrl = String(damageAppraisal?.receipt_url || "");
+
+              const totalAdditionalFees = travelFee + haulingFee + corkageFee + totalOTFee + rainLaundryFee;
               const totalEventCost = basePrice + additionalPaxTotal + totalAdditionalFees;
 
               const paymentData = (() => {
@@ -1668,7 +2204,7 @@ export default function MyInquiriesPage() {
                 badge?: string;
                 alertDot?: boolean;
               }[] = [
-                ...((paymentData || excessGuestFee > 0)
+                ...((paymentData || excessGuestFee > 0 || damageFee > 0)
                   ? [
                       {
                         key: "payments" as InquiryTab,
@@ -1682,7 +2218,8 @@ export default function MyInquiriesPage() {
                               !isBalanceUnderReview &&
                               daysUntilDeadline !== null &&
                               daysUntilDeadline <= 7) ||
-                              (excessGuestFee > 0 && !isExcessSettled && !isExcessUnderReview))
+                              (excessGuestFee > 0 && !isExcessSettled && !isExcessUnderReview) ||
+                              (damageFee > 0 && !isDamageSettled && !isDamageUnderReview))
                         ),
                       },
                     ]
@@ -1698,12 +2235,29 @@ export default function MyInquiriesPage() {
                 {
                   key: "breakdown",
                   label: "Cost Breakdown",
-                  alertDot: isTravelFeePending,
+                  alertDot: isTravelFeePending || (damageFee > 0 && !isDamageSettled),
                 },
+                ...((isCompleted || complaintsList.length > 0)
+                  ? [
+                      {
+                        key: "complaints" as InquiryTab,
+                        label: "Feedback & Disputes",
+                        badge:
+                          complaintsList.length > 0
+                            ? String(complaintsList.length)
+                            : isComplaintWindowOpen
+                            ? "24h Open"
+                            : undefined,
+                        alertDot: Boolean(isComplaintWindowOpen || hasResolvedComplaintUpdate),
+                      },
+                    ]
+                  : []),
               ];
 
               const defaultTab: InquiryTab =
-                !isCancelled && (paymentData || excessGuestFee > 0) ? "payments" : "breakdown";
+                !isCancelled && (paymentData || excessGuestFee > 0 || damageFee > 0)
+                  ? "payments"
+                  : "breakdown";
               const storedTab = activeTabByBooking[bookingKey];
               const activeTab: InquiryTab =
                 storedTab && availableTabs.some((t) => t.key === storedTab)
@@ -1962,8 +2516,92 @@ export default function MyInquiriesPage() {
                     </div>
                   )}
 
-                  {/* 3. Unified 3-Column Financial Summary Strip */}
-                  <div className={`mx-5 sm:mx-6 mb-4 rounded-md bg-white/[0.03] border border-white/10 grid grid-cols-1 ${excessGuestFee > 0 ? "sm:grid-cols-2 lg:grid-cols-4" : "sm:grid-cols-3"} divide-y sm:divide-y-0 sm:divide-x divide-white/10`}>
+                  {/* 2B. Post-Event 24-Hour Complaint Window & Damage Invoice Status Strip */}
+                  {isCompleted && (
+                    <div className="px-5 sm:px-6 pb-3 space-y-2">
+                      <div
+                        className={`py-2 px-3 rounded-md border flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs ${
+                          isComplaintWindowOpen
+                            ? "bg-gold-400/[0.08] border-gold-400/35"
+                            : "bg-white/[0.03] border-white/10"
+                        }`}
+                      >
+                        <div className="flex items-center gap-2 min-w-0">
+                          <Scale
+                            size={14}
+                            className={
+                              isComplaintWindowOpen
+                                ? "text-gold-400 shrink-0"
+                                : "text-white/45 shrink-0"
+                            }
+                            aria-hidden="true"
+                          />
+                          <p className="text-white/85 truncate">
+                            {isComplaintWindowOpen ? (
+                              <>
+                                <strong className="text-gold-300">
+                                  24h Feedback Window Open ({formattedComplaintCountdown} left)
+                                </strong>
+                                <span className="text-white/50 mx-1.5">·</span>
+                                <span className="text-white/70">Signer: {signerName}</span>
+                              </>
+                            ) : (
+                              <>
+                                <strong className="text-white/75">
+                                  24h Feedback Window Concluded
+                                </strong>
+                                <span className="text-white/50 mx-1.5">·</span>
+                                <span className="text-white/60">Service on record as complete</span>
+                              </>
+                            )}
+                          </p>
+                        </div>
+                        {activeTab !== "complaints" && (
+                          <button
+                            type="button"
+                            onClick={() => selectTab("complaints")}
+                            className="text-[11px] font-bold uppercase tracking-wider text-gold-300 hover:text-white transition-colors self-start sm:self-auto shrink-0 min-h-6 px-1.5 cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-400"
+                          >
+                            {isComplaintWindowOpen ? "Open Form →" : "View Records →"}
+                          </button>
+                        )}
+                      </div>
+
+                      {damageFee > 0 && !isDamageSettled && (
+                        <div className="py-2 px-3 bg-orange-500/10 border border-orange-500/30 rounded-md flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <AlertTriangle
+                              size={14}
+                              className="text-orange-400 shrink-0"
+                              aria-hidden="true"
+                            />
+                            <p className="text-white/85 truncate">
+                              <strong className="text-orange-300">
+                                Damage Invoice: ₱{damageFee.toLocaleString()}
+                              </strong>
+                              <span className="text-white/50 mx-1.5">·</span>
+                              <span className="text-white/70">
+                                {damageItems.length} appraised item(s)
+                                {damageAppraisal?.due_date ? ` · Due ${damageAppraisal.due_date}` : ""}
+                              </span>
+                            </p>
+                          </div>
+                          {activeTab !== "payments" && (
+                            <button
+                              type="button"
+                              onClick={() => selectTab("payments")}
+                              className="text-[11px] font-bold uppercase tracking-wider text-orange-300 hover:text-white transition-colors self-start sm:self-auto shrink-0 min-h-6 px-1.5 cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-400"
+                            >
+                              View Invoice →
+                            </button>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* 3. Unified Financial Summary Strip */}
+                  <div className={`mx-5 sm:mx-6 mb-4 rounded-md bg-white/[0.03] border border-white/10 grid grid-cols-1 ${excessGuestFee > 0 && damageFee > 0 ? "sm:grid-cols-2 lg:grid-cols-5" : (excessGuestFee > 0 || damageFee > 0) ? "sm:grid-cols-2 lg:grid-cols-4" : "sm:grid-cols-3"} divide-y sm:divide-y-0 sm:divide-x divide-white/10`}>
                     <div className="px-4 py-3">
                       <p className="text-[10px] uppercase tracking-wider font-semibold text-white/45">
                         Estimated Total
@@ -2111,6 +2749,52 @@ export default function MyInquiriesPage() {
                         </p>
                       </div>
                     )}
+
+                    {damageFee > 0 && (
+                      <div className="px-4 py-3 bg-orange-500/[0.03]">
+                        <div className="flex items-center justify-between gap-2">
+                          <p className="text-[10px] uppercase tracking-wider font-semibold text-orange-300/85">
+                            Damage Invoice
+                          </p>
+                          {damageReceiptUrl && (
+                            <button
+                              type="button"
+                              aria-describedby={cardHeadingId}
+                              onClick={() => setViewingReceiptUrl(damageReceiptUrl)}
+                              className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-gold-400 hover:text-gold-200 transition-colors min-h-6 px-1.5 -my-1 rounded focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-400 cursor-pointer"
+                            >
+                              <Eye size={11} aria-hidden="true" /> View Slip
+                            </button>
+                          )}
+                        </div>
+                        <p
+                          className={`text-lg sm:text-xl font-serif font-bold tabular-nums mt-0.5 ${
+                            isCancelled
+                              ? "text-white/40"
+                              : isDamageSettled
+                              ? "text-emerald-400"
+                              : isDamageUnderReview
+                              ? "text-amber-300"
+                              : "text-orange-400"
+                          }`}
+                        >
+                          ₱{damageFee.toLocaleString()}
+                        </p>
+                        <p className="text-[11px] mt-0.5">
+                          {isCancelled ? (
+                            <span className="text-white/40">Booking cancelled</span>
+                          ) : isDamageSettled ? (
+                            <span className="text-emerald-400 font-medium">Settled &amp; Verified</span>
+                          ) : isDamageUnderReview ? (
+                            <span className="text-amber-300 font-medium">Receipt under review</span>
+                          ) : (
+                            <span className="text-orange-300 font-medium">
+                              Unpaid{damageAppraisal?.due_date ? ` · Due ${damageAppraisal.due_date}` : ""}
+                            </span>
+                          )}
+                        </p>
+                      </div>
+                    )}
                   </div>
 
                   {/* 4. Accessible Tab Navigation Bar */}
@@ -2148,6 +2832,9 @@ export default function MyInquiriesPage() {
                             {tab.key === "breakdown" && (
                               <Receipt size={13} aria-hidden="true" />
                             )}
+                            {tab.key === "complaints" && (
+                              <MessageSquare size={13} aria-hidden="true" />
+                            )}
                             <span>{tab.label}</span>
                             {tab.badge && (
                               <span
@@ -2180,7 +2867,7 @@ export default function MyInquiriesPage() {
                     className="p-5 sm:p-6"
                   >
                     {/* TAB 1: PAYMENTS & INSTALLMENT SCHEDULE */}
-                    {activeTab === "payments" && (paymentData || excessGuestFee > 0) && (
+                    {activeTab === "payments" && (paymentData || excessGuestFee > 0 || damageFee > 0) && (
                       <div className="space-y-4">
                         {paymentData && (
                           <>
@@ -2258,7 +2945,7 @@ export default function MyInquiriesPage() {
                                     {" "}
                                     · Due{" "}
                                     <strong className="text-white/90 font-medium">
-                                      {singleMilestone?.dueDate || formattedDeadline}
+                                      {cleanDueDate(singleMilestone?.dueDate || formattedDeadline)}
                                     </strong>
                                   </span>
                                 )}
@@ -2438,7 +3125,7 @@ export default function MyInquiriesPage() {
                                             )}
                                           </div>
                                           <p className="text-[11px] text-white/50 mt-0.5">
-                                            Due: <span className="text-white/80">{inst.dueDate}</span>
+                                            Due: <span className="text-white/80">{cleanDueDate(inst.dueDate)}</span>
                                             {isLocked && previousMilestone?.title && (
                                               <span className="text-white/40">
                                                 {" "}
@@ -2575,6 +3262,143 @@ export default function MyInquiriesPage() {
                                 </button>
                               )}
                             </div>
+                          </div>
+                        )}
+
+                        {/* Post-Event Itemized Equipment Damage & Loss Invoice (Separate Balance) */}
+                        {!isCancelled && damageFee > 0 && (
+                          <div className="p-4 rounded-md bg-orange-500/[0.04] border border-orange-500/25 space-y-3.5">
+                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                              <div className="space-y-1">
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <h3 className="text-sm font-sans font-bold text-white tracking-wide flex items-center gap-1.5">
+                                    <AlertTriangle size={14} className="text-orange-400" aria-hidden="true" />
+                                    Equipment Damage &amp; Loss Invoice
+                                  </h3>
+                                  {isDamageSettled ? (
+                                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-emerald-500/15 text-emerald-400 border border-emerald-500/35 inline-flex items-center gap-1">
+                                      <CheckCircle size={11} aria-hidden="true" /> Settled
+                                    </span>
+                                  ) : isDamageUnderReview ? (
+                                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-amber-500/15 text-amber-300 border border-amber-500/35 inline-flex items-center gap-1">
+                                      <Clock size={11} aria-hidden="true" /> Under Review
+                                    </span>
+                                  ) : (
+                                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-orange-500/15 text-orange-300 border border-orange-500/35">
+                                      Unpaid · Post-Event
+                                    </span>
+                                  )}
+                                </div>
+                                <p className="text-xs text-white/70">
+                                  Amount Due:{" "}
+                                  <strong className="text-orange-300 font-serif text-sm tabular-nums">
+                                    ₱{damageFee.toLocaleString()}
+                                  </strong>
+                                  <span>
+                                    {" "}· {damageItems.length} {damageItems.length === 1 ? "item" : "items"}
+                                  </span>
+                                  {damageAppraisal?.due_date && (
+                                    <span>
+                                      {" "}· Due{" "}
+                                      <strong className="text-white/90 font-medium">
+                                        {cleanDueDate(damageAppraisal.due_date)}
+                                      </strong>
+                                    </span>
+                                  )}
+                                </p>
+                                {(damageAppraisal?.payment_method || damageAppraisal?.reference_number) && (
+                                  <p className="text-[11px] text-white/50 flex flex-wrap items-center gap-2 pt-0.5">
+                                    {damageAppraisal?.payment_method && (
+                                      <span className="px-1.5 py-0.5 rounded bg-white/10 text-[10px] font-bold uppercase tracking-wider text-white/75">
+                                        {damageAppraisal.payment_method}
+                                      </span>
+                                    )}
+                                    {damageAppraisal?.reference_number && (
+                                      <span className="font-mono text-white/55">
+                                        Ref: {damageAppraisal.reference_number}
+                                      </span>
+                                    )}
+                                  </p>
+                                )}
+                              </div>
+
+                              <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto shrink-0">
+                                {damageReceiptUrl && (
+                                  <button
+                                    type="button"
+                                    aria-describedby={cardHeadingId}
+                                    onClick={() => setViewingReceiptUrl(damageReceiptUrl)}
+                                    className="px-3 py-2 min-h-9 border border-white/20 hover:border-gold-400/50 text-white/80 hover:text-white text-[10px] font-bold uppercase tracking-wider rounded transition-colors inline-flex items-center gap-1.5 cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-400"
+                                  >
+                                    <Eye size={12} aria-hidden="true" /> Damage Slip
+                                  </button>
+                                )}
+
+                                {!isDamageSettled && (
+                                  <button
+                                    type="button"
+                                    aria-describedby={cardHeadingId}
+                                    onClick={() => handleOpenDamagePaymentModal({ ...booking, paymentData }, damageAppraisal)}
+                                    className="px-4 py-2 min-h-9 gold-gradient text-black hover:brightness-110 text-xs font-bold uppercase tracking-wider rounded transition-all shadow-md inline-flex items-center gap-1.5 cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-400"
+                                  >
+                                    <CreditCard size={13} aria-hidden="true" />
+                                    {isDamageUnderReview ? "Re-upload Damage Slip" : "Pay Damage Invoice"}
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+
+                            {/* Itemized Appraised Equipment Breakdown + Photo Evidence */}
+                            {damageItems.length > 0 && (
+                              <div className="pt-3 border-t border-orange-500/20 space-y-2">
+                                <p className="text-[10px] font-bold uppercase tracking-wider text-orange-300/85">
+                                  Appraised Items ({damageItems.length})
+                                </p>
+                                <div className="divide-y divide-white/[0.06] rounded-md bg-black/30 border border-white/10 px-3">
+                                  {damageItems.map((dItem: any, dIdx: number) => (
+                                    <div
+                                      key={dItem.id || dIdx}
+                                      className="py-2.5 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs"
+                                    >
+                                      <div className="space-y-0.5 min-w-0">
+                                        <div className="flex flex-wrap items-center gap-2">
+                                          <span className="font-semibold text-white">
+                                            {dItem.item_name}
+                                          </span>
+                                          <span className="px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider bg-orange-500/15 text-orange-300 border border-orange-500/25">
+                                            {dItem.incident_type || "Damaged"}
+                                          </span>
+                                        </div>
+                                        <p className="text-[11px] text-white/60 tabular-nums">
+                                          {dItem.quantity_damaged} {dItem.unit || "pcs"} × ₱{Number(dItem.unit_cost || 0).toLocaleString()} appraisal/unit
+                                          {dItem.notes ? ` · "${dItem.notes}"` : ""}
+                                        </p>
+                                      </div>
+
+                                      <div className="flex items-center gap-2.5 shrink-0 self-end sm:self-center">
+                                        {dItem.photo_url && (
+                                          <button
+                                            type="button"
+                                            onClick={() => setViewingReceiptUrl(dItem.photo_url)}
+                                            className="px-2.5 py-1 min-h-7 border border-orange-400/35 hover:border-orange-300 bg-orange-500/10 text-orange-200 hover:text-white text-[10px] font-bold uppercase tracking-wider rounded transition-colors inline-flex items-center gap-1 cursor-pointer"
+                                          >
+                                            <Camera size={11} aria-hidden="true" /> Photo Evidence
+                                          </button>
+                                        )}
+                                        <span className="font-serif font-bold text-orange-300 tabular-nums text-sm">
+                                          ₱{Number(dItem.subtotal || (Number(dItem.quantity_damaged || 0) * Number(dItem.unit_cost || 0))).toLocaleString()}
+                                        </span>
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                                {damageAppraisal?.general_notes && (
+                                  <p className="text-[11px] text-white/65 italic pt-0.5">
+                                    Warehouse Note: &ldquo;{damageAppraisal.general_notes}&rdquo;
+                                  </p>
+                                )}
+                              </div>
+                            )}
                           </div>
                         )}
                       </div>
@@ -2818,27 +3642,27 @@ export default function MyInquiriesPage() {
                                 <dd className="text-[11px] text-white/50 mt-0.5">
                                   {[
                                     prebookedOT?.catering_hours > 0
-                                      ? `Catering (${prebookedOT.catering_hours}h @ ₱4,000/h)`
+                                      ? `Catering (${prebookedOT.catering_hours}h)`
                                       : "",
                                     prebookedOT?.sounds_lights_hours > 0
-                                      ? `Sounds & Lights (${prebookedOT.sounds_lights_hours}h @ ₱1,500/h)`
+                                      ? `Sounds & Lights (${prebookedOT.sounds_lights_hours}h)`
                                       : "",
                                     prebookedOT?.photo_booth_hours > 0
-                                      ? `Photo Booth (${prebookedOT.photo_booth_hours}h @ ₱1,000/h)`
+                                      ? `Photo Booth (${prebookedOT.photo_booth_hours}h)`
                                       : "",
                                     prebookedOT?.emcee_hours > 0
-                                      ? `Emcee (${prebookedOT.emcee_hours}h @ ₱500/h)`
+                                      ? `Emcee (${prebookedOT.emcee_hours}h)`
                                       : "",
                                     prebookedOT?.coordinators_hours > 0
                                       ? `Coordinators (${prebookedOT.coordinators_hours}h × ${
                                           prebookedOT.coordinators_count || 2
-                                        }p @ ₱300/h/p)`
+                                        }p)`
                                       : "",
                                     prebookedOT?.photo_video_hours > 0
-                                      ? `Photo & Video (${prebookedOT.photo_video_hours}h @ ₱2,500/h)`
+                                      ? `Photo & Video (${prebookedOT.photo_video_hours}h)`
                                       : "",
                                     prebookedOT?.mobile_bar_hours > 0
-                                      ? `Mobile Bar (${prebookedOT.mobile_bar_hours}h @ ₱1,500/h)`
+                                      ? `Mobile Bar (${prebookedOT.mobile_bar_hours}h)`
                                       : "",
                                   ]
                                     .filter(Boolean)
@@ -2886,7 +3710,7 @@ export default function MyInquiriesPage() {
                                   Rain / Laundry Surcharge
                                 </dt>
                                 <dd className="text-[11px] text-white/60 mt-0.5">
-                                  Soiled linens due to rain without client-provided tents (Outdoor weather policy)
+                                  Soiled linens fee for open/outdoor area exposed to rain
                                 </dd>
                               </div>
                               <dd className="font-semibold text-amber-300 tabular-nums shrink-0">
@@ -2999,8 +3823,589 @@ export default function MyInquiriesPage() {
                             </div>
                           </div>
                         )}
+
+                        {/* Separate Post-Event Equipment Damage & Loss Invoice Balance */}
+                        {damageFee > 0 && (
+                          <div className="mt-3 p-3.5 rounded-md bg-orange-500/[0.04] border border-orange-500/25 space-y-2.5 text-xs tabular-nums">
+                            <div className="flex items-baseline justify-between gap-4">
+                              <div>
+                                <p className="text-orange-300 font-semibold flex items-center gap-1.5">
+                                  <AlertTriangle size={13} className="text-orange-400" />
+                                  Equipment Damage &amp; Loss Invoice
+                                </p>
+                                <p className="text-[11px] text-white/60 mt-0.5">
+                                  {damageItems.length} {damageItems.length === 1 ? "item" : "items"} appraised
+                                  {damageAppraisal?.due_date ? ` · Due ${cleanDueDate(damageAppraisal.due_date)}` : ""}
+                                </p>
+                              </div>
+                              <span className="font-semibold text-orange-300 shrink-0">
+                                +₱{damageFee.toLocaleString()}
+                              </span>
+                            </div>
+
+                            {damageItems.length > 0 && (
+                              <div className="pt-2 border-t border-orange-500/15 space-y-1.5">
+                                {damageItems.map((dItem: any, dIdx: number) => (
+                                  <div
+                                    key={dItem.id || dIdx}
+                                    className="flex items-center justify-between gap-2 text-[11px] text-white/75"
+                                  >
+                                    <span className="truncate">
+                                      {dItem.item_name} ({dItem.incident_type || "Damaged"} · {dItem.quantity_damaged} × ₱{Number(dItem.unit_cost || 0).toLocaleString()})
+                                    </span>
+                                    <div className="flex items-center gap-2 shrink-0">
+                                      {dItem.photo_url && (
+                                        <button
+                                          type="button"
+                                          onClick={() => setViewingReceiptUrl(dItem.photo_url)}
+                                          className="text-[10px] font-bold uppercase tracking-wider text-orange-300 hover:text-white underline cursor-pointer"
+                                        >
+                                          Photo
+                                        </button>
+                                      )}
+                                      <span className="text-orange-200 font-medium">
+                                        ₱{Number(dItem.subtotal || (Number(dItem.quantity_damaged || 0) * Number(dItem.unit_cost || 0))).toLocaleString()}
+                                      </span>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+
+                            <div className="pt-2 border-t border-orange-500/20 flex flex-wrap items-center justify-between gap-2">
+                              <span className="font-bold uppercase tracking-wider text-white/90 text-[11px] flex items-center gap-2">
+                                <span>Damage Invoice Balance</span>
+                                {isDamageSettled ? (
+                                  <span className="px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider bg-emerald-500/15 text-emerald-400 border border-emerald-500/35">
+                                    Settled &amp; Verified
+                                  </span>
+                                ) : isDamageUnderReview ? (
+                                  <span className="px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider bg-amber-500/15 text-amber-300 border border-amber-500/35">
+                                    Under Review
+                                  </span>
+                                ) : (
+                                  <span className="px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider bg-orange-500/15 text-orange-300 border border-orange-500/35">
+                                    Unpaid
+                                  </span>
+                                )}
+                              </span>
+                              <div className="flex items-center gap-2.5">
+                                {!isCancelled && !isDamageSettled && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleOpenDamagePaymentModal({ ...booking, paymentData }, damageAppraisal)}
+                                    className="px-2.5 py-1 rounded gold-gradient text-black text-[10px] font-bold uppercase tracking-wider hover:brightness-110 transition-all cursor-pointer"
+                                  >
+                                    {isDamageUnderReview ? "Update Slip" : "Pay Now →"}
+                                  </button>
+                                )}
+                                <span
+                                  className={`font-serif font-bold text-base ${
+                                    isDamageSettled
+                                      ? "text-emerald-400"
+                                      : isDamageUnderReview
+                                      ? "text-amber-300"
+                                      : "text-orange-300"
+                                  }`}
+                                >
+                                  ₱{damageFee.toLocaleString()}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                        )}
                       </div>
                     )}
+
+                    {/* TAB 4: POST-EVENT FEEDBACK & DISPUTE RESOLUTION (24-HOUR WINDOW) */}
+                    {activeTab === "complaints" && (isCompleted || complaintsList.length > 0) && (() => {
+                      const draft = getComplaintDraft(bookingKey, signerName);
+                      const fieldErrs = complaintErrorsByBooking[bookingKey] || {};
+                      const isSubmittingThis = submittingComplaintId === String(booking.id);
+
+                      return (
+                        <div className="space-y-5">
+                          {/* 1. Post-Event Feedback & Direct Resolution Notice */}
+                          <div className="p-4 rounded-lg bg-amber-500/[0.06] border border-amber-500/30 space-y-2">
+                            <div className="flex items-center justify-between gap-2 flex-wrap">
+                              <h3 className="text-xs font-bold uppercase tracking-wider text-amber-300 flex items-center gap-1.5">
+                                <Scale size={14} className="text-amber-400 shrink-0" aria-hidden="true" />
+                                Post-Event Feedback &amp; Direct Resolution
+                              </h3>
+                              <span
+                                className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border ${
+                                  isComplaintWindowOpen
+                                    ? "bg-emerald-500/15 text-emerald-300 border-emerald-500/35"
+                                    : "bg-white/10 text-white/60 border-white/15"
+                                }`}
+                              >
+                                {isComplaintWindowOpen
+                                  ? `24h Window · ${formattedComplaintCountdown} Remaining`
+                                  : "Window Closed"}
+                              </span>
+                            </div>
+                            <p className="text-xs text-white/80 leading-relaxed">
+                              We are dedicated to delivering the highest service standard. If you experienced any service issue or have post-event feedback, please submit your report below within 24 hours of event completion. As the authorized contract signer ({signerName}), your submission will be reviewed directly by management.
+                            </p>
+                          </div>
+
+                          {/* 2. Submitted Complaints & Official Coordinator Resolution Log */}
+                          {complaintsList.length > 0 && (
+                            <div className="space-y-3">
+                              <h4 className="text-xs font-bold uppercase tracking-wider text-white/75 flex items-center gap-1.5">
+                                <FileText size={13} className="text-gold-400" aria-hidden="true" />
+                                Recorded Post-Event Submissions ({complaintsList.length})
+                              </h4>
+                              {complaintsList.map((cmp: any, cIdx: number) => {
+                                const cmpStatus = String(cmp.status || "Pending Review");
+                                const isResolved = cmpStatus === "Resolved";
+                                const isInvestigating = cmpStatus === "Under Investigation";
+                                const isDismissed = cmpStatus === "Dismissed";
+                                return (
+                                  <div
+                                    key={cmp.id || cIdx}
+                                    className="p-4 rounded-lg bg-white/[0.03] border border-white/12 space-y-3"
+                                  >
+                                    <div className="flex flex-wrap items-start justify-between gap-2">
+                                      <div>
+                                        <div className="flex flex-wrap items-center gap-2">
+                                          <span className="px-2 py-0.5 rounded bg-gold-400/15 text-gold-300 text-[10px] font-bold uppercase tracking-wider">
+                                            {cmp.category || "General"}
+                                          </span>
+                                          <h5 className="text-sm font-bold text-white">
+                                            {cmp.subject}
+                                          </h5>
+                                        </div>
+                                        <p className="text-[11px] text-white/50 mt-1 flex flex-wrap items-center gap-2">
+                                          <span className="inline-flex items-center gap-1 text-emerald-400 font-medium">
+                                            <ShieldCheck size={11} aria-hidden="true" />
+                                            Signer: {cmp.submitter_name || signerName}
+                                          </span>
+                                          <span>·</span>
+                                          <span>
+                                            Logged{" "}
+                                            {cmp.submitted_at
+                                              ? new Date(cmp.submitted_at).toLocaleString("en-US", {
+                                                  month: "short",
+                                                  day: "numeric",
+                                                  year: "numeric",
+                                                  hour: "numeric",
+                                                  minute: "2-digit",
+                                                })
+                                              : "Within 24h window"}
+                                          </span>
+                                        </p>
+                                      </div>
+
+                                      <span
+                                        className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border ${
+                                          isResolved
+                                            ? "bg-emerald-500/15 text-emerald-400 border-emerald-500/35"
+                                            : isInvestigating
+                                            ? "bg-amber-500/15 text-amber-300 border-amber-500/35"
+                                            : isDismissed
+                                            ? "bg-white/10 text-white/60 border-white/20"
+                                            : "bg-gold-400/15 text-gold-300 border-gold-400/30"
+                                        }`}
+                                      >
+                                        {cmpStatus}
+                                      </span>
+                                    </div>
+
+                                    <p className="text-xs text-white/85 leading-relaxed whitespace-pre-line">
+                                      {cmp.details}
+                                    </p>
+
+                                    {cmp.photo_url && (
+                                      <div>
+                                        <button
+                                          type="button"
+                                          onClick={() => setViewingReceiptUrl(cmp.photo_url)}
+                                          className="px-3 py-1.5 border border-white/20 hover:border-gold-400/50 text-white/80 hover:text-white text-[10px] font-bold uppercase tracking-wider rounded transition-colors inline-flex items-center gap-1.5 cursor-pointer"
+                                        >
+                                          <Camera size={12} aria-hidden="true" /> View Attached Photo
+                                        </button>
+                                      </div>
+                                    )}
+
+                                    {cmp.resolution_notes && (
+                                      <div className="p-3 rounded-md bg-emerald-500/[0.07] border border-emerald-500/30 space-y-1">
+                                        <div className="flex flex-wrap items-center justify-between gap-2">
+                                          <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-400">
+                                            Official Management Resolution
+                                          </span>
+                                          {cmp.resolved_at && (
+                                            <span className="text-[10px] text-white/50">
+                                              {new Date(cmp.resolved_at).toLocaleString("en-US", {
+                                                month: "short",
+                                                day: "numeric",
+                                                year: "numeric",
+                                                hour: "numeric",
+                                                minute: "2-digit",
+                                              })}
+                                            </span>
+                                          )}
+                                        </div>
+                                        <p className="text-xs text-white/90 leading-relaxed">
+                                          {cmp.resolution_notes}
+                                        </p>
+                                      </div>
+                                    )}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
+
+                          {/* 3. 24-Hour Signer-Only Submission Gate */}
+                          {!isComplaintWindowOpen ? (
+                            <div className="p-4 rounded-lg bg-white/[0.02] border border-white/10 flex items-start gap-3 text-xs">
+                              <Lock size={16} className="text-white/45 shrink-0 mt-0.5" aria-hidden="true" />
+                              <div className="space-y-1">
+                                <p className="font-bold text-white/85">
+                                  Feedback Window Concluded (24-Hour Cutoff)
+                                </p>
+                                <p className="text-white/60 leading-relaxed">
+                                  The 24-hour post-event feedback window has ended. If you need urgent assistance regarding your completed booking, please contact our support team directly.
+                                </p>
+                              </div>
+                            </div>
+                          ) : !isVerifiedSigner ? (
+                            <div className="p-4 rounded-lg bg-red-500/10 border border-red-500/30 flex items-start gap-3 text-xs">
+                              <Lock size={16} className="text-red-400 shrink-0 mt-0.5" aria-hidden="true" />
+                              <div className="space-y-1">
+                                <p className="font-bold text-red-300">
+                                  Restricted to Verified Contract Signer
+                                </p>
+                                <p className="text-white/75 leading-relaxed">
+                                  For accountability and contract verification, submissions must be made from the account of the authorized Contract Signer ({signerName}).
+                                </p>
+                              </div>
+                            </div>
+                          ) : (
+                            <form
+                              onSubmit={(e) =>
+                                handleSubmitComplaint(
+                                  e,
+                                  booking,
+                                  bookingKey,
+                                  signerUserId,
+                                  signerName,
+                                  completedAtIso
+                                )
+                              }
+                              noValidate
+                              className="p-4 sm:p-5 rounded-lg bg-white/[0.02] border border-gold-400/25 space-y-4"
+                            >
+                              <div className="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-white/10">
+                                <div>
+                                  <h4 className="text-sm font-serif font-bold text-white flex items-center gap-2">
+                                    <ShieldCheck size={15} className="text-emerald-400" aria-hidden="true" />
+                                    Submit Direct Feedback or Incident Report
+                                  </h4>
+                                  <p className="text-[11px] text-white/55 mt-0.5">
+                                    Verified Contract Signer: <strong className="text-white/85">{signerName}</strong> · Window closes in <strong className="text-gold-300">{formattedComplaintCountdown}</strong>
+                                  </p>
+                                </div>
+                              </div>
+
+                              {fieldErrs.form && (
+                                <div
+                                  role="alert"
+                                  className="p-3 rounded-md bg-red-950/80 border border-red-500/40 text-red-200 text-xs font-semibold flex items-center gap-2"
+                                >
+                                  <AlertCircle size={14} className="text-red-400 shrink-0" aria-hidden="true" />
+                                  <span>{fieldErrs.form}</span>
+                                </div>
+                              )}
+
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                <div>
+                                  <label
+                                    htmlFor={`cmp-signer-${bookingKey}`}
+                                    className="block text-[11px] font-bold uppercase tracking-wider text-white/80 mb-1.5"
+                                  >
+                                    Confirm Contract Signer Name <span className="text-red-400">*</span>
+                                  </label>
+                                  <input
+                                    id={`cmp-signer-${bookingKey}`}
+                                    name="signerName"
+                                    type="text"
+                                    required
+                                    value={draft.signerName}
+                                    aria-invalid={Boolean(fieldErrs.signerName)}
+                                    aria-describedby={`cmp-signer-help-${bookingKey}${fieldErrs.signerName ? ` cmp-signer-err-${bookingKey}` : ""}`}
+                                    onChange={(e) => {
+                                      updateComplaintDraft(bookingKey, signerName, {
+                                        signerName: e.target.value,
+                                      });
+                                      if (fieldErrs.signerName || fieldErrs.form) {
+                                        setComplaintFieldError(bookingKey, "signerName", undefined);
+                                        setComplaintFieldError(bookingKey, "form", undefined);
+                                      }
+                                    }}
+                                    onBlur={(e) => {
+                                      const val = e.target.value.trim();
+                                      if (val.length < 2) {
+                                        setComplaintFieldError(
+                                          bookingKey,
+                                          "signerName",
+                                          "Please confirm your full legal name as the contract signer."
+                                        );
+                                      } else if (
+                                        signerName &&
+                                        signerName !== "Client" &&
+                                        signerName !== "Contract Signer" &&
+                                        val.toLowerCase() !== signerName.toLowerCase()
+                                      ) {
+                                        setComplaintFieldError(
+                                          bookingKey,
+                                          "signerName",
+                                          `Must match recorded Contract Signer ("${signerName}").`
+                                        );
+                                      }
+                                    }}
+                                    className="w-full bg-white/5 border border-white/15 rounded-md px-3 py-2 text-xs text-white focus:outline-none focus:border-gold-400"
+                                  />
+                                  <p id={`cmp-signer-help-${bookingKey}`} className="text-[10px] text-white/45 mt-1">
+                                    Must match the authorized Contract Signer on file.
+                                  </p>
+                                  <p
+                                    id={`cmp-signer-err-${bookingKey}`}
+                                    aria-live="polite"
+                                    className="text-[11px] text-red-400 font-medium mt-1 min-h-[1rem]"
+                                  >
+                                    {fieldErrs.signerName || ""}
+                                  </p>
+                                </div>
+
+                                <div>
+                                  <label
+                                    htmlFor={`cmp-category-${bookingKey}`}
+                                    className="block text-[11px] font-bold uppercase tracking-wider text-white/80 mb-1.5"
+                                  >
+                                    Concern Category <span className="text-red-400">*</span>
+                                  </label>
+                                  <select
+                                    id={`cmp-category-${bookingKey}`}
+                                    name="category"
+                                    value={draft.category}
+                                    onChange={(e) =>
+                                      updateComplaintDraft(bookingKey, signerName, {
+                                        category: e.target.value,
+                                      })
+                                    }
+                                    className="w-full bg-[#141414] border border-white/15 rounded-md px-3 py-2 text-xs text-white focus:outline-none focus:border-gold-400"
+                                  >
+                                    <option value="Food Quality & Menu">Food Quality &amp; Menu</option>
+                                    <option value="Service & Staff">Service &amp; Staff Conduct</option>
+                                    <option value="Styling & Equipment Setup">Styling &amp; Equipment Setup</option>
+                                    <option value="Timing & Logistics">Timing &amp; Logistics</option>
+                                    <option value="Billing / Damage Dispute">Billing / Damage Appraisal Dispute</option>
+                                    <option value="General Feedback">General Post-Event Feedback</option>
+                                  </select>
+                                </div>
+                              </div>
+
+                              <div>
+                                <label
+                                  htmlFor={`cmp-subject-${bookingKey}`}
+                                  className="block text-[11px] font-bold uppercase tracking-wider text-white/80 mb-1.5"
+                                >
+                                  Subject / Summary <span className="text-red-400">*</span>
+                                </label>
+                                <input
+                                  id={`cmp-subject-${bookingKey}`}
+                                  name="subject"
+                                  type="text"
+                                  required
+                                  placeholder="Brief summary of feedback or incident"
+                                  value={draft.subject}
+                                  aria-invalid={Boolean(fieldErrs.subject)}
+                                  aria-describedby={`cmp-subject-help-${bookingKey}${fieldErrs.subject ? ` cmp-subject-err-${bookingKey}` : ""}`}
+                                  onChange={(e) => {
+                                    updateComplaintDraft(bookingKey, signerName, {
+                                      subject: e.target.value,
+                                    });
+                                    if (fieldErrs.subject || fieldErrs.form) {
+                                      setComplaintFieldError(bookingKey, "subject", undefined);
+                                      setComplaintFieldError(bookingKey, "form", undefined);
+                                    }
+                                  }}
+                                  onBlur={(e) => {
+                                    if (e.target.value.trim().length < 4) {
+                                      setComplaintFieldError(
+                                        bookingKey,
+                                        "subject",
+                                        "Please enter at least 4 characters summarizing the concern."
+                                      );
+                                    }
+                                  }}
+                                  className="w-full bg-white/5 border border-white/15 rounded-md px-3 py-2 text-xs text-white focus:outline-none focus:border-gold-400"
+                                />
+                                <p id={`cmp-subject-help-${bookingKey}`} className="text-[10px] text-white/45 mt-1">
+                                  Minimum 4 characters.
+                                </p>
+                                <p
+                                  id={`cmp-subject-err-${bookingKey}`}
+                                  aria-live="polite"
+                                  className="text-[11px] text-red-400 font-medium mt-0.5 min-h-[1rem]"
+                                >
+                                  {fieldErrs.subject || ""}
+                                </p>
+                              </div>
+
+                              <div>
+                                <label
+                                  htmlFor={`cmp-details-${bookingKey}`}
+                                  className="block text-[11px] font-bold uppercase tracking-wider text-white/80 mb-1.5"
+                                >
+                                  Detailed Statement <span className="text-red-400">*</span>
+                                </label>
+                                <textarea
+                                  id={`cmp-details-${bookingKey}`}
+                                  name="details"
+                                  rows={3}
+                                  required
+                                  placeholder="Provide full details of what occurred during the event so Management can investigate and resolve directly..."
+                                  value={draft.details}
+                                  aria-invalid={Boolean(fieldErrs.details)}
+                                  aria-describedby={`cmp-details-help-${bookingKey}${fieldErrs.details ? ` cmp-details-err-${bookingKey}` : ""}`}
+                                  onChange={(e) => {
+                                    updateComplaintDraft(bookingKey, signerName, {
+                                      details: e.target.value,
+                                    });
+                                    if (fieldErrs.details || fieldErrs.form) {
+                                      setComplaintFieldError(bookingKey, "details", undefined);
+                                      setComplaintFieldError(bookingKey, "form", undefined);
+                                    }
+                                  }}
+                                  onBlur={(e) => {
+                                    if (e.target.value.trim().length < 15) {
+                                      setComplaintFieldError(
+                                        bookingKey,
+                                        "details",
+                                        "Please provide at least 15 characters describing the concern."
+                                      );
+                                    }
+                                  }}
+                                  className="w-full bg-white/5 border border-white/15 rounded-md px-3 py-2 text-xs text-white focus:outline-none focus:border-gold-400"
+                                />
+                                <p id={`cmp-details-help-${bookingKey}`} className="text-[10px] text-white/45 mt-1">
+                                  Minimum 15 characters describing specific observations, time, or items involved.
+                                </p>
+                                <p
+                                  id={`cmp-details-err-${bookingKey}`}
+                                  aria-live="polite"
+                                  className="text-[11px] text-red-400 font-medium mt-0.5 min-h-[1rem]"
+                                >
+                                  {fieldErrs.details || ""}
+                                </p>
+                              </div>
+
+                              {/* Optional Supporting Photo */}
+                              <div>
+                                <label
+                                  htmlFor={`cmp-photo-${bookingKey}`}
+                                  className="block text-[11px] font-bold uppercase tracking-wider text-white/80 mb-1.5"
+                                >
+                                  Supporting Photo <span className="text-white/40 font-normal">(Optional)</span>
+                                </label>
+                                {draft.photoDataUrl ? (
+                                  <div className="p-2.5 bg-white/5 border border-white/15 rounded-md flex items-center justify-between gap-3">
+                                    <div className="flex items-center gap-3 min-w-0">
+                                      <img
+                                        src={draft.photoDataUrl}
+                                        alt="Complaint attachment preview"
+                                        className="w-11 h-11 object-cover rounded border border-white/15 shrink-0"
+                                      />
+                                      <span className="text-xs text-white/85 truncate">
+                                        {draft.photoName || "attached_photo.jpg"}
+                                      </span>
+                                    </div>
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        updateComplaintDraft(bookingKey, signerName, {
+                                          photoDataUrl: "",
+                                          photoBlob: null,
+                                          photoName: "",
+                                        })
+                                      }
+                                      className="px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-red-400 border border-red-500/35 rounded hover:bg-red-500/10 cursor-pointer"
+                                    >
+                                      Remove
+                                    </button>
+                                  </div>
+                                ) : (
+                                  <label
+                                    htmlFor={`cmp-photo-${bookingKey}`}
+                                    className="border border-dashed border-white/20 hover:border-gold-400/50 rounded-md px-3 py-2.5 flex items-center gap-2.5 cursor-pointer bg-white/[0.01] text-xs text-white/70 hover:text-white transition-colors"
+                                  >
+                                    <Camera size={15} className="text-gold-400 shrink-0" aria-hidden="true" />
+                                    <span>Attach optional photo documentation (JPG, PNG, WEBP)</span>
+                                    <input
+                                      id={`cmp-photo-${bookingKey}`}
+                                      type="file"
+                                      accept="image/*"
+                                      onChange={(e) => handleComplaintPhotoUpload(bookingKey, signerName, e)}
+                                      className="hidden"
+                                    />
+                                  </label>
+                                )}
+                              </div>
+
+                              {/* Direct Dispute Resolution Acknowledgment */}
+                              <div className="pt-2 border-t border-white/10">
+                                <label
+                                  htmlFor={`cmp-ack-${bookingKey}`}
+                                  className="flex items-start gap-2.5 cursor-pointer text-xs text-white/85 leading-relaxed"
+                                >
+                                  <input
+                                    id={`cmp-ack-${bookingKey}`}
+                                    type="checkbox"
+                                    checked={draft.disputeAck}
+                                    aria-invalid={Boolean(fieldErrs.disputeAck)}
+                                    aria-describedby={fieldErrs.disputeAck ? `cmp-ack-err-${bookingKey}` : undefined}
+                                    onChange={(e) => {
+                                      updateComplaintDraft(bookingKey, signerName, {
+                                        disputeAck: e.target.checked,
+                                      });
+                                      if (e.target.checked) {
+                                        setComplaintFieldError(bookingKey, "disputeAck", undefined);
+                                        setComplaintFieldError(bookingKey, "form", undefined);
+                                      }
+                                    }}
+                                    className="mt-0.5 accent-gold-400 w-4 h-4 rounded shrink-0"
+                                  />
+                                  <span>
+                                    I confirm that I am the authorized <strong>Contract Signer ({signerName})</strong> and I agree to discuss any concerns directly with Roxan Policarpio Events &amp; Catering management.
+                                  </span>
+                                </label>
+                                <p
+                                  id={`cmp-ack-err-${bookingKey}`}
+                                  aria-live="polite"
+                                  className="text-[11px] text-red-400 font-medium mt-1 min-h-[1rem]"
+                                >
+                                  {fieldErrs.disputeAck || ""}
+                                </p>
+                              </div>
+
+                              <div className="flex justify-end pt-1">
+                                <button
+                                  type="submit"
+                                  disabled={isSubmittingThis}
+                                  className="px-5 py-2.5 gold-gradient text-black text-xs font-bold uppercase tracking-wider rounded hover:brightness-110 transition-all disabled:opacity-50 cursor-pointer inline-flex items-center gap-2 shadow-md"
+                                >
+                                  {isSubmittingThis ? "Submitting Report..." : "Submit Direct Report"}
+                                  {!isSubmittingThis && <ChevronRight size={14} aria-hidden="true" />}
+                                </button>
+                              </div>
+                            </form>
+                          )}
+                        </div>
+                      );
+                    })()}
                   </div>
 
                   {/* 6. Quiet Secondary Action Footer */}
@@ -3193,10 +4598,10 @@ export default function MyInquiriesPage() {
                   </div>
                   <div>
                     <h2 id="balance-modal-title" className="text-xl sm:text-2xl font-serif text-white italic">
-                      Pay <span className="gold-text-gradient font-bold not-italic">{payingExcessSurcharge ? "Excess Headcount Surcharge" : payingMilestone ? payingMilestone.title : "Final Balance"}</span>
+                      Pay <span className="gold-text-gradient font-bold not-italic">{payingDamageInvoice ? "Equipment Damage Invoice" : payingExcessSurcharge ? "Excess Headcount Surcharge" : payingMilestone ? payingMilestone.title : "Final Balance"}</span>
                     </h2>
                     <p className="text-xs text-white/60 uppercase tracking-widest font-semibold mt-0.5">
-                      {payingExcessSurcharge ? `Post-Event Excess Surcharge • Due: ${payingExcessSurcharge.dueDate || "Next Day"}` : payingMilestone ? `Milestone Installment • Due: ${payingMilestone.dueDate || "As scheduled"}` : "Due 15 Days Before Event Date"}
+                      {payingDamageInvoice ? `Post-Event Damage Appraisal • Due: ${payingDamageInvoice.dueDate || "Post-Event"}` : payingExcessSurcharge ? `Post-Event Excess Surcharge • Due: ${payingExcessSurcharge.dueDate || "Next Day"}` : payingMilestone ? `Milestone Installment • Due: ${payingMilestone.dueDate || "As scheduled"}` : "Due 15 Days Before Event Date"}
                     </p>
                   </div>
                 </div>
@@ -3207,6 +4612,7 @@ export default function MyInquiriesPage() {
                     setPayingBalanceBooking(null);
                     setPayingMilestone(null);
                     setPayingExcessSurcharge(null);
+                    setPayingDamageInvoice(null);
                   }}
                   className="text-white/40 hover:text-white p-2 rounded-lg hover:bg-white/5 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-400"
                 >
@@ -3228,29 +4634,33 @@ export default function MyInquiriesPage() {
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
                       <p className="text-[10px] uppercase font-bold tracking-widest text-gold-400 mb-1">
-                        {payingExcessSurcharge ? "Excess Headcount Surcharge Due" : payingMilestone ? `${payingMilestone.title} Amount Due` : "Final Balance Amount Due"}
+                        {payingDamageInvoice ? "Equipment Damage Appraisal Due" : payingExcessSurcharge ? "Excess Headcount Surcharge Due" : payingMilestone ? `${payingMilestone.title} Amount Due` : "Final Balance Amount Due"}
                       </p>
                       <p className="text-3xl font-serif text-gold-400 font-bold tabular-nums">
-                        ₱{Number(payingExcessSurcharge ? payingExcessSurcharge.amount : payingMilestone ? payingMilestone.amount : (payingBalanceBooking.paymentData?.balanceAmount || payingBalanceBooking.final_balance_amount || 0)).toLocaleString()}
+                        ₱{Number(payingDamageInvoice ? payingDamageInvoice.amount : payingExcessSurcharge ? payingExcessSurcharge.amount : payingMilestone ? payingMilestone.amount : (payingBalanceBooking.paymentData?.balanceAmount || payingBalanceBooking.final_balance_amount || 0)).toLocaleString()}
                       </p>
                       <span className="text-[11px] text-white/60">
-                        {payingExcessSurcharge ? `+${payingExcessSurcharge.excessGuests} excess pax (${payingExcessSurcharge.actualPax} served vs ${payingExcessSurcharge.guaranteedPax} guaranteed)` : (payingBalanceBooking.packages?.name || "Catering Event Package")}
+                        {payingDamageInvoice ? `${payingDamageInvoice.itemCount} appraised item(s)` : payingExcessSurcharge ? `+${payingExcessSurcharge.excessGuests} excess pax (${payingExcessSurcharge.actualPax} served vs ${payingExcessSurcharge.guaranteedPax} guaranteed)` : (payingBalanceBooking.packages?.name || "Catering Event Package")}
                       </span>
                     </div>
                     <div className="sm:border-l sm:border-white/10 sm:pl-4">
                       <p className="text-[10px] uppercase font-bold tracking-widest text-white/50 mb-1">
-                        {payingExcessSurcharge ? "Post-Event Payment Due Date" : payingMilestone ? "Milestone Scheduled Due Date" : "Event Date & Settlement Deadline"}
+                        {payingDamageInvoice || payingExcessSurcharge ? "Post-Event Payment Due Date" : payingMilestone ? "Milestone Scheduled Due Date" : "Event Date & Settlement Deadline"}
                       </p>
                       <p className="text-sm font-bold text-white">
-                        {payingExcessSurcharge ? (payingExcessSurcharge.dueDate || "Next Day") : payingMilestone ? payingMilestone.dueDate : (payingBalanceBooking.event_date || "Event Date")}
+                        {payingDamageInvoice ? cleanDueDate(payingDamageInvoice.dueDate || "Post-Event") : payingExcessSurcharge ? cleanDueDate(payingExcessSurcharge.dueDate || "Next Day") : payingMilestone ? cleanDueDate(payingMilestone.dueDate) : (payingBalanceBooking.event_date || "Event Date")}
                       </p>
                       <span className="text-[10px] text-amber-300 font-semibold block mt-1">
-                        {payingExcessSurcharge ? "Separate Post-Event Headcount Balance" : payingMilestone ? "Scheduled Installment Milestone" : "Due at least 15 days before event"}
+                        {payingDamageInvoice ? "Separate Post-Event Damage Invoice" : payingExcessSurcharge ? "Separate Post-Event Headcount Balance" : payingMilestone ? "Scheduled Installment Milestone" : "Due at least 15 days before event"}
                       </span>
                     </div>
                   </div>
                   <p className="text-[11px] text-white/65 leading-relaxed pt-3 border-t border-white/10">
-                    {payingExcessSurcharge ? (
+                    {payingDamageInvoice ? (
+                      <>
+                        This post-event invoice covers damaged or missing catering equipment recorded during return inspection and is tracked separately from your settled contract balance. Upload your transfer receipt below for coordinator verification.
+                      </>
+                    ) : payingExcessSurcharge ? (
                       <>
                         This post-event surcharge covers additional attendees served beyond your guaranteed guest count and is tracked separately from your settled contract balance. Upload your transfer receipt below for coordinator verification.
                       </>
@@ -3404,7 +4814,7 @@ export default function MyInquiriesPage() {
                 {/* Upload Receipt */}
                 <div className="space-y-3 text-left">
                   <label className="text-xs font-bold uppercase tracking-wider text-white/90 block">
-                    Upload {payingExcessSurcharge ? "Excess Surcharge Receipt" : payingMilestone ? `${payingMilestone.title} Receipt` : "Final Balance Receipt"} <span className="text-red-400">*</span>
+                    Upload {payingDamageInvoice ? "Damage Invoice Receipt" : payingExcessSurcharge ? "Excess Surcharge Receipt" : payingMilestone ? `${payingMilestone.title} Receipt` : "Final Balance Receipt"} <span className="text-red-400">*</span>
                   </label>
                   {balanceReceiptImage ? (
                     <div className="p-4 bg-white/5 border border-gold-400/40 rounded-xl flex items-center justify-between gap-4">
@@ -3441,7 +4851,7 @@ export default function MyInquiriesPage() {
                   ) : (
                     <label className="border-2 border-dashed border-white/20 hover:border-gold-400/60 transition-colors p-6 rounded-xl flex flex-col items-center justify-center cursor-pointer bg-white/[0.02] hover:bg-white/[0.04]">
                       <UploadCloud size={32} className="text-gold-400 mb-2" />
-                      <p className="text-sm font-bold text-white">Click to upload {payingExcessSurcharge ? "excess surcharge slip" : payingMilestone ? `${payingMilestone.title} slip` : "balance receipt slip"}</p>
+                      <p className="text-sm font-bold text-white">Click to upload {payingDamageInvoice ? "damage invoice slip" : payingExcessSurcharge ? "excess surcharge slip" : payingMilestone ? `${payingMilestone.title} slip` : "balance receipt slip"}</p>
                       <p className="text-xs text-white/50 mt-1">PNG, JPG, or WEBP transaction confirmation</p>
                       <input
                         type="file"
@@ -3476,6 +4886,7 @@ export default function MyInquiriesPage() {
                     setPayingBalanceBooking(null);
                     setPayingMilestone(null);
                     setPayingExcessSurcharge(null);
+                    setPayingDamageInvoice(null);
                   }}
                   className="w-full sm:w-auto px-6 py-3 border border-white/20 text-white/70 text-xs font-bold uppercase tracking-wider hover:bg-white/5 transition-colors rounded-sm"
                 >
@@ -3489,6 +4900,8 @@ export default function MyInquiriesPage() {
                 >
                   {isSubmittingBalance
                     ? "Submitting Receipt..."
+                    : payingDamageInvoice
+                    ? "Submit Proof of Damage Invoice"
                     : payingExcessSurcharge
                     ? "Submit Proof of Excess Surcharge"
                     : payingMilestone

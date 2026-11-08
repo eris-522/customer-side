@@ -396,6 +396,69 @@ export default function Navbar() {
               });
             }
           }
+
+          // Check for post-event Equipment Damage & Loss Invoice (Clause 13)
+          if (Array.isArray(postLog?.damageHistory) && postLog.damageHistory.length > 0 && !isCustomerCancelled) {
+            postLog.damageHistory.forEach((dEntry: any) => {
+              const dFee = Number(dEntry.total_fee) || 0;
+              if ((dEntry.action === 'charged' || dEntry.action === 'updated') && dFee > 0) {
+                expandedNotifications.push({
+                  ...b,
+                  notifType: 'damage_invoice',
+                  notifKey: `${b.id}-damage-invoice-${dFee}-${dEntry.timestamp}`,
+                  notifTimestamp: dEntry.timestamp || b.created_at,
+                  damageFee: dFee,
+                  damageItemCount: dEntry.item_count || (Array.isArray(postLog?.damage_appraisal?.items) ? postLog.damage_appraisal.items.length : 1),
+                  damageDueDate: dEntry.due_date || postLog?.damage_appraisal?.due_date || "Post-Event",
+                  damageAppraisal: postLog?.damage_appraisal,
+                });
+              } else if (dEntry.action === 'removed') {
+                expandedNotifications.push({
+                  ...b,
+                  notifType: 'damage_invoice_removed',
+                  notifKey: `${b.id}-damage-removed-${dEntry.timestamp}`,
+                  notifTimestamp: dEntry.timestamp || b.created_at,
+                  damageFee: 0,
+                });
+              }
+            });
+          } else if (postLog?.damage_appraisal && Number(postLog.damage_appraisal.total_damage_fee) > 0 && !isCustomerCancelled) {
+            const dApp = postLog.damage_appraisal;
+            const dFee = Number(dApp.total_damage_fee) || 0;
+            const dTs = dApp.updated_at || dApp.appraised_at || b.created_at;
+            expandedNotifications.push({
+              ...b,
+              notifType: 'damage_invoice',
+              notifKey: `${b.id}-damage-invoice-${dFee}-${dTs}`,
+              notifTimestamp: dTs,
+              damageFee: dFee,
+              damageItemCount: Array.isArray(dApp.items) ? dApp.items.length : 1,
+              damageDueDate: dApp.due_date || "Post-Event",
+              damageAppraisal: dApp,
+            });
+          }
+
+          // Check for Coordinator Resolution on Post-Event Complaints (Clause 19)
+          if (Array.isArray(postLog?.post_event_complaints) && postLog.post_event_complaints.length > 0) {
+            postLog.post_event_complaints.forEach((cmp: any) => {
+              if (
+                cmp &&
+                (cmp.status === 'Resolved' ||
+                  cmp.status === 'Under Investigation' ||
+                  cmp.status === 'Dismissed' ||
+                  Boolean(cmp.resolution_notes))
+              ) {
+                const resTs = cmp.resolved_at || postLog?.updated_at || b.created_at;
+                expandedNotifications.push({
+                  ...b,
+                  notifType: 'complaint_resolved',
+                  notifKey: `${b.id}-complaint-res-${cmp.id}-${cmp.status}-${resTs}`,
+                  notifTimestamp: resTs,
+                  complaintItem: cmp,
+                });
+              }
+            });
+          }
         });
 
         // Sort primarily by the most recent update so new confirmations sit at the top

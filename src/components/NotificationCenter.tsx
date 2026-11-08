@@ -175,6 +175,27 @@ export function NotificationCenter({ isOpen, onClose, notifications, unreadCount
                                 Waived / Cleared
                               </span>
                             </>
+                          ) : notif.notifType === 'damage_invoice' ? (
+                            <>
+                              Equipment Damage Invoice Issued for {notif.event_date}:{" "}
+                              <span className="text-orange-400 font-bold">
+                                +₱{Number(notif.damageFee ?? notif.damageAppraisal?.total_damage_fee ?? 0).toLocaleString()}
+                              </span>
+                            </>
+                          ) : notif.notifType === 'damage_invoice_removed' ? (
+                            <>
+                              Equipment Damage Invoice Cleared for {notif.event_date}:{" "}
+                              <span className="text-emerald-400 font-bold">
+                                Waived / Cleared
+                              </span>
+                            </>
+                          ) : notif.notifType === 'complaint_resolved' ? (
+                            <>
+                              Post-Event Feedback Update ({notif.event_date}):{" "}
+                              <span className="text-gold-400 font-bold">
+                                {notif.complaintItem?.status || "Updated"}
+                              </span>
+                            </>
                           ) : notif.notifType === 'day_of_overtime' ? (
                             <>
                               Overtime Surcharge Applied for {notif.event_date}:{" "}
@@ -266,6 +287,47 @@ export function NotificationCenter({ isOpen, onClose, notifications, unreadCount
                             </p>
                             <p className="text-[10px] text-gold-400 font-medium pt-1 border-t border-emerald-500/20">
                               ✓ Surcharge cleared. No further excess balance is due.
+                            </p>
+                          </div>
+                        )}
+                        {notif.notifType === 'damage_invoice' && (
+                          <div className="mb-3 p-3 bg-orange-500/10 border border-orange-500/20 rounded-md space-y-1.5 text-xs text-orange-200">
+                            <div className="text-orange-300 font-bold">
+                              Equipment Damage &amp; Loss Invoice: +₱{Number(notif.damageFee ?? notif.damageAppraisal?.total_damage_fee ?? 0).toLocaleString()}
+                            </div>
+                            <p className="text-[11px] text-white/80">
+                              {notif.damageItemCount || 1} damaged or missing catering item(s) were appraised during post-event warehouse reconciliation (Clause 13).
+                            </p>
+                            <p className="text-[10px] text-orange-300/80">
+                              Due Date: {notif.damageDueDate || notif.damageAppraisal?.due_date || "Post-Event"} • Status: <strong>{notif.damageAppraisal?.payment_status || "Unpaid"}</strong>
+                            </p>
+                            <p className="text-[10px] text-gold-400 font-medium pt-1 border-t border-orange-500/20">
+                              ✓ View itemized photos and settle this separate post-event invoice in My Inquiries.
+                            </p>
+                          </div>
+                        )}
+                        {notif.notifType === 'damage_invoice_removed' && (
+                          <div className="mb-3 p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-md space-y-1.5 text-xs text-emerald-200">
+                            <div className="font-bold text-emerald-300">
+                              Equipment Damage Invoice Cleared (Waived)
+                            </div>
+                            <p className="text-[11px] text-white/80">
+                              The post-event equipment damage appraisal for {notif.event_date} was cleared by the coordinator.
+                            </p>
+                          </div>
+                        )}
+                        {notif.notifType === 'complaint_resolved' && (
+                          <div className="mb-3 p-3 bg-gold-400/10 border border-gold-400/25 rounded-md space-y-1.5 text-xs">
+                            <div className="font-bold text-gold-300">
+                              {notif.complaintItem?.subject || "Post-Event Feedback"} · {notif.complaintItem?.status || "Updated"}
+                            </div>
+                            {notif.complaintItem?.resolution_notes && (
+                              <p className="text-[11px] text-white/85">
+                                &ldquo;{notif.complaintItem.resolution_notes}&rdquo;
+                              </p>
+                            )}
+                            <p className="text-[10px] text-gold-400 font-medium pt-1 border-t border-gold-400/20">
+                              ✓ View full resolution details under Feedback &amp; Disputes in My Inquiries.
                             </p>
                           </div>
                         )}
