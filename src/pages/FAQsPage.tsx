@@ -282,8 +282,8 @@ export default function FAQsPage() {
                   key={item.id || idx}
                   className={`border transition-all duration-200 rounded-xl overflow-hidden ${
                     isOpen
-                      ? "border-gold-400/40 bg-[#121212]"
-                      : "border-white/10 bg-[#0c0c0c] hover:border-white/20"
+                      ? "border-gold-400/50 bg-[#F8F4EC] dark:bg-[#121212] shadow-md"
+                      : "border-[#CFC3AE] dark:border-white/10 bg-[#F4EFE6] dark:bg-[#0c0c0c] hover:bg-[#EFE8DA] dark:hover:bg-[#141414] hover:border-gold-400/40 dark:hover:border-white/20 shadow-xs"
                   }`}
                 >
                   <button

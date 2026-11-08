@@ -10,6 +10,7 @@ import {
 } from "../utils/sessionGuard";
 import { NotificationCenter } from "./NotificationCenter";
 import { AnnouncementBanner } from "./AnnouncementBanner";
+import { ThemeToggle } from "./ThemeToggle";
 
 export const navLinks = [
   { name: "Home", href: "/" },
@@ -598,51 +599,57 @@ export default function Navbar() {
         </div>
         <nav 
           className={`w-full transition-all duration-500 h-16 flex items-center pointer-events-auto ${
-            isScrolled ? "glass-card border-b border-white/10 shadow-md backdrop-blur-md" : "bg-transparent"
+            isScrolled
+              ? "glass-card border-b border-[#CFC3AE] dark:border-white/10 shadow-md backdrop-blur-md"
+              : "bg-[#EAE3D5]/95 dark:bg-transparent border-b border-[#CFC3AE]/80 dark:border-transparent backdrop-blur-md dark:backdrop-blur-none shadow-xs dark:shadow-none"
           }`}
         >
-          <div className="max-w-7xl mx-auto w-full px-10 flex justify-between items-center">
+          <div className="max-w-7xl mx-auto w-full px-6 md:px-10 flex justify-between items-center">
 
             <motion.div 
               initial={{ opacity: 0, x: -20 }}
               animate={{ opacity: 1, x: 0 }}
             >
               <Link to="/" className="flex flex-col">
-                <span className="text-xl font-serif tracking-[0.2em] text-gold-400 font-bold uppercase">ROXAN POLICARPIO</span>
-              <span className="text-sm tracking-wide text-gold-300/90 -mt-1 font-semibold">Events & Catering</span>
+                <span className="text-xl font-serif tracking-[0.2em] text-gold-500 dark:text-gold-400 font-bold uppercase">ROXAN POLICARPIO</span>
+                <span className="text-sm tracking-wide text-gold-600 dark:text-gold-300/90 -mt-1 font-semibold">Events & Catering</span>
               </Link>
             </motion.div>
 
-            <div className="hidden lg:flex items-center gap-8">
+            <div className="hidden lg:flex items-center gap-7">
               {navLinks.map((link, i) => (
                 <motion.div
                   key={link.name}
                   initial={{ opacity: 0, y: -10 }}
                   animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: i * 0.1 }}
+                  transition={{ delay: i * 0.08 }}
                 >
                   {link.name === "Book" && user ? (
                     <div className="relative group">
                       <Link
                         to="/booking"
                         className={`text-base tracking-wide font-semibold transition-colors flex items-center gap-1 ${
-                          location.pathname.includes("/booking") || location.pathname.includes("/my-inquiries") ? "text-gold-400" : "text-white/70 hover:text-gold-400"
+                          location.pathname.includes("/booking") || location.pathname.includes("/my-inquiries")
+                            ? "text-gold-500 dark:text-gold-400 font-bold"
+                            : "text-stone-700 dark:text-white/70 hover:text-gold-500 dark:hover:text-gold-400"
                         }`}
                       >
                         Book <ChevronDown size={14} className="group-hover:rotate-180 transition-transform duration-300" />
                       </Link>
-                      <div className="absolute top-full left-1/2 -translate-x-1/2 pt-6 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-300 transform origin-top translate-y-2 group-hover:translate-y-0 z-50">
-                        <div className="glass-card border border-white/10 py-2 w-48 flex flex-col gap-1 shadow-2xl">
-                          <Link to="/booking" className="px-4 py-2 text-sm font-semibold tracking-wide text-white/70 hover:text-gold-400 hover:bg-white/5 transition-colors text-left">New Booking</Link>
-                          <Link to="/my-inquiries" className="px-4 py-2 text-sm font-semibold tracking-wide text-white/70 hover:text-gold-400 hover:bg-white/5 transition-colors text-left">My Inquiries</Link>
+                      <div className="absolute top-full left-1/2 -translate-x-1/2 pt-4 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-300 transform origin-top translate-y-2 group-hover:translate-y-0 z-50">
+                        <div className="glass-card border border-gold-400/20 py-2 w-48 flex flex-col gap-1 shadow-2xl rounded-xl">
+                          <Link to="/booking" className="px-4 py-2 text-sm font-semibold tracking-wide text-stone-700 dark:text-white/70 hover:text-gold-500 dark:hover:text-gold-400 hover:bg-black/5 dark:hover:bg-white/5 transition-colors text-left">New Booking</Link>
+                          <Link to="/my-inquiries" className="px-4 py-2 text-sm font-semibold tracking-wide text-stone-700 dark:text-white/70 hover:text-gold-500 dark:hover:text-gold-400 hover:bg-black/5 dark:hover:bg-white/5 transition-colors text-left">My Inquiries</Link>
                         </div>
                       </div>
                     </div>
                   ) : (
                     <Link
                       to={link.href}
-                    className={`text-base tracking-wide font-semibold transition-colors ${
-                        location.pathname === link.href ? "text-gold-400" : "text-white/70 hover:text-gold-400"
+                      className={`text-base tracking-wide font-semibold transition-colors ${
+                        location.pathname === link.href
+                          ? "text-gold-500 dark:text-gold-400 font-bold"
+                          : "text-stone-700 dark:text-white/70 hover:text-gold-500 dark:hover:text-gold-400"
                       }`}
                     >
                       {link.name}
@@ -650,14 +657,22 @@ export default function Navbar() {
                   )}
                 </motion.div>
               ))}
+
               <motion.div
                 initial={{ opacity: 0, scale: 0.9 }}
                 animate={{ opacity: 1, scale: 1 }}
+                className="flex items-center gap-3 pl-2"
               >
+                <ThemeToggle variant="compact" />
+
                 {user ? (
                   <>
-                    <div className="relative inline-block align-middle mr-2 mt-1" ref={desktopNotifRef}>
-                      <button onClick={handleNotifClick} className="text-white/70 hover:text-gold-400 transition-colors relative flex items-center justify-center p-2">
+                    <div className="relative inline-block align-middle ml-1" ref={desktopNotifRef}>
+                      <button
+                        onClick={handleNotifClick}
+                        aria-label="Notifications"
+                        className="text-stone-700 dark:text-white/70 hover:text-gold-500 dark:hover:text-gold-400 transition-colors relative flex items-center justify-center p-2 rounded-full hover:bg-black/5 dark:hover:bg-white/5 cursor-pointer"
+                      >
                         <Bell size={20} />
                         {unreadCount > 0 && (
                           <span className="absolute top-0 right-0 bg-red-500 text-white text-[10px] font-bold w-4 h-4 rounded-full flex items-center justify-center">
@@ -677,29 +692,29 @@ export default function Navbar() {
                     <button
                       type="button"
                       onClick={handleLogoutClick}
-                    className="ml-4 px-5 py-2 border border-white/10 text-white/90 text-base tracking-wide font-bold hover:border-gold-400 hover:text-gold-400 transition-all inline-block"
+                      className="ml-3 px-5 py-2 border border-gold-400/30 text-stone-800 dark:text-white/90 text-sm tracking-wide font-bold hover:border-gold-500 hover:text-gold-600 dark:hover:text-gold-400 transition-all inline-block rounded-lg cursor-pointer"
                     >
                       Logout
                     </button>
                   </>
                 ) : (
-                  <div className="flex items-center gap-4 ml-4">
+                  <div className="flex items-center gap-3 ml-2">
                     <Link
                       to="/auth?mode=login"
-                      className={`text-base tracking-wide font-bold transition-colors ${
+                      className={`text-sm tracking-wide font-bold transition-colors px-4 py-2 rounded-lg ${
                         isLoginActive
-                          ? "gold-gradient text-black px-6 py-2 shadow-lg"
-                          : "text-white/90 hover:text-gold-400"
+                          ? "gold-gradient text-white shadow-md"
+                          : "text-stone-700 dark:text-white/90 hover:text-gold-500 dark:hover:text-gold-400"
                       }`}
                     >
                       Login
                     </Link>
                     <Link
                       to="/auth?mode=signup"
-                      className={`text-base tracking-wide font-bold transition-all ${
+                      className={`text-sm tracking-wide font-bold transition-all px-5 py-2 rounded-lg shadow-md ${
                         isSignupActive
-                          ? "gold-gradient text-black px-6 py-2 shadow-lg hover:brightness-110"
-                          : "text-white/90 hover:text-gold-400"
+                          ? "gold-gradient text-white hover:brightness-105"
+                          : "text-stone-700 dark:text-white/90 hover:text-gold-500 dark:hover:text-gold-400"
                       }`}
                     >
                       Sign Up
@@ -709,10 +724,11 @@ export default function Navbar() {
               </motion.div>
             </div>
 
-            <div className="flex items-center gap-5 lg:hidden">
+            <div className="flex items-center gap-3 lg:hidden">
+              <ThemeToggle variant="compact" />
               {user && (
                 <div className="relative" ref={mobileNotifRef}>
-                  <button onClick={handleNotifClick} className="text-gold-400 transition-colors relative flex items-center justify-center p-1">
+                  <button onClick={handleNotifClick} className="text-gold-500 dark:text-gold-400 transition-colors relative flex items-center justify-center p-1.5 cursor-pointer">
                     <Bell size={22} />
                     {unreadCount > 0 && (
                       <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] font-bold w-4 h-4 rounded-full flex items-center justify-center">
@@ -731,8 +747,9 @@ export default function Navbar() {
                 </div>
               )}
               <button 
-                className="text-gold-400"
+                className="text-gold-500 dark:text-gold-400 p-1 cursor-pointer"
                 onClick={() => setIsMobileMenuOpen(true)}
+                aria-label="Open menu"
               >
                 <MenuIcon size={24} />
               </button>
@@ -747,10 +764,15 @@ export default function Navbar() {
             initial={{ opacity: 0, x: "100%" }}
             animate={{ opacity: 1, x: 0 }}
             exit={{ opacity: 0, x: "100%" }}
-            className="fixed inset-0 z-[60] bg-rich-black flex flex-col p-8"
+            className="fixed inset-0 z-[60] bg-rich-black flex flex-col p-8 overflow-y-auto"
           >
-            <div className="flex justify-end">
-              <button onClick={() => setIsMobileMenuOpen(false)} className="text-gold-400">
+            <div className="flex justify-between items-center w-full">
+              <ThemeToggle variant="segmented" />
+              <button 
+                onClick={() => setIsMobileMenuOpen(false)} 
+                className="text-gold-500 dark:text-gold-400 p-2 cursor-pointer"
+                aria-label="Close menu"
+              >
                 <X size={32} />
               </button>
             </div>
@@ -761,14 +783,14 @@ export default function Navbar() {
                     <div key={link.name} className="flex flex-col space-y-4 items-center">
                       <Link
                         to="/booking"
-                        className="text-4xl font-serif text-gold-400 italic"
+                        className="text-4xl font-serif text-gold-500 dark:text-gold-400 italic"
                         onClick={() => setIsMobileMenuOpen(false)}
                       >
                         Book Event
                       </Link>
                       <Link
                         to="/my-inquiries"
-                        className="text-2xl font-serif text-white/70 hover:text-gold-400 italic transition-colors"
+                        className="text-2xl font-serif text-stone-700 dark:text-white/70 hover:text-gold-500 dark:hover:text-gold-400 italic transition-colors"
                         onClick={() => setIsMobileMenuOpen(false)}
                       >
                         My Inquiries
@@ -792,7 +814,7 @@ export default function Navbar() {
                 <>
                   <button
                     onClick={handleLogoutClick}
-                    className="text-4xl font-serif text-white/70 hover:text-gold-400 italic transition-colors"
+                    className="text-4xl font-serif text-stone-700 dark:text-white/70 hover:text-gold-500 dark:hover:text-gold-400 italic transition-colors cursor-pointer"
                   >
                     Logout
                   </button>
@@ -803,8 +825,8 @@ export default function Navbar() {
                     to="/auth?mode=login"
                     className={`text-4xl font-serif italic transition-colors ${
                       isLoginActive
-                        ? "text-gold-400"
-                        : "text-white/70 hover:text-gold-400"
+                        ? "text-gold-500 dark:text-gold-400"
+                        : "text-stone-700 dark:text-white/70 hover:text-gold-500 dark:hover:text-gold-400"
                     }`}
                     onClick={() => setIsMobileMenuOpen(false)}
                   >
@@ -814,8 +836,8 @@ export default function Navbar() {
                     to="/auth?mode=signup"
                     className={`text-4xl font-serif italic transition-colors ${
                       isSignupActive
-                        ? "text-gold-400"
-                        : "text-white/70 hover:text-gold-400"
+                        ? "text-gold-500 dark:text-gold-400"
+                        : "text-stone-700 dark:text-white/70 hover:text-gold-500 dark:hover:text-gold-400"
                     }`}
                     onClick={() => setIsMobileMenuOpen(false)}
                   >
@@ -845,8 +867,8 @@ export default function Navbar() {
               className="glass-card border border-white/10 p-8 max-w-sm w-full text-center relative overflow-hidden"
             >
               <div className="absolute top-0 left-0 w-full h-1 bg-gold-400" />
-              <h3 className="text-3xl font-serif text-white mb-2 italic">Confirm <span className="gold-text-gradient">Logout</span></h3>
-              <p className="text-sm text-white/60 mb-8 font-medium leading-relaxed">
+              <h3 className="text-3xl font-serif mb-2 italic">Confirm <span className="gold-text-gradient">Logout</span></h3>
+              <p className="text-sm opacity-80 mb-8 font-medium leading-relaxed">
                 {user?.email
                   ? `Log out ${user.email}? This will end your current session.`
                   : "Are you sure you want to log out? This will end your current session."}
@@ -854,13 +876,13 @@ export default function Navbar() {
               <div className="flex gap-4">
                 <button
                   onClick={() => setShowLogoutConfirm(false)}
-                  className="flex-1 py-3 border border-white/10 text-white/70 hover:text-white hover:border-white/30 transition-all text-sm font-bold tracking-wide"
+                  className="flex-1 py-3 border border-gold-400/30 text-stone-700 dark:text-white/70 hover:text-stone-900 dark:hover:text-white hover:border-gold-400 transition-all text-sm font-bold tracking-wide rounded-md cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   onClick={confirmLogout}
-                  className="flex-1 py-3 gold-gradient text-black font-bold tracking-wide text-sm hover:brightness-110 transition-all"
+                  className="flex-1 py-3 gold-gradient text-white dark:text-black font-bold tracking-wide text-sm hover:brightness-105 transition-all rounded-md cursor-pointer shadow-md"
                 >
                   Log Out
                 </button>

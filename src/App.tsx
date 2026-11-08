@@ -10,6 +10,7 @@ import Navbar from "./components/Navbar";
 import Footer from "./components/Footer";
 import { ScrollToTop } from "./components/ScrollToTop";
 import { CMSProvider } from "./context/CMSContext";
+import { ThemeProvider } from "./context/ThemeContext";
 import { supabase } from "./utils/supabase";
 import {
   getSessionUser,
@@ -168,31 +169,33 @@ function AuthRoutingHandler() {
 
 export default function App() {
   return (
-    <CMSProvider>
-      <Router>
-        <AuthRoutingHandler />
-        <ScrollToTop />
-        <div className="flex flex-col min-h-screen bg-rich-black">
-          <Navbar />
-          <main className="flex-grow">
-            <Suspense fallback={<RouteLoadingFallback />}>
-              <Routes>
-                <Route path="/" element={<HomePage />} />
-                <Route path="/menu" element={<MenuPage />} />
-                <Route path="/packages" element={<PackagesPage />} />
-                <Route path="/about" element={<AboutPage />} />
-                <Route path="/faqs" element={<FAQsPage />} />
-                <Route path="/contact" element={<ContactPage />} />
-                <Route path="/auth" element={<AuthPage />} />
-                <Route path="/booking" element={<BookingPage />} />
-                <Route path="/my-inquiries" element={<MyInquiriesPage />} />
-                <Route path="/terms" element={<TermsPage />} />
-              </Routes>
-            </Suspense>
-          </main>
-          <Footer />
-        </div>
-      </Router>
-    </CMSProvider>
+    <ThemeProvider>
+      <CMSProvider>
+        <Router>
+          <AuthRoutingHandler />
+          <ScrollToTop />
+          <div className="flex flex-col min-h-screen bg-rich-black transition-colors duration-300">
+            <Navbar />
+            <main className="flex-grow">
+              <Suspense fallback={<RouteLoadingFallback />}>
+                <Routes>
+                  <Route path="/" element={<HomePage />} />
+                  <Route path="/menu" element={<MenuPage />} />
+                  <Route path="/packages" element={<PackagesPage />} />
+                  <Route path="/about" element={<AboutPage />} />
+                  <Route path="/faqs" element={<FAQsPage />} />
+                  <Route path="/contact" element={<ContactPage />} />
+                  <Route path="/auth" element={<AuthPage />} />
+                  <Route path="/booking" element={<BookingPage />} />
+                  <Route path="/my-inquiries" element={<MyInquiriesPage />} />
+                  <Route path="/terms" element={<TermsPage />} />
+                </Routes>
+              </Suspense>
+            </main>
+            <Footer />
+          </div>
+        </Router>
+      </CMSProvider>
+    </ThemeProvider>
   );
 }

@@ -1,5 +1,100 @@
-@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;1,400&family=Montserrat:wght@300;400;600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;1,400&family=Montserrat:wght@300;400;500;600;700&display=swap');
 @import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* =========================================================================
+   WARM CHAMPAGNE BEIGE (LIGHT) & RICH CHARCOAL (DARK) DESIGN TOKENS
+   Editorial Luxury Atmosphere with Strict WCAG AA Readability
+   ========================================================================= */
+
+:root {
+  /* Warm Beige, Cashmere Linen & Travertine Surfaces */
+  --bg-primary: #EAE3D5;
+  --bg-surface: #F4EFE6;
+  --bg-surface-elevated: #F8F4EC;
+  --bg-muted: #E0D7C5;
+  --bg-darker: #D6CBB7;
+  --bg-hover: #DFD5C2;
+
+  /* Borders (Warm Architectural Sand & Antique Bronze) */
+  --border-color: #CFC3AE;
+  --border-subtle: rgba(138, 90, 43, 0.24);
+
+  /* High-Legibility Warm Espresso & Umber Typography */
+  --text-heading: #231D18;
+  --text-primary: #2D251E;
+  --text-secondary: #5A4E43;
+  --text-muted: #736557;
+
+  /* Rich Antique Bronze / Cognac Gold Accents (> 4.8:1 contrast on beige) */
+  --accent-gold: #8A5A2B;
+  --accent-gold-hover: #6B441E;
+  --accent-gold-light: #9C6B3B;
+  --gold-300: #9C6B3B;
+  --gold-400: #8A5A2B;
+  --gold-500: #70471F;
+  --gold-600: #593818;
+  --gold-border-color: rgba(138, 90, 43, 0.32);
+  --gold-gradient-bg: linear-gradient(135deg, #A47545 0%, #8A5A2B 50%, #6B441E 100%);
+  --gold-text-gradient-bg: linear-gradient(135deg, #8A5A2B 0%, #A47545 50%, #593818 100%);
+
+  /* Translucent Warm Parchment Glassmorphism */
+  --glass-bg: rgba(244, 239, 230, 0.92);
+  --glass-border: #CFC3AE;
+  --glass-shadow: 0 8px 28px -4px rgba(55, 40, 24, 0.08);
+
+  /* Form Controls */
+  --input-bg: #F8F4EC;
+  --input-border: #C8BBA4;
+  --input-text: #231D18;
+
+  color-scheme: light;
+}
+
+.dark {
+  /* Surface and Backgrounds (Rich Black & Deep Charcoal) */
+  --bg-primary: #0A0A0A;
+  --bg-surface: #121212;
+  --bg-surface-elevated: #181818;
+  --bg-muted: #141414;
+  --bg-darker: #070707;
+  --bg-hover: #161616;
+
+  /* Borders */
+  --border-color: rgba(255, 255, 255, 0.1);
+  --border-subtle: rgba(197, 160, 89, 0.2);
+
+  /* Typography */
+  --text-heading: #FFFFFF;
+  --text-primary: #E5E5E5;
+  --text-secondary: rgba(255, 255, 255, 0.7);
+  --text-muted: rgba(255, 255, 255, 0.45);
+
+  /* Accent Gold (Warm Champagne and Gold) */
+  --accent-gold: #c5a059;
+  --accent-gold-hover: #d8c697;
+  --accent-gold-light: #d8c697;
+  --gold-300: #d8c697;
+  --gold-400: #c5a059;
+  --gold-500: #b38c4a;
+  --gold-600: #9c753d;
+  --gold-border-color: rgba(197, 160, 89, 0.3);
+  --gold-gradient-bg: linear-gradient(135deg, #d8c697 0%, #c5a059 50%, #815e34 100%);
+  --gold-text-gradient-bg: linear-gradient(135deg, #e9e0c1 0%, #c5a059 50%, #815e34 100%);
+
+  /* Translucent & Glassmorphism Surfaces */
+  --glass-bg: rgba(255, 255, 255, 0.03);
+  --glass-border: rgba(197, 160, 89, 0.2);
+  --glass-shadow: none;
+
+  /* Form Controls */
+  --input-bg: rgba(255, 255, 255, 0.05);
+  --input-border: rgba(255, 255, 255, 0.15);
+  --input-text: #FFFFFF;
+
+  color-scheme: dark;
+}
 
 @theme {
   --font-sans: "Montserrat", ui-sans-serif, system-ui, sans-serif;
@@ -9,53 +104,373 @@
   --tracking-wide: 0.04em;
   --tracking-wider: 0.06em;
   --tracking-widest: 0.12em;
-  
+
+  --color-bg-primary: var(--bg-primary);
+  --color-bg-surface: var(--bg-surface);
+  --color-bg-muted: var(--bg-muted);
+  --color-border-color: var(--border-color);
+  --color-text-primary: var(--text-primary);
+  --color-text-secondary: var(--text-secondary);
+  --color-text-muted: var(--text-muted);
+  --color-text-heading: var(--text-heading);
+  --color-accent-gold: var(--accent-gold);
+
   --color-gold-50: #fbf9f4;
   --color-gold-100: #f4efdf;
   --color-gold-200: #e9e0c1;
-  --color-gold-300: #d8c697;
-  --color-gold-400: #c5a059; /* The core theme gold */
-  --color-gold-500: #b38c4a;
-  --color-gold-600: #9c753d;
+  --color-gold-300: var(--gold-300);
+  --color-gold-400: var(--gold-400);
+  --color-gold-500: var(--gold-500);
+  --color-gold-600: var(--gold-600);
   --color-gold-700: #815e34;
   --color-gold-800: #6b4d30;
   --color-gold-900: #5a412c;
   --color-gold-950: #332419;
 
-  --color-rich-black: #0A0A0A;
+  --color-rich-black: var(--bg-primary);
 }
 
 @layer base {
   body {
-    @apply bg-rich-black text-[#E5E5E5] font-sans antialiased selection:bg-gold-400/30 selection:text-gold-100;
+    background-color: var(--bg-primary);
+    color: var(--text-primary);
+    font-family: var(--font-sans);
     letter-spacing: 0.02em;
+    -webkit-font-smoothing: antialiased;
+    transition: background-color 0.25s ease, color 0.25s ease;
   }
 
   input, button, select, textarea, table {
     letter-spacing: inherit;
   }
-  
+
   h1, h2, h3, h4, h5, h6 {
-    @apply font-serif;
+    font-family: var(--font-serif);
+    color: var(--text-heading);
     letter-spacing: 0.015em;
   }
 }
 
+/* =========================================================================
+   LUXURY UTILITY CLASSES
+   ========================================================================= */
+
 .gold-gradient {
-  background: linear-gradient(135deg, #d8c697 0%, #c5a059 50%, #815e34 100%);
+  background: var(--gold-gradient-bg);
 }
 
 .gold-text-gradient {
   @apply bg-clip-text text-transparent;
-  background-image: linear-gradient(135deg, #e9e0c1 0%, #c5a059 50%, #815e34 100%);
+  background-image: var(--gold-text-gradient-bg);
 }
 
 .glass-card {
-  background: rgba(255, 255, 255, 0.03);
-  backdrop-filter: blur(10px);
-  border: 1px solid rgba(197, 160, 89, 0.2);
+  background: var(--glass-bg);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-shadow);
+  transition: background-color 0.25s ease, border-color 0.25s ease, box-shadow 0.25s ease;
 }
 
 .gold-border {
-  @apply border border-gold-400/30;
+  border-color: var(--gold-border-color);
+}
+
+/* =========================================================================
+   WARM BEIGE THEME ADAPTATION LAYER (:root:not(.dark))
+   Ensures all surfaces, cards, hovers, and image overlays harmonize in a
+   warm beige/champagne-sand palette with effortless readability.
+   ========================================================================= */
+
+:root:not(.dark) {
+  /* 1. Typography mapping on light/beige surfaces */
+  .text-white {
+    color: var(--text-heading) !important;
+  }
+  .text-white\/95,
+  .text-white\/90,
+  .text-white\/85,
+  .text-white\/80 {
+    color: var(--text-primary) !important;
+  }
+  .text-white\/75,
+  .text-white\/70,
+  .text-white\/65,
+  .text-white\/60,
+  .text-white\/55,
+  .text-white\/50 {
+    color: var(--text-secondary) !important;
+  }
+  .text-white\/45,
+  .text-white\/40,
+  .text-white\/35,
+  .text-white\/30,
+  .text-white\/25,
+  .text-white\/20,
+  .text-white\/15,
+  .text-white\/10 {
+    color: #6B5542 !important;
+  }
+
+  /* Fix links that used hover:text-white in dark mode so they turn deep espresso on hover */
+  .hover\:text-white:hover {
+    color: var(--text-heading) !important;
+  }
+
+  /* 2. Borders */
+  .border-white\/5,
+  .border-white\/10,
+  .border-white\/15,
+  .border-white\/20,
+  .border-white\/25,
+  .border-white\/30 {
+    border-color: var(--border-color);
+  }
+  .hover\:border-white\/20:hover,
+  .hover\:border-white\/30:hover {
+    border-color: var(--accent-gold);
+  }
+
+  /* 3. Solid & Translucent Dark Backgrounds -> Warm Beige & Parchment Surfaces */
+  .bg-black:not(.fixed) {
+    background-color: var(--bg-muted) !important;
+  }
+  .bg-\[\#070707\],
+  .bg-\[\#0F0F0F\],
+  .bg-\[\#0f0f0f\] {
+    background-color: var(--bg-muted) !important;
+  }
+  .bg-\[\#0a0a0a\],
+  .bg-\[\#0A0A0A\],
+  .bg-\[\#0b0b0b\],
+  .bg-\[\#0c0c0c\],
+  .bg-\[\#0d0d0d\],
+  .bg-\[\#111111\],
+  .bg-\[\#121212\],
+  .bg-\[\#131313\],
+  .bg-\[\#141414\] {
+    background-color: var(--bg-surface) !important;
+  }
+
+  /* Fix muddy grey bg-black/40, bg-black/60 on FAQ cards, Terms cards, and modal headers */
+  .bg-black\/10:not(.fixed),
+  .bg-black\/20:not(.fixed),
+  .bg-black\/25:not(.fixed),
+  .bg-black\/30:not(.fixed),
+  .bg-black\/40:not(.fixed),
+  .bg-black\/50:not(.fixed),
+  .bg-black\/60:not(.fixed),
+  .bg-black\/80:not(.fixed) {
+    background-color: var(--bg-surface) !important;
+  }
+
+  /* Secondary subtle fills */
+  .bg-white\/\[0\.03\],
+  .bg-white\/5,
+  .bg-white\/10 {
+    background-color: var(--bg-surface) !important;
+  }
+
+  /* 4. Hover Background Fixes (prevents cards turning black on hover!) */
+  .hover\:bg-\[\#0F0F0F\]:hover,
+  .hover\:bg-\[\#0f0f0f\]:hover,
+  .hover\:bg-black:hover,
+  .hover\:bg-white\/5:hover,
+  .hover\:bg-white\/10:hover,
+  .hover\:bg-white\/\[0\.02\]:hover {
+    background-color: var(--bg-hover) !important;
+  }
+
+  /* 5. Photographic Overlays (Hero section & Dish image cards)
+     Elements inside .dark-overlay sit on top of dark photography and MUST remain
+     luminous warm ivory & bright champagne gold in both themes. */
+  .dark-overlay,
+  .dark-overlay h1,
+  .dark-overlay h2,
+  .dark-overlay h3,
+  .dark-overlay h4,
+  .dark-overlay p,
+  .dark-overlay .text-white {
+    color: #FAF6F0 !important;
+    text-shadow: 0 2px 14px rgba(0, 0, 0, 0.55);
+  }
+  .dark-overlay .text-gold-400,
+  .dark-overlay .text-gold-300,
+  .dark-overlay .text-gold-200 {
+    color: #E8C885 !important;
+    text-shadow: 0 1px 8px rgba(0, 0, 0, 0.65);
+  }
+  .dark-overlay .hero-outline-btn {
+    color: #4A2D11 !important;
+    border-color: #8A5A2B !important;
+    background-color: #F4EFE6 !important;
+    text-shadow: none !important;
+  }
+  .dark-overlay .hero-outline-btn:hover {
+    background-color: #E8DDCB !important;
+    color: #2E1B0A !important;
+  }
+
+  /* 6. Form Inputs, Selects & Textareas */
+  input:not([type="checkbox"]):not([type="radio"]):not([type="submit"]):not([type="button"]),
+  select,
+  textarea {
+    background-color: var(--input-bg) !important;
+    border-color: var(--input-border) !important;
+    color: var(--input-text) !important;
+    color-scheme: light !important;
+  }
+
+  /* Date/Time picker calendar icon in Light Mode */
+  input[type="date"]::-webkit-calendar-picker-indicator,
+  input[type="datetime-local"]::-webkit-calendar-picker-indicator,
+  input[type="time"]::-webkit-calendar-picker-indicator {
+    cursor: pointer;
+    /* Warm antique bronze/brown filter: rgb(122, 75, 31) */
+    filter: invert(30%) sepia(65%) saturate(850%) hue-rotate(355deg) brightness(85%) contrast(95%);
+    opacity: 0.9;
+    transition: opacity 0.2s ease, transform 0.2s ease;
+  }
+  input[type="date"]::-webkit-calendar-picker-indicator:hover,
+  input[type="datetime-local"]::-webkit-calendar-picker-indicator:hover,
+  input[type="time"]::-webkit-calendar-picker-indicator:hover {
+    opacity: 1;
+    transform: scale(1.08);
+  }
+  input:focus,
+  select:focus,
+  textarea:focus {
+    border-color: var(--accent-gold) !important;
+    box-shadow: 0 0 0 3px rgba(138, 90, 43, 0.15) !important;
+  }
+  input::placeholder,
+  textarea::placeholder {
+    color: var(--text-muted) !important;
+  }
+  select option {
+    background-color: #F8F4EC;
+    color: #231D18;
+  }
+
+  /* 7. Primary Gold Gradient & Accent Buttons */
+  a.gold-gradient,
+  button.gold-gradient,
+  .gold-gradient-btn {
+    color: #FAF6F0 !important;
+    text-shadow: none !important;
+    box-shadow: 0 4px 14px 0 rgba(112, 71, 31, 0.25);
+  }
+  .hover\:bg-gold-400:hover {
+    background-color: var(--accent-gold) !important;
+    color: #FAF6F0 !important;
+  }
+
+  /* 8. Amber and Warning Text in Light Mode -> Rich Warm Brown Shade */
+  .text-amber-200,
+  .text-amber-300 {
+    color: #8B4E12 !important;
+  }
+  .text-amber-400 {
+    color: #7A4510 !important;
+  }
+  .text-amber-200\/90 {
+    color: #6E3F10 !important;
+  }
+  .text-amber-300\/90 {
+    color: #7A4510 !important;
+  }
+  .border-amber-400\/40,
+  .border-amber-500\/40,
+  .border-amber-500\/35,
+  .border-amber-500\/30,
+  .border-amber-500\/20 {
+    border-color: rgba(139, 78, 18, 0.35) !important;
+  }
+  .bg-amber-500\/10,
+  .bg-amber-500\/15,
+  .bg-amber-500\/20,
+  .bg-amber-500\/25 {
+    background-color: rgba(184, 115, 51, 0.12) !important;
+  }
+
+  /* 9. Emerald / Green Status Badges & Text in Light Mode -> Deep Forest Green */
+  .text-emerald-400,
+  .text-emerald-300,
+  .text-green-400,
+  .text-green-300 {
+    color: #065F46 !important;
+  }
+  .border-emerald-500\/35,
+  .border-emerald-500\/40,
+  .border-emerald-500\/30,
+  .border-green-500\/20,
+  .border-green-500\/30 {
+    border-color: rgba(6, 95, 70, 0.35) !important;
+  }
+  .bg-emerald-500\/10,
+  .bg-emerald-500\/15,
+  .bg-emerald-500\/20,
+  .bg-green-500\/10,
+  .bg-green-500\/15,
+  .bg-green-500\/20 {
+    background-color: rgba(6, 95, 70, 0.12) !important;
+  }
+
+  /* 10. Rose / Excess Surcharge Badges & Text in Light Mode -> Deep Rose / Wine Red */
+  .text-rose-400,
+  .text-rose-300,
+  .text-rose-300\/80 {
+    color: #9F1239 !important;
+  }
+  .border-rose-400\/40,
+  .border-rose-500\/35,
+  .border-rose-500\/30,
+  .border-rose-500\/25,
+  .border-rose-500\/20 {
+    border-color: rgba(159, 18, 57, 0.35) !important;
+  }
+  .bg-rose-500\/10,
+  .bg-rose-500\/15,
+  .bg-rose-500\/20,
+  .bg-rose-500\/\[0\.03\],
+  .bg-rose-500\/\[0\.04\] {
+    background-color: rgba(244, 63, 94, 0.08) !important;
+  }
+
+  /* 11. Orange / Damage Invoice Badges & Text in Light Mode -> Deep Warm Ochre / Burnt Amber */
+  .text-orange-400,
+  .text-orange-300,
+  .text-orange-300\/85,
+  .text-orange-300\/80,
+  .text-orange-200 {
+    color: #9A3412 !important;
+  }
+  .border-orange-400\/40,
+  .border-orange-500\/35,
+  .border-orange-500\/30,
+  .border-orange-500\/25,
+  .border-orange-500\/20,
+  .border-orange-500\/15 {
+    border-color: rgba(154, 52, 18, 0.35) !important;
+  }
+  .bg-orange-500\/10,
+  .bg-orange-500\/15,
+  .bg-orange-500\/20,
+  .bg-orange-500\/\[0\.03\],
+  .bg-orange-500\/\[0\.04\] {
+    background-color: rgba(234, 88, 12, 0.09) !important;
+  }
+
+  /* Preserve explicit white text on status badges and colored buttons */
+  .bg-red-500,
+  .bg-red-600,
+  .bg-emerald-500,
+  .bg-emerald-600,
+  .bg-\[\#007DFE\],
+  .bg-\[\#007dfe\],
+  .bg-amber-600,
+  .bg-gold-400.text-white {
+    color: #FAF6F0 !important;
+  }
 }

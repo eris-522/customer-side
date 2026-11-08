@@ -317,9 +317,9 @@ export const isServiceIncludedInPackage = (serviceId: string, pkg: any): boolean
   if (serviceId === "catering") return true;
 
   const rawInclusions = Array.isArray(pkg.inclusions) ? pkg.inclusions : [];
-  const inclusions = rawInclusions.map((i) => String(i).toLowerCase().trim());
-  const hasInclusion = (patterns) =>
-    patterns.some((p) => inclusions.some((inc) => inc.includes(p)));
+  const inclusions = rawInclusions.map((i: any) => String(i).toLowerCase().trim());
+  const hasInclusion = (patterns: string[]) =>
+    patterns.some((p: string) => inclusions.some((inc: string) => inc.includes(p)));
 
   switch (serviceId) {
     case "soundsLights":

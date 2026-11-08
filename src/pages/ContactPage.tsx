@@ -108,7 +108,7 @@ export default function ContactPage() {
             allowFullScreen={true} 
             loading="lazy" 
             referrerPolicy="no-referrer-when-downgrade"
-            className="filter invert-[0.9] hue-rotate-[180deg]"
+            className="filter sepia-[0.25] contrast-[0.95] dark:sepia-0 dark:invert-[0.9] dark:hue-rotate-[180deg]"
           />
           <div className="absolute top-8 left-8 glass-card border border-white/10 p-4 max-w-[200px]">
             <p className="text-[10px] uppercase tracking-widest text-gold-400 font-bold mb-2 italic">Our Location</p>

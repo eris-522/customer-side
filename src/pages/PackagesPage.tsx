@@ -1,7 +1,7 @@
 import { motion } from "motion/react";
 import { ChevronRight, Check } from "lucide-react";
 import { Link } from "react-router-dom";
-import { useState, useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import { useCMS } from "../context/CMSContext";
 import { catalogCache } from "../utils/catalogCache";
 
@@ -155,7 +155,7 @@ export default function PackagesPage() {
                     >
                       {/* Feature: Displays the package tag (e.g., Popular, New) if the admin assigned one */}
                       {pkg.tag && pkg.tag.toLowerCase() !== "none" && (
-                        <div className="absolute top-4 left-4 z-10 bg-gold-400 text-black px-3 py-1 text-[9px] font-bold uppercase tracking-widest rounded-sm">
+                        <div className="absolute top-4 left-4 z-10 bg-gold-400 text-white dark:text-black px-3 py-1 text-[9px] font-bold uppercase tracking-widest rounded-xs shadow-xs">
                           {pkg.tag}
                         </div>
                       )}

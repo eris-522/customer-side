@@ -96,7 +96,7 @@ export default function HomePage() {
         className="relative h-[80vh] flex items-center justify-center overflow-hidden"
       >
         <div className="absolute inset-0 z-0">
-          <div className="absolute inset-0 bg-gradient-to-b from-rich-black/70 via-rich-black/70 to-rich-black z-10" />
+          <div className="absolute inset-0 bg-gradient-to-b from-[#1A140F]/75 via-[#1A140F]/60 to-[#1A140F]/85 dark:from-rich-black/70 dark:via-rich-black/70 dark:to-rich-black z-10" />
           <img
             src={hero.backgroundImage || "https://images.unsplash.com/photo-1555244162-803834f70033?auto=format&fit=crop&q=80&w=2000"}
             alt="Hero Backdrop"
@@ -104,7 +104,7 @@ export default function HomePage() {
           />
         </div>
 
-        <div className="relative z-20 text-center px-6 max-w-4xl">
+        <div className="relative z-20 text-center px-6 max-w-4xl text-white dark-overlay">
           <motion.span
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
@@ -131,13 +131,13 @@ export default function HomePage() {
           >
             <Link
               to={hero.primaryBtnLink || "/booking"}
-              className="gold-gradient text-black px-10 py-3 font-bold tracking-widest uppercase text-xs hover:brightness-110 transition-all inline-block text-center focus:outline-none"
+              className="gold-gradient text-white dark:text-black px-10 py-3 font-bold tracking-widest uppercase text-xs hover:brightness-110 transition-all inline-block text-center focus:outline-none shadow-md rounded-xs"
             >
               {hero.primaryBtnText || "Inquire Now"}
             </Link>
             <Link
               to={hero.secondaryBtnLink || "/menu"}
-              className="border border-white text-white px-10 py-3 font-bold tracking-widest uppercase text-xs hover:bg-white hover:text-black transition-all inline-block text-center"
+              className="border border-[#7A4B1F] dark:border-white/80 bg-[#EAE0D0] dark:bg-black/30 text-[#4A2D11] dark:text-white px-10 py-3 font-bold tracking-widest uppercase text-xs hover:bg-[#DBCDB7] dark:hover:bg-white hover:text-[#2E1B0A] dark:hover:text-black transition-all inline-block text-center rounded-xs shadow-md"
             >
               {hero.secondaryBtnText || "View Menu"}
             </Link>
@@ -162,7 +162,7 @@ export default function HomePage() {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-0 border border-white/10">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-0 border border-[#CFC3AE] dark:border-white/10 bg-[#F4EFE6]/70 dark:bg-transparent shadow-sm">
             {packages.map((pkg, i) => (
               <motion.div
                 key={pkg.id}
@@ -170,12 +170,12 @@ export default function HomePage() {
                 whileInView={{ opacity: 1 }}
                 viewport={{ once: true }}
                 transition={{ delay: i * 0.2 }}
-                className={`p-10 flex flex-col justify-between group hover:bg-[#0F0F0F] transition-colors ${i < 2 ? "md:border-r border-white/10" : ""}`}
+                className={`p-10 flex flex-col justify-between group hover:bg-[#DFD5C2] dark:hover:bg-[#0F0F0F] transition-colors ${i < 2 ? "md:border-r border-[#CFC3AE] dark:border-white/10" : ""}`}
               >
                 <div>
-                  <div className="aspect-[16/9] mb-8 overflow-hidden relative bg-black/40">
+                  <div className="aspect-[16/9] mb-8 overflow-hidden relative bg-[#D8CEBE] dark:bg-black/40 rounded-xs">
                     {pkg.tag && pkg.tag.toLowerCase() !== "none" && (
-                      <div className="absolute top-4 left-4 z-10 bg-gold-400 text-black px-3 py-1 text-[9px] font-bold uppercase tracking-widest rounded-sm">
+                      <div className="absolute top-4 left-4 z-10 bg-gold-400 text-white dark:text-black px-3 py-1 text-[9px] font-bold uppercase tracking-widest rounded-xs shadow-xs">
                         {pkg.tag}
                       </div>
                     )}
@@ -318,8 +318,8 @@ export default function HomePage() {
                   alt={dish.title}
                   className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700 grayscale group-hover:grayscale-0"
                 />
-                <div className="absolute inset-0 bg-gradient-to-t from-black via-black/30 to-transparent" />
-                <div className="absolute bottom-6 left-6 right-6">
+                <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/35 to-transparent" />
+                <div className="absolute bottom-6 left-6 right-6 dark-overlay">
                   <span className="text-[9px] uppercase tracking-widest text-gold-400 font-bold block mb-1">
                     {dish.category}
                   </span>
@@ -334,23 +334,23 @@ export default function HomePage() {
       </section>
 
       {/* How It Works */}
-      <section id="process" className="bg-rich-black">
+      <section id="process" className="bg-rich-black border-t border-[#CFC3AE] dark:border-white/10">
         <div className="max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-3">
-          <div className="p-16 md:p-20 border-r border-white/10 bg-[#0F0F0F]">
+          <div className="p-16 md:p-20 border-r border-[#CFC3AE] dark:border-white/10 bg-[#E6DEC8] dark:bg-[#0F0F0F]">
             <span className="text-gold-400 text-[10px] tracking-[0.4em] font-bold uppercase mb-12 block italic">
               {processData?.subtitle || "The Process"}
             </span>
             <div className="space-y-12">
               {processSteps.map((step) => (
                 <div key={step.number} className="flex gap-6">
-                  <span className="serif text-3xl gold-text-gradient opacity-50 italic shrink-0">
+                  <span className="serif text-3xl gold-text-gradient opacity-75 dark:opacity-50 italic shrink-0">
                     {step.number}
                   </span>
                   <div>
                     <p className="font-bold text-xs uppercase tracking-widest mb-2 text-white">
                       {step.title}
                     </p>
-                    <p className="text-[10px] text-white/40 leading-relaxed font-medium">
+                    <p className="text-[10px] text-white/60 dark:text-white/40 leading-relaxed font-medium">
                       {step.text}
                     </p>
                   </div>
@@ -359,12 +359,12 @@ export default function HomePage() {
             </div>
           </div>
 
-          <div className="p-16 md:p-20 border-r border-white/10 flex flex-col justify-center bg-black col-span-1 md:col-span-2">
+          <div className="p-16 md:p-20 border-r border-[#CFC3AE] dark:border-white/10 flex flex-col justify-center bg-[#DDD3BE] dark:bg-black col-span-1 md:col-span-2">
             <span className="text-gold-400 text-[10px] tracking-[0.4em] font-bold uppercase mb-8 block italic">
               {testimonials?.subtitle || "Customer Review"}
             </span>
             <div className="max-w-xl">
-              <Quote className="text-gold-400/10 mb-8" size={64} />
+              <Quote className="text-gold-400/25 dark:text-gold-400/10 mb-8" size={64} />
               <p className="serif text-2xl md:text-3xl italic leading-relaxed mb-8 text-white/90 font-light">
                 "{featuredReview?.quote || "Roxan Policarpio Events & Catering made our dream wedding a reality. The food was absolutely exquisite, the presentation was flawless, and it didn't break the bank. Truly exceptional service!"}"
               </p>
@@ -374,7 +374,7 @@ export default function HomePage() {
                   {featuredReview?.author || "Maria Santos"}
                 </span>
                 {featuredReview?.role && (
-                  <span className="text-[9px] uppercase tracking-widest text-white/40 font-semibold">
+                  <span className="text-[9px] uppercase tracking-widest text-white/60 dark:text-white/40 font-semibold">
                     • {featuredReview.role}
                   </span>
                 )}
@@ -386,9 +386,9 @@ export default function HomePage() {
 
       {/* Frequently Asked Questions Showcase */}
       {previewFaqs.length > 0 && (
-        <section className="py-24 px-10 border-t border-white/10 bg-[#070707]">
+        <section className="py-24 px-10 border-t border-[#CFC3AE] dark:border-white/10 bg-[#070707]">
           <div className="max-w-5xl mx-auto space-y-12">
-            <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 border-b border-white/10 pb-8">
+            <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 border-b border-[#CFC3AE] dark:border-white/10 pb-8">
               <div>
                 <span className="text-gold-400 text-[10px] tracking-[0.4em] font-bold uppercase mb-3 block italic">
                   {faqs?.subtitle || "Service Policies & Common Inquiries"}
@@ -424,8 +424,8 @@ export default function HomePage() {
                     key={faq.id}
                     className={`border transition-all duration-300 rounded-xl overflow-hidden ${
                       isOpen
-                        ? "border-gold-400/40 bg-[#121212]"
-                        : "border-white/10 bg-black/40 hover:border-white/20"
+                        ? "border-gold-400/50 bg-[#F8F4EC] dark:bg-[#121212] shadow-md"
+                        : "border-[#CFC3AE] dark:border-white/10 bg-[#F4EFE6] dark:bg-black/40 hover:bg-[#EFE8DA] dark:hover:bg-black/60 hover:border-gold-400/40 dark:hover:border-white/20 shadow-xs"
                     }`}
                   >
                     <button
@@ -475,7 +475,7 @@ export default function HomePage() {
       {/* Contact Section */}
       <section
         id="contact"
-        className="py-32 px-10 border-t border-white/10 bg-black"
+        className="py-32 px-10 border-t border-[#CFC3AE] dark:border-white/10 bg-[#DFD5C2] dark:bg-black"
       >
         <div className="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-center gap-12">
           <div className="max-w-md">

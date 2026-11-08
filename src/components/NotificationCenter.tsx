@@ -74,10 +74,10 @@ export function NotificationCenter({ isOpen, onClose, notifications, unreadCount
           animate={{ opacity: 1, y: 0, scale: 1 }}
           exit={{ opacity: 0, y: 10, scale: 0.95 }}
           transition={{ duration: 0.2 }}
-          className="absolute right-0 mt-4 w-80 md:w-96 glass-card border border-white/10 shadow-2xl z-[100] max-h-[400px] overflow-hidden flex flex-col"
+          className="absolute right-0 mt-4 w-80 md:w-96 glass-card border border-[#E6DFD3] dark:border-white/10 shadow-2xl z-[100] max-h-[400px] overflow-hidden flex flex-col rounded-xl"
         >
-          <div className="p-4 border-b border-white/10 sticky top-0 bg-[#070707] z-10 flex items-center justify-between">
-            <h3 className="font-serif text-lg text-gold-400 italic">Notifications</h3>
+          <div className="p-4 border-b border-[#E6DFD3] dark:border-white/10 sticky top-0 bg-stone-100/95 dark:bg-[#070707] z-10 flex items-center justify-between backdrop-blur-md">
+            <h3 className="font-serif text-lg text-gold-500 dark:text-gold-400 italic">Notifications</h3>
             <div className="flex items-center gap-3">
               {unreadCount > 0 && (
                 <button 
@@ -90,12 +90,12 @@ export function NotificationCenter({ isOpen, onClose, notifications, unreadCount
                     setReadDuringSession(prev => [...prev, ...newlyRead]);
                     newlyRead.forEach((id: string) => onDismiss && onDismiss(id));
                   }}
-                  className="text-[10px] font-bold text-gold-400 hover:text-white uppercase tracking-widest transition-colors"
+                  className="text-[10px] font-bold text-gold-500 dark:text-gold-400 hover:text-stone-900 dark:hover:text-white uppercase tracking-widest transition-colors cursor-pointer"
                 >
                   Mark all read
                 </button>
               )}
-              <button onClick={onClose} className="p-1 hover:bg-white/10 rounded-lg transition-colors text-white/50">
+              <button onClick={onClose} className="p-1 hover:bg-black/5 dark:hover:bg-white/10 rounded-lg transition-colors text-stone-500 dark:text-white/50 cursor-pointer">
                 <X className="w-5 h-5" />
               </button>
             </div>
@@ -104,8 +104,8 @@ export function NotificationCenter({ isOpen, onClose, notifications, unreadCount
           <div className="flex-1 overflow-y-auto bg-rich-black text-left scrollbar-thin">
             {notifications.length === 0 ? (
               <div className="p-10 text-center flex flex-col items-center">
-                <Bell className="text-white/10 mb-4" size={32} />
-                <p className="text-white/40 text-sm font-medium">No updates right now.</p>
+                <Bell className="text-stone-300 dark:text-white/10 mb-4" size={32} />
+                <p className="text-stone-500 dark:text-white/40 text-sm font-medium">No updates right now.</p>
               </div>
             ) : (
               sortedNotifications.map((notif: any) => {
@@ -135,7 +135,7 @@ export function NotificationCenter({ isOpen, onClose, notifications, unreadCount
                         onDismiss(notifKey);
                       }
                     }}
-                    className={`p-4 border-b border-white/10 hover:bg-white/5 transition-colors cursor-pointer group ${isUnreadNotif && !isCancelled ? 'bg-white/5' : ''} ${isCancelled ? 'bg-red-950/10' : ''}`}
+                    className={`p-4 border-b border-[#E6DFD3] dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/5 transition-colors cursor-pointer group ${isUnreadNotif && !isCancelled ? 'bg-gold-500/5 dark:bg-white/5' : ''} ${isCancelled ? 'bg-red-500/10' : ''}`}
                   >
                     <div className="flex justify-between items-start mb-1 gap-2">
                       <div>
@@ -243,7 +243,7 @@ export function NotificationCenter({ isOpen, onClose, notifications, unreadCount
                             </>
                           ) : (
                             <>
-                              Booking for {notif.event_date} was <span className={isCancelled ? "text-red-400" : "text-green-400"}>{notif.status}</span>.
+                              Booking for {notif.event_date} was <span className={isCancelled ? "text-red-400 font-bold" : "text-emerald-800 dark:text-green-400 font-bold"}>{notif.status}</span>.
                             </>
                           )}
                           {isUnreadNotif && (
@@ -262,17 +262,17 @@ export function NotificationCenter({ isOpen, onClose, notifications, unreadCount
                     {isExpanded && (
                       <div className="mt-3 pt-3 border-t border-white/10 animate-in slide-in-from-top-1 fade-in duration-200">
                         {notif.notifType === 'excess_headcount' && (
-                          <div className="mb-3 p-3 bg-rose-500/10 border border-rose-500/20 rounded-md space-y-1.5 text-xs text-rose-200">
+                          <div className="mb-3 p-3 bg-rose-500/10 border border-rose-500/25 rounded-md space-y-1.5 text-xs text-rose-200">
                             <div className="text-rose-300 font-bold">
                               <span>Excess Headcount Surcharge: +₱{Number(notif.excessFee ?? notif.excessBilling?.excess_guest_fee ?? 0).toLocaleString()}</span>
                             </div>
-                            <p className="text-[11px] text-white/80">
+                            <p className="text-[11px] text-[#4A3828] dark:text-white/80">
                               Actual headcount served was <strong>{notif.excessActual ?? notif.excessBilling?.actual_headcount_served} guests</strong> vs <strong>{notif.excessGuaranteed ?? notif.excessBilling?.guaranteed_headcount} guaranteed</strong> (+{notif.excessGuests ?? notif.excessBilling?.excess_guests} attendee(s) beyond guaranteed count @ ₱500/pax).
                             </p>
-                            <p className="text-[10px] text-rose-300/80">
-                              Due Date: {notif.excessDueDate || notif.excessBilling?.due_date || "Next Day"} • Status: <strong>{notif.excessBilling?.payment_status || "Unpaid"}</strong>
+                            <p className="text-[10px] text-[#881337] dark:text-rose-300/80">
+                              Due Date: <span className="font-semibold">{notif.excessDueDate || notif.excessBilling?.due_date || "Next Day"}</span> • Status: <strong className="text-[#9F1239] dark:text-rose-300">{notif.excessBilling?.payment_status || "Unpaid"}</strong>
                             </p>
-                            <p className="text-[10px] text-gold-400 font-medium pt-1 border-t border-rose-500/20">
+                            <p className="text-[10px] text-[#7A4510] dark:text-gold-400 font-medium pt-1 border-t border-rose-500/20">
                               ✓ You can settle this excess surcharge directly in the Payments section below.
                             </p>
                           </div>
@@ -291,17 +291,17 @@ export function NotificationCenter({ isOpen, onClose, notifications, unreadCount
                           </div>
                         )}
                         {notif.notifType === 'damage_invoice' && (
-                          <div className="mb-3 p-3 bg-orange-500/10 border border-orange-500/20 rounded-md space-y-1.5 text-xs text-orange-200">
+                          <div className="mb-3 p-3 bg-orange-500/10 border border-orange-500/25 rounded-md space-y-1.5 text-xs text-orange-200">
                             <div className="text-orange-300 font-bold">
                               Equipment Damage &amp; Loss Invoice: +₱{Number(notif.damageFee ?? notif.damageAppraisal?.total_damage_fee ?? 0).toLocaleString()}
                             </div>
-                            <p className="text-[11px] text-white/80">
+                            <p className="text-[11px] text-[#4A3828] dark:text-white/80">
                               {notif.damageItemCount || 1} damaged or missing catering item(s) were appraised during post-event warehouse reconciliation (Clause 13).
                             </p>
-                            <p className="text-[10px] text-orange-300/80">
-                              Due Date: {notif.damageDueDate || notif.damageAppraisal?.due_date || "Post-Event"} • Status: <strong>{notif.damageAppraisal?.payment_status || "Unpaid"}</strong>
+                            <p className="text-[10px] text-[#7C2D12] dark:text-orange-300/80">
+                              Due Date: <span className="font-semibold">{notif.damageDueDate || notif.damageAppraisal?.due_date || "Post-Event"}</span> • Status: <strong className="text-[#9A3412] dark:text-orange-300">{notif.damageAppraisal?.payment_status || "Unpaid"}</strong>
                             </p>
-                            <p className="text-[10px] text-gold-400 font-medium pt-1 border-t border-orange-500/20">
+                            <p className="text-[10px] text-[#7A4510] dark:text-gold-400 font-medium pt-1 border-t border-orange-500/20">
                               ✓ View itemized photos and settle this separate post-event invoice in My Inquiries.
                             </p>
                           </div>

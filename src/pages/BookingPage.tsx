@@ -1132,7 +1132,7 @@ export default function BookingPage() {
               <div
                 className={`w-10 h-10 rounded-full flex items-center justify-center transition-all duration-500 border ${
                   currentStep >= step.id
-                    ? "bg-gold-400 border-gold-400 text-black"
+                    ? "bg-gold-400 border-gold-400 text-white dark:text-black shadow-sm"
                     : "bg-rich-black border-white/10 text-white/40"
                 }`}
               >
@@ -1360,7 +1360,7 @@ export default function BookingPage() {
                     type="date"
                     min={minSelectableDate}
                     max={maxSelectableDate}
-                    className="w-full bg-white/5 border border-white/10 px-6 py-4 text-lg focus:outline-none focus:border-gold-400/50 transition-all font-medium [color-scheme:dark]"
+                    className="w-full bg-white/5 border border-white/10 px-6 py-4 text-lg focus:outline-none focus:border-gold-400/50 transition-all font-medium [color-scheme:light] dark:[color-scheme:dark]"
                     value={formData.date}
                     onChange={(e) => {
                       const selectedDate = e.target.value;
@@ -1448,7 +1448,7 @@ export default function BookingPage() {
                   </label>
                 <div className="relative">
                   <select
-                    className="w-full appearance-none bg-white/5 border border-white/10 px-6 py-4 text-lg focus:outline-none focus:border-gold-400/50 transition-all font-medium [color-scheme:dark]"
+                    className="w-full appearance-none bg-white/5 border border-white/10 px-6 py-4 text-lg focus:outline-none focus:border-gold-400/50 transition-all font-medium [color-scheme:light] dark:[color-scheme:dark]"
                     value={formData.time}
                     onChange={(e) => {
                       setStepError("");
@@ -1581,31 +1581,31 @@ export default function BookingPage() {
                     <div
                       className={`p-4 border transition-all flex items-start gap-3.5 ${
                         isOutsideTaytay
-                          ? "bg-amber-500/10 border-amber-500/40 text-amber-200"
-                          : "bg-emerald-500/10 border-emerald-500/30 text-emerald-200"
+                          ? "bg-amber-500/10 border-amber-600/40 text-[#7A4510] dark:text-amber-200"
+                          : "bg-emerald-500/10 border-emerald-500/30 text-emerald-800 dark:text-emerald-200"
                       }`}
                     >
                       {isOutsideTaytay ? (
-                        <AlertTriangle className="text-amber-400 shrink-0 mt-0.5" size={20} />
+                        <AlertTriangle className="text-[#8B4E12] dark:text-amber-400 shrink-0 mt-0.5" size={20} />
                       ) : (
-                        <CheckCircle className="text-emerald-400 shrink-0 mt-0.5" size={20} />
+                        <CheckCircle className="text-emerald-700 dark:text-emerald-400 shrink-0 mt-0.5" size={20} />
                       )}
                       <div className="space-y-1">
                         <div className="flex flex-wrap items-center gap-2">
-                          <p className="text-sm font-bold uppercase tracking-wider">
+                          <p className="text-sm font-bold uppercase tracking-wider text-[#7A4510] dark:text-amber-200">
                             {isOutsideTaytay
                               ? "Out-of-Town Venue Detected (Outside Taytay, Rizal)"
                               : "Within Standard Coverage (Taytay, Rizal)"}
                           </p>
                         </div>
                         {isOutsideTaytay ? (
-                          <p className="text-xs text-white/80 leading-relaxed">
-                            Events located outside <span className="text-white font-semibold">Taytay, Rizal</span> are subject to an additional{" "}
-                            <span className="text-amber-300 font-semibold">Out-of-Town Travel &amp; Logistics Surcharge</span>{""}.
+                          <p className="text-xs text-[#523B25] dark:text-white/80 leading-relaxed">
+                            Events located outside <span className="text-[#2C1D11] dark:text-white font-semibold">Taytay, Rizal</span> are subject to an additional{" "}
+                            <span className="text-[#8B4E12] dark:text-amber-300 font-semibold">Out-of-Town Travel &amp; Logistics Surcharge</span>{""}.
                             Our coordinators will assess the exact travel distance or conduct a venue ocular and update your final logistics fee accordingly.
                           </p>
                         ) : (
-                          <p className="text-xs text-white/75 leading-relaxed">
+                          <p className="text-xs text-[#2A4D38] dark:text-white/75 leading-relaxed">
                             Your venue is located within Taytay, Rizal, no out-of-town travel surcharge applies.
                           </p>
                         )}
@@ -3396,7 +3396,7 @@ export default function BookingPage() {
                       }`}
                     >
                       <div className="flex items-center justify-between mb-2">
-                        <span className="text-[10px] uppercase font-bold tracking-widest px-2 py-0.5 rounded bg-blue-500/20 text-blue-300">
+                        <span className="text-[10px] uppercase font-bold tracking-widest px-2 py-0.5 rounded bg-amber-900/15 dark:bg-gold-400/20 text-[#7A4510] dark:text-gold-300 border border-amber-900/20 dark:border-gold-400/30">
                           Installment Scheme
                         </span>
                         <div
@@ -3501,11 +3501,11 @@ export default function BookingPage() {
                       onClick={() => setPaymentMethod("GCash")}
                       className={`p-4 rounded-lg border text-left transition-all flex items-center gap-3 ${
                         paymentMethod === "GCash"
-                          ? "bg-[#007DFE]/15 border-[#007DFE] text-white shadow-lg shadow-[#007DFE]/10"
+                          ? "bg-gold-400/15 border-gold-400 text-white shadow-lg shadow-gold-400/10"
                           : "bg-white/5 border-white/10 text-white/60 hover:border-white/20"
                       }`}
                     >
-                      <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs ${paymentMethod === "GCash" ? "bg-[#007DFE] text-white" : "bg-white/10 text-white/40"}`}>
+                      <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs ${paymentMethod === "GCash" ? "bg-gold-400 text-black" : "bg-white/10 text-white/40"}`}>
                         G
                       </div>
                       <div>
@@ -3534,23 +3534,23 @@ export default function BookingPage() {
 
                 {/* Details for Selected Method */}
                 {paymentMethod === "GCash" ? (
-                  <div className="p-5 bg-gradient-to-b from-[#007DFE]/10 to-transparent border border-[#007DFE]/30 rounded-xl space-y-4">
+                  <div className="p-5 bg-gradient-to-b from-gold-400/10 to-transparent border border-gold-400/30 rounded-xl space-y-4">
                     <div className="flex flex-col sm:flex-row items-center gap-6">
                       {/* Stylized QR Code Placeholder */}
                       <div className="bg-white p-3 rounded-lg shadow-xl shrink-0 flex flex-col items-center">
-                        <div className="w-36 h-36 bg-gray-100 border-2 border-dashed border-[#007DFE]/40 rounded flex flex-col items-center justify-center p-2 relative overflow-hidden">
+                        <div className="w-36 h-36 bg-stone-50 border-2 border-dashed border-gold-400/50 rounded flex flex-col items-center justify-center p-2 relative overflow-hidden">
                           {/* QR Visual Elements */}
-                          <div className="absolute top-2 left-2 w-7 h-7 border-2 border-[#007DFE] rounded-sm flex items-center justify-center">
-                            <div className="w-3 h-3 bg-[#007DFE]"></div>
+                          <div className="absolute top-2 left-2 w-7 h-7 border-2 border-gold-500 rounded-sm flex items-center justify-center">
+                            <div className="w-3 h-3 bg-gold-500"></div>
                           </div>
-                          <div className="absolute top-2 right-2 w-7 h-7 border-2 border-[#007DFE] rounded-sm flex items-center justify-center">
-                            <div className="w-3 h-3 bg-[#007DFE]"></div>
+                          <div className="absolute top-2 right-2 w-7 h-7 border-2 border-gold-500 rounded-sm flex items-center justify-center">
+                            <div className="w-3 h-3 bg-gold-500"></div>
                           </div>
-                          <div className="absolute bottom-2 left-2 w-7 h-7 border-2 border-[#007DFE] rounded-sm flex items-center justify-center">
-                            <div className="w-3 h-3 bg-[#007DFE]"></div>
+                          <div className="absolute bottom-2 left-2 w-7 h-7 border-2 border-gold-500 rounded-sm flex items-center justify-center">
+                            <div className="w-3 h-3 bg-gold-500"></div>
                           </div>
-                          <QrCode className="text-[#007DFE] opacity-70" size={48} />
-                          <span className="text-xs font-bold text-[#007DFE] mt-1 uppercase tracking-wider">
+                          <QrCode className="text-gold-500 opacity-80" size={48} />
+                          <span className="text-xs font-bold text-[#7A4510] dark:text-gold-400 mt-1 uppercase tracking-wider">
                             GCash QR Code
                           </span>
                         </div>
@@ -3562,7 +3562,7 @@ export default function BookingPage() {
                       {/* Instructions & Account */}
                       <div className="space-y-3 flex-1 text-left">
                         <div>
-                          <span className="text-[10px] font-bold uppercase tracking-widest text-[#007DFE] block">
+                          <span className="text-[10px] font-bold uppercase tracking-widest text-[#7A4510] dark:text-gold-400 block">
                             GCash Account Name
                           </span>
                           <span className="text-base font-bold text-white">
@@ -3570,7 +3570,7 @@ export default function BookingPage() {
                           </span>
                         </div>
                         <div>
-                          <span className="text-[10px] font-bold uppercase tracking-widest text-[#007DFE] block">
+                          <span className="text-[10px] font-bold uppercase tracking-widest text-[#7A4510] dark:text-gold-400 block">
                             GCash Mobile Number
                           </span>
                           <div className="flex items-center gap-2 mt-1">
@@ -3584,7 +3584,7 @@ export default function BookingPage() {
                                 setCopiedAccount("gcash");
                                 setTimeout(() => setCopiedAccount(""), 2500);
                               }}
-                              className="px-3 py-1.5 bg-[#007DFE]/20 text-[#007DFE] hover:bg-[#007DFE]/30 text-xs font-bold rounded transition-colors flex items-center gap-1.5"
+                              className="px-3 py-1.5 bg-gold-400/20 text-[#7A4510] dark:text-gold-300 hover:bg-gold-400/30 text-xs font-bold rounded transition-colors flex items-center gap-1.5"
                             >
                               {copiedAccount === "gcash" ? <CheckCircle size={14} /> : <Copy size={14} />}
                               {copiedAccount === "gcash" ? "Copied!" : "Copy"}

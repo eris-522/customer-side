@@ -1794,7 +1794,7 @@ export default function MyInquiriesPage() {
               <button
                 key={f}
                 onClick={() => setFilter(f)}
-                className={`px-6 py-2 text-xs font-bold tracking-widest uppercase transition-all ${filter === f ? "bg-gold-400 text-black" : "bg-white/5 text-white/60 hover:text-white hover:bg-white/10"}`}
+                className={`px-6 py-2 text-xs font-bold tracking-widest uppercase transition-all rounded-xs cursor-pointer ${filter === f ? "bg-gold-400 text-white dark:text-black shadow-sm" : "bg-white/5 text-white/60 hover:text-white hover:bg-white/10"}`}
               >
                 {f}
               </button>
@@ -2705,7 +2705,7 @@ export default function MyInquiriesPage() {
                     </div>
 
                     {excessGuestFee > 0 && (
-                      <div className="px-4 py-3 bg-rose-500/[0.03]">
+                      <div className="px-4 py-3">
                         <div className="flex items-center justify-between gap-2">
                           <p className="text-[10px] uppercase tracking-wider font-semibold text-rose-300/80">
                             Excess Surcharge
@@ -2751,7 +2751,7 @@ export default function MyInquiriesPage() {
                     )}
 
                     {damageFee > 0 && (
-                      <div className="px-4 py-3 bg-orange-500/[0.03]">
+                      <div className="px-4 py-3">
                         <div className="flex items-center justify-between gap-2">
                           <p className="text-[10px] uppercase tracking-wider font-semibold text-orange-300/85">
                             Damage Invoice
@@ -2840,8 +2840,8 @@ export default function MyInquiriesPage() {
                               <span
                                 className={`px-1.5 py-0.2 rounded text-[10px] font-bold tabular-nums ${
                                   isSelected
-                                    ? "bg-gold-400/20 text-gold-300"
-                                    : "bg-white/10 text-white/55"
+                                    ? "bg-amber-900/15 dark:bg-gold-400/20 text-[#7A4510] dark:text-gold-300"
+                                    : "bg-black/8 dark:bg-white/10 text-[#6B5038] dark:text-white/55"
                                 }`}
                               >
                                 {tab.badge}
@@ -3417,7 +3417,7 @@ export default function MyInquiriesPage() {
                                     <Clock size={12} aria-hidden="true" /> Awaiting Coordinator Review
                                   </span>
                                 ) : (
-                                  <span className="px-2.5 py-1 rounded-full text-[11px] font-semibold bg-emerald-500/15 text-emerald-400 border border-emerald-500/35 inline-flex items-center gap-1.5">
+                                  <span className="px-2.5 py-1 rounded-full text-[11px] font-semibold bg-emerald-700/10 dark:bg-emerald-500/15 text-emerald-900 dark:text-emerald-400 border border-emerald-700/30 dark:border-emerald-500/35 inline-flex items-center gap-1.5">
                                     <Clock size={12} aria-hidden="true" />
                                     Editable until {formattedCutoffDate} · {daysLeftToModify}d left
                                   </span>
@@ -3722,39 +3722,39 @@ export default function MyInquiriesPage() {
                         </dl>
 
                         {/* Contract Receipt Totals Reconciliation (Pre-Event Settled Balance) */}
-                        <div className="pt-3 border-t border-white/15 space-y-1.5 text-xs tabular-nums">
-                          <div className="flex items-center justify-between text-white/80">
+                        <div className="pt-3 border-t border-[#CFC3AE] dark:border-white/15 space-y-1.5 text-xs tabular-nums">
+                          <div className="flex items-center justify-between text-[#3A2D20] dark:text-white/80">
                             <span>Estimated Event Total</span>
-                            <span className="font-semibold text-white text-sm">
+                            <span className="font-semibold text-[#1C1610] dark:text-white text-sm">
                               ₱{totalEventCost.toLocaleString()}
                             </span>
                           </div>
                           {paymentData && (
                             <>
-                              <div className="flex items-center justify-between text-white/55">
+                              <div className="flex items-center justify-between text-[#614D3C] dark:text-white/55">
                                 <span>
                                   Less Deposit ({paymentData.status})
                                 </span>
-                                <span>−₱{paymentData.downpayment.toLocaleString()}</span>
+                                <span className="font-medium text-[#4A3828] dark:text-white/70">−₱{paymentData.downpayment.toLocaleString()}</span>
                               </div>
                               {paymentData.paidMilestones > 0 && (
-                                <div className="flex items-center justify-between text-emerald-400/80">
+                                <div className="flex items-center justify-between text-emerald-700 dark:text-emerald-400/80">
                                   <span>Less Verified Installments</span>
-                                  <span>−₱{paymentData.paidMilestones.toLocaleString()}</span>
+                                  <span className="font-medium">−₱{paymentData.paidMilestones.toLocaleString()}</span>
                                 </div>
                               )}
-                              <div className="pt-2 border-t border-white/10 flex items-baseline justify-between gap-2">
-                                <span className="font-bold uppercase tracking-wider text-white/90 text-[11px] flex items-center gap-2">
+                              <div className="pt-2 border-t border-[#CFC3AE] dark:border-white/10 flex items-baseline justify-between gap-2">
+                                <span className="font-bold uppercase tracking-wider text-[#2D2115] dark:text-white/90 text-[11px] flex items-center gap-2">
                                   <span>{isBalanceSettled ? "Contract Balance" : "Remaining Balance"}</span>
                                   {isBalanceSettled && (
-                                    <span className="px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider bg-emerald-500/15 text-emerald-400 border border-emerald-500/35">
+                                    <span className="px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider bg-emerald-500/15 text-emerald-800 dark:text-emerald-400 border border-emerald-600/30 dark:border-emerald-500/35">
                                       Settled &amp; Verified
                                     </span>
                                   )}
                                 </span>
                                 <span
                                   className={`font-serif font-bold text-base ${
-                                    isBalanceSettled ? "text-emerald-400" : "text-gold-400"
+                                    isBalanceSettled ? "text-emerald-800 dark:text-emerald-400" : "text-[#7A4510] dark:text-gold-400"
                                   }`}
                                 >
                                   ₱{paymentData.balanceAmount.toLocaleString()}
@@ -4683,11 +4683,11 @@ export default function MyInquiriesPage() {
                       onClick={() => setBalancePaymentMethod("GCash")}
                       className={`p-4 rounded-lg border text-left transition-all flex items-center gap-3 ${
                         balancePaymentMethod === "GCash"
-                          ? "bg-[#007DFE]/15 border-[#007DFE] text-white shadow-lg shadow-[#007DFE]/10"
+                          ? "bg-gold-400/15 border-gold-400 text-white shadow-lg shadow-gold-400/10"
                           : "bg-white/5 border-white/10 text-white/60 hover:border-white/20"
                       }`}
                     >
-                      <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs ${balancePaymentMethod === "GCash" ? "bg-[#007DFE] text-white" : "bg-white/10 text-white/40"}`}>
+                      <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs ${balancePaymentMethod === "GCash" ? "bg-gold-400 text-black" : "bg-white/10 text-white/40"}`}>
                         G
                       </div>
                       <div>
@@ -4718,12 +4718,12 @@ export default function MyInquiriesPage() {
 
                 {/* Instructions for Selected Method */}
                 {balancePaymentMethod === "GCash" ? (
-                  <div className="p-5 bg-gradient-to-b from-[#007DFE]/10 to-transparent border border-[#007DFE]/30 rounded-xl space-y-4">
+                  <div className="p-5 bg-gradient-to-b from-gold-400/10 to-transparent border border-gold-400/30 rounded-xl space-y-4">
                     <div className="flex flex-col sm:flex-row items-center gap-6">
                       <div className="bg-white p-3 rounded-lg shadow-xl shrink-0 flex flex-col items-center">
-                        <div className="w-32 h-32 bg-gray-100 border-2 border-dashed border-[#007DFE]/40 rounded flex flex-col items-center justify-center p-2 relative overflow-hidden">
-                          <QrCode className="text-[#007DFE] opacity-70" size={44} />
-                          <span className="text-xs font-bold text-[#007DFE] mt-1 uppercase tracking-wider">
+                        <div className="w-32 h-32 bg-stone-50 border-2 border-dashed border-gold-400/50 rounded flex flex-col items-center justify-center p-2 relative overflow-hidden">
+                          <QrCode className="text-gold-500 opacity-80" size={44} />
+                          <span className="text-xs font-bold text-[#7A4510] dark:text-gold-400 mt-1 uppercase tracking-wider">
                             GCash QR
                           </span>
                         </div>
@@ -4733,7 +4733,7 @@ export default function MyInquiriesPage() {
                       </div>
                       <div className="space-y-3 flex-1 text-left">
                         <div>
-                          <span className="text-[10px] font-bold uppercase tracking-widest text-[#007DFE] block">
+                          <span className="text-[10px] font-bold uppercase tracking-widest text-[#7A4510] dark:text-gold-400 block">
                             GCash Account Name
                           </span>
                           <span className="text-sm font-bold text-white">
@@ -4741,7 +4741,7 @@ export default function MyInquiriesPage() {
                           </span>
                         </div>
                         <div>
-                          <span className="text-[10px] font-bold uppercase tracking-widest text-[#007DFE] block">
+                          <span className="text-[10px] font-bold uppercase tracking-widest text-[#7A4510] dark:text-gold-400 block">
                             GCash Mobile Number
                           </span>
                           <div className="flex items-center gap-2 mt-1">
@@ -4755,7 +4755,7 @@ export default function MyInquiriesPage() {
                                 setCopiedBalanceAccount("gcash");
                                 setTimeout(() => setCopiedBalanceAccount(""), 2500);
                               }}
-                              className="px-2.5 py-1 bg-[#007DFE]/20 text-[#007DFE] hover:bg-[#007DFE]/30 text-xs font-bold rounded transition-colors flex items-center gap-1"
+                              className="px-2.5 py-1 bg-gold-400/20 text-[#7A4510] dark:text-gold-300 hover:bg-gold-400/30 text-xs font-bold rounded transition-colors flex items-center gap-1"
                             >
                               {copiedBalanceAccount === "gcash" ? <CheckCircle size={13} /> : <Copy size={13} />}
                               {copiedBalanceAccount === "gcash" ? "Copied" : "Copy"}
@@ -5203,11 +5203,11 @@ export default function MyInquiriesPage() {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: -16, scale: 0.96 }}
             transition={{ duration: 0.2 }}
-            className="fixed top-6 right-6 z-[100] max-w-sm w-full px-4 py-3.5 bg-[#1a0a0a]/95 border border-red-500/50 text-red-200 rounded-lg shadow-2xl backdrop-blur-md flex items-center justify-between gap-3"
+            className="fixed top-6 right-6 z-[100] max-w-sm w-full px-4 py-3.5 bg-[#FDF8F6] dark:bg-[#1a0a0a]/95 border border-red-700/30 dark:border-red-500/50 text-[#991B1B] dark:text-red-200 rounded-lg shadow-xl shadow-stone-900/10 dark:shadow-2xl backdrop-blur-md flex items-center justify-between gap-3"
           >
             <div className="flex items-center gap-2.5">
-              <AlertTriangle size={18} className="text-red-400 shrink-0" />
-              <span className="text-xs sm:text-sm font-bold tracking-wide leading-snug text-left">
+              <AlertTriangle size={18} className="text-[#991B1B] dark:text-red-400 shrink-0" />
+              <span className="text-xs sm:text-sm font-bold tracking-wide leading-snug text-left text-[#991B1B] dark:text-red-200">
                 {modError}
               </span>
             </div>
@@ -5215,7 +5215,7 @@ export default function MyInquiriesPage() {
               type="button"
               onClick={clearModErrorToast}
               aria-label="Dismiss notification"
-              className="text-red-300/60 hover:text-white transition-colors p-1 shrink-0 cursor-pointer"
+              className="text-[#991B1B]/70 hover:text-[#991B1B] dark:text-red-300/60 dark:hover:text-white transition-colors p-1 shrink-0 cursor-pointer"
             >
               <X size={15} />
             </button>
@@ -5229,11 +5229,11 @@ export default function MyInquiriesPage() {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: -16, scale: 0.96 }}
             transition={{ duration: 0.2 }}
-            className="fixed top-6 right-6 z-[100] max-w-sm w-full px-4 py-3.5 bg-[#0a1a10]/95 border border-emerald-500/50 text-emerald-200 rounded-lg shadow-2xl backdrop-blur-md flex items-center justify-between gap-3"
+            className="fixed top-6 right-6 z-[100] max-w-sm w-full px-4 py-3.5 bg-[#F4EFE6] dark:bg-[#0a1a10]/95 border border-emerald-700/30 dark:border-emerald-500/50 text-[#065F46] dark:text-emerald-200 rounded-lg shadow-xl shadow-stone-900/10 dark:shadow-2xl backdrop-blur-md flex items-center justify-between gap-3"
           >
             <div className="flex items-center gap-2.5">
-              <CheckCircle size={18} className="text-emerald-400 shrink-0" />
-              <span className="text-xs sm:text-sm font-bold tracking-wide leading-snug text-left">
+              <CheckCircle size={18} className="text-[#065F46] dark:text-emerald-400 shrink-0" />
+              <span className="text-xs sm:text-sm font-bold tracking-wide leading-snug text-left text-[#065F46] dark:text-emerald-200">
                 {modSuccessMsg}
               </span>
             </div>
@@ -5241,7 +5241,7 @@ export default function MyInquiriesPage() {
               type="button"
               onClick={() => setModSuccessMsg("")}
               aria-label="Dismiss notification"
-              className="text-emerald-300/60 hover:text-white transition-colors p-1 shrink-0 cursor-pointer"
+              className="text-[#065F46]/70 hover:text-[#065F46] dark:text-emerald-300/60 dark:hover:text-white transition-colors p-1 shrink-0 cursor-pointer"
             >
               <X size={15} />
             </button>
