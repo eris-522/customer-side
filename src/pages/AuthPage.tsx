@@ -863,7 +863,7 @@ export default function AuthPage() {
   };
 
   return (
-    <div className="min-h-screen bg-rich-black flex items-center justify-center p-6 pt-24 font-sans text-white relative overflow-hidden">
+    <div className="min-h-screen bg-rich-black flex items-center justify-center p-4 sm:p-6 pt-24 font-sans text-white relative overflow-hidden">
       {/* Background Decor */}
       <div className="absolute top-0 left-0 w-full h-full opacity-5 pointer-events-none">
         <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] rounded-full bg-gold-400 blur-[120px]" />
@@ -873,16 +873,16 @@ export default function AuthPage() {
       <div className="w-full max-w-md relative z-10">
         <Link
           to="/"
-          className="inline-flex items-center gap-2 text-base tracking-wide text-white/80 hover:text-gold-400 transition-colors mb-12 font-bold"
+          className="inline-flex items-center gap-2 text-base tracking-wide text-white/80 hover:text-gold-400 transition-colors mb-6 sm:mb-12 font-bold"
         >
           <ChevronLeft size={14} /> Back to Home
         </Link>
 
-        <div className="glass-card border border-white/10 p-10 md:p-12 relative">
+        <div className="glass-card border border-white/10 p-6 sm:p-10 md:p-12 relative">
           <div className="absolute top-0 left-0 w-1 h-12 bg-gold-400" />
 
-          <div className="mb-10">
-            <h1 className="text-4xl font-serif mb-2">
+          <div className="mb-8 sm:mb-10">
+            <h1 className="text-3xl sm:text-4xl font-serif mb-2">
               {forgotPasswordStep !== "none"
                 ? "Reset"
                 : isLogin

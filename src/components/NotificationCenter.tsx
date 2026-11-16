@@ -74,11 +74,11 @@ export function NotificationCenter({ isOpen, onClose, notifications, unreadCount
           animate={{ opacity: 1, y: 0, scale: 1 }}
           exit={{ opacity: 0, y: 10, scale: 0.95 }}
           transition={{ duration: 0.2 }}
-          className="absolute right-0 mt-4 w-80 md:w-96 glass-card border border-[#E6DFD3] dark:border-white/10 shadow-2xl z-[100] max-h-[400px] overflow-hidden flex flex-col rounded-xl"
+          className="fixed left-3 right-3 top-[4.25rem] w-auto max-h-[calc(100dvh-5.5rem)] sm:absolute sm:left-auto sm:right-0 sm:top-auto sm:mt-4 sm:w-96 sm:max-h-[420px] glass-card border border-[#E6DFD3] dark:border-white/10 shadow-2xl z-[100] overflow-hidden flex flex-col rounded-xl"
         >
           <div className="p-4 border-b border-[#E6DFD3] dark:border-white/10 sticky top-0 bg-stone-100/95 dark:bg-[#070707] z-10 flex items-center justify-between backdrop-blur-md">
             <h3 className="font-serif text-lg text-gold-500 dark:text-gold-400 italic">Notifications</h3>
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2 sm:gap-3">
               {unreadCount > 0 && (
                 <button 
                   onClick={() => {
@@ -90,12 +90,17 @@ export function NotificationCenter({ isOpen, onClose, notifications, unreadCount
                     setReadDuringSession(prev => [...prev, ...newlyRead]);
                     newlyRead.forEach((id: string) => onDismiss && onDismiss(id));
                   }}
-                  className="text-[10px] font-bold text-gold-500 dark:text-gold-400 hover:text-stone-900 dark:hover:text-white uppercase tracking-widest transition-colors cursor-pointer"
+                  className="text-[10px] font-bold text-gold-500 dark:text-gold-400 hover:text-stone-900 dark:hover:text-white uppercase tracking-widest transition-colors cursor-pointer py-1.5 px-2"
                 >
                   Mark all read
                 </button>
               )}
-              <button onClick={onClose} className="p-1 hover:bg-black/5 dark:hover:bg-white/10 rounded-lg transition-colors text-stone-500 dark:text-white/50 cursor-pointer">
+              <button
+                type="button"
+                aria-label="Close notifications"
+                onClick={onClose}
+                className="p-2 hover:bg-black/5 dark:hover:bg-white/10 rounded-lg transition-colors text-stone-500 dark:text-white/50 cursor-pointer"
+              >
                 <X className="w-5 h-5" />
               </button>
             </div>
@@ -443,7 +448,7 @@ export function NotificationCenter({ isOpen, onClose, notifications, unreadCount
                             navigate('/my-inquiries');
                             onClose();
                           }}
-                          className="text-[10px] font-bold bg-gold-400 text-black px-3 py-1.5 rounded w-full hover:brightness-110 transition-colors"
+                          className="text-xs font-bold bg-gold-400 text-black px-3 py-2.5 rounded w-full hover:brightness-110 transition-colors cursor-pointer"
                         >
                           View Inquiry Details
                         </button>

@@ -69,7 +69,7 @@ export default function TermsPage() {
   return (
     <div className="min-h-screen bg-rich-black pt-24 font-sans text-white">
       {/* Header */}
-      <header className="px-6 sm:px-10 py-16 sm:py-24 text-center border-b border-white/10 relative overflow-hidden">
+      <header className="px-4 sm:px-10 py-14 sm:py-24 text-center border-b border-white/10 relative overflow-hidden">
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-gold-400/10 via-transparent to-transparent pointer-events-none" />
 
         <div className="max-w-4xl mx-auto relative z-10">
@@ -122,7 +122,7 @@ export default function TermsPage() {
       </header>
 
       {/* Main Content */}
-      <main className="max-w-6xl mx-auto px-6 sm:px-10 py-12">
+      <main className="max-w-6xl mx-auto px-4 sm:px-10 py-8 sm:py-12">
         {/* Search & Categories Bar */}
         <div className="mb-12 space-y-6">
           {/* Search Bar */}
@@ -138,7 +138,7 @@ export default function TermsPage() {
           </div>
 
           {/* Category Filter Pills */}
-          <div className="flex flex-wrap items-center justify-center gap-2">
+          <div className="flex flex-nowrap sm:flex-wrap overflow-x-auto scrollbar-none items-center justify-start sm:justify-center gap-2 -mx-4 px-4 sm:mx-0 sm:px-0 pb-1">
             {CATEGORIES.map((cat) => {
               const Icon = cat.icon;
               const isActive = activeCategory === cat.id;
@@ -146,7 +146,7 @@ export default function TermsPage() {
                 <button
                   key={cat.id}
                   onClick={() => setActiveCategory(cat.id)}
-                  className={`flex items-center gap-2 px-3.5 py-1.5 rounded-full text-xs font-semibold tracking-wider uppercase transition-all ${
+                  className={`shrink-0 flex items-center gap-2 px-3.5 py-1.5 rounded-full text-xs font-semibold tracking-wider uppercase transition-all ${
                     isActive
                       ? "gold-gradient text-black font-bold shadow-lg"
                       : "bg-white/5 text-white/60 hover:text-white hover:bg-white/10 border border-white/10"
@@ -184,7 +184,7 @@ export default function TermsPage() {
                 initial={{ opacity: 0, y: 15 }}
                 whileInView={{ opacity: 1, y: 0 }}
                 viewport={{ once: true }}
-                className="scroll-mt-28 p-6 sm:p-8 bg-black/40 border border-white/10 rounded-xl hover:border-gold-400/30 transition-all space-y-4 target:border-gold-400 target:bg-gold-400/5 target:ring-1 target:ring-gold-400"
+                className="scroll-mt-28 p-4 sm:p-8 bg-black/40 border border-white/10 rounded-xl hover:border-gold-400/30 transition-all space-y-4 target:border-gold-400 target:bg-gold-400/5 target:ring-1 target:ring-gold-400"
               >
                 {/* Header */}
                 <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 pb-4">
@@ -265,7 +265,7 @@ export default function TermsPage() {
             <ArrowLeft size={16} /> Return to Home
           </Link>
 
-          <div className="flex items-center gap-4 flex-wrap">
+          <div className="flex items-center gap-4 flex-wrap justify-center w-full sm:w-auto">
             <Link
               to="/faqs"
               className="px-6 py-3.5 border border-white/20 hover:border-gold-400 text-white hover:text-gold-400 text-xs font-bold uppercase tracking-wider transition-all rounded-sm flex items-center gap-2 bg-white/5"

@@ -103,6 +103,13 @@ export default function Navbar() {
   }, []);
 
   useEffect(() => {
+    document.body.style.overflow = isMobileMenuOpen ? "hidden" : "";
+    return () => {
+      document.body.style.overflow = "";
+    };
+  }, [isMobileMenuOpen]);
+
+  useEffect(() => {
     let isMounted = true;
 
     const initAuth = async () => {
@@ -604,15 +611,16 @@ export default function Navbar() {
               : "bg-[#EAE3D5]/95 dark:bg-transparent border-b border-[#CFC3AE]/80 dark:border-transparent backdrop-blur-md dark:backdrop-blur-none shadow-xs dark:shadow-none"
           }`}
         >
-          <div className="max-w-7xl mx-auto w-full px-6 md:px-10 flex justify-between items-center">
+          <div className="max-w-7xl mx-auto w-full px-4 sm:px-6 md:px-10 flex justify-between items-center gap-2">
 
             <motion.div 
               initial={{ opacity: 0, x: -20 }}
               animate={{ opacity: 1, x: 0 }}
+              className="min-w-0"
             >
               <Link to="/" className="flex flex-col">
-                <span className="text-xl font-serif tracking-[0.2em] text-gold-500 dark:text-gold-400 font-bold uppercase">ROXAN POLICARPIO</span>
-                <span className="text-sm tracking-wide text-gold-600 dark:text-gold-300/90 -mt-1 font-semibold">Events & Catering</span>
+                <span className="text-base sm:text-xl font-serif tracking-[0.14em] sm:tracking-[0.2em] text-gold-500 dark:text-gold-400 font-bold uppercase truncate">ROXAN POLICARPIO</span>
+                <span className="text-xs sm:text-sm tracking-wide text-gold-600 dark:text-gold-300/90 -mt-0.5 sm:-mt-1 font-semibold">Events & Catering</span>
               </Link>
             </motion.div>
 
@@ -646,6 +654,7 @@ export default function Navbar() {
                   ) : (
                     <Link
                       to={link.href}
+                      aria-current={location.pathname === link.href ? "page" : undefined}
                       className={`text-base tracking-wide font-semibold transition-colors ${
                         location.pathname === link.href
                           ? "text-gold-500 dark:text-gold-400 font-bold"
@@ -724,14 +733,19 @@ export default function Navbar() {
               </motion.div>
             </div>
 
-            <div className="flex items-center gap-3 lg:hidden">
+            <div className="flex items-center gap-1.5 sm:gap-3 lg:hidden shrink-0">
               <ThemeToggle variant="compact" />
               {user && (
                 <div className="relative" ref={mobileNotifRef}>
-                  <button onClick={handleNotifClick} className="text-gold-500 dark:text-gold-400 transition-colors relative flex items-center justify-center p-1.5 cursor-pointer">
+                  <button
+                    type="button"
+                    onClick={handleNotifClick}
+                    aria-label="Notifications"
+                    className="text-gold-500 dark:text-gold-400 transition-colors relative min-w-10 min-h-10 flex items-center justify-center p-2 rounded-full hover:bg-black/5 dark:hover:bg-white/5 cursor-pointer"
+                  >
                     <Bell size={22} />
                     {unreadCount > 0 && (
-                      <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] font-bold w-4 h-4 rounded-full flex items-center justify-center">
+                      <span className="absolute top-0.5 right-0.5 bg-red-500 text-white text-[10px] font-bold w-4 h-4 rounded-full flex items-center justify-center">
                         {unreadCount}
                       </span>
                     )}
@@ -747,7 +761,8 @@ export default function Navbar() {
                 </div>
               )}
               <button 
-                className="text-gold-500 dark:text-gold-400 p-1 cursor-pointer"
+                type="button"
+                className="text-gold-500 dark:text-gold-400 min-w-10 min-h-10 flex items-center justify-center p-2 rounded-full hover:bg-black/5 dark:hover:bg-white/5 cursor-pointer"
                 onClick={() => setIsMobileMenuOpen(true)}
                 aria-label="Open menu"
               >
@@ -764,33 +779,36 @@ export default function Navbar() {
             initial={{ opacity: 0, x: "100%" }}
             animate={{ opacity: 1, x: 0 }}
             exit={{ opacity: 0, x: "100%" }}
-            className="fixed inset-0 z-[60] bg-rich-black flex flex-col p-8 overflow-y-auto"
+            className="fixed inset-0 h-[100dvh] z-[60] bg-rich-black flex flex-col p-6 sm:p-8 overflow-y-auto pb-safe"
           >
-            <div className="flex justify-between items-center w-full">
+            <div className="flex justify-between items-center w-full gap-2 shrink-0">
               <ThemeToggle variant="segmented" />
               <button 
+                type="button"
                 onClick={() => setIsMobileMenuOpen(false)} 
-                className="text-gold-500 dark:text-gold-400 p-2 cursor-pointer"
+                className="text-gold-500 dark:text-gold-400 min-w-11 min-h-11 flex items-center justify-center p-2 cursor-pointer"
                 aria-label="Close menu"
               >
-                <X size={32} />
+                <X size={28} />
               </button>
             </div>
-            <div className="flex flex-col space-y-8 mt-12 text-center">
+            <div className="flex flex-col space-y-5 sm:space-y-7 my-auto py-8 text-center">
               {navLinks.map((link) => {
                 if (link.name === "Book" && user) {
                   return (
-                    <div key={link.name} className="flex flex-col space-y-4 items-center">
+                    <div key={link.name} className="flex flex-col space-y-3 sm:space-y-4 items-center">
                       <Link
                         to="/booking"
-                        className="text-4xl font-serif text-gold-500 dark:text-gold-400 italic"
+                        aria-current={location.pathname === "/booking" ? "page" : undefined}
+                        className="text-2xl sm:text-4xl font-serif text-gold-500 dark:text-gold-400 italic py-1"
                         onClick={() => setIsMobileMenuOpen(false)}
                       >
                         Book Event
                       </Link>
                       <Link
                         to="/my-inquiries"
-                        className="text-2xl font-serif text-stone-700 dark:text-white/70 hover:text-gold-500 dark:hover:text-gold-400 italic transition-colors"
+                        aria-current={location.pathname === "/my-inquiries" ? "page" : undefined}
+                        className="text-xl sm:text-2xl font-serif text-stone-700 dark:text-white/70 hover:text-gold-500 dark:hover:text-gold-400 italic transition-colors py-1"
                         onClick={() => setIsMobileMenuOpen(false)}
                       >
                         My Inquiries
@@ -802,7 +820,8 @@ export default function Navbar() {
                   <Link
                     key={link.name}
                     to={link.href}
-                    className="text-4xl font-serif gold-text-gradient italic"
+                    aria-current={location.pathname === link.href ? "page" : undefined}
+                    className="text-2xl sm:text-4xl font-serif gold-text-gradient italic py-1"
                     onClick={() => setIsMobileMenuOpen(false)}
                   >
                     {link.name}
@@ -813,8 +832,9 @@ export default function Navbar() {
               {user ? (
                 <>
                   <button
+                    type="button"
                     onClick={handleLogoutClick}
-                    className="text-4xl font-serif text-stone-700 dark:text-white/70 hover:text-gold-500 dark:hover:text-gold-400 italic transition-colors cursor-pointer"
+                    className="text-2xl sm:text-4xl font-serif text-stone-700 dark:text-white/70 hover:text-gold-500 dark:hover:text-gold-400 italic transition-colors cursor-pointer py-1"
                   >
                     Logout
                   </button>
@@ -823,7 +843,7 @@ export default function Navbar() {
                 <>
                   <Link
                     to="/auth?mode=login"
-                    className={`text-4xl font-serif italic transition-colors ${
+                    className={`text-2xl sm:text-4xl font-serif italic transition-colors py-1 ${
                       isLoginActive
                         ? "text-gold-500 dark:text-gold-400"
                         : "text-stone-700 dark:text-white/70 hover:text-gold-500 dark:hover:text-gold-400"
@@ -834,7 +854,7 @@ export default function Navbar() {
                   </Link>
                   <Link
                     to="/auth?mode=signup"
-                    className={`text-4xl font-serif italic transition-colors ${
+                    className={`text-2xl sm:text-4xl font-serif italic transition-colors py-1 ${
                       isSignupActive
                         ? "text-gold-500 dark:text-gold-400"
                         : "text-stone-700 dark:text-white/70 hover:text-gold-500 dark:hover:text-gold-400"
@@ -864,7 +884,7 @@ export default function Navbar() {
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
-              className="glass-card border border-white/10 p-8 max-w-sm w-full text-center relative overflow-hidden"
+              className="glass-card border border-white/10 p-6 sm:p-8 max-w-sm w-full text-center relative overflow-hidden rounded-xl"
             >
               <div className="absolute top-0 left-0 w-full h-1 bg-gold-400" />
               <h3 className="text-3xl font-serif mb-2 italic">Confirm <span className="gold-text-gradient">Logout</span></h3>

@@ -93,7 +93,7 @@ export default function HomePage() {
       {/* Hero Section */}
       <section
         id="home"
-        className="relative h-[80vh] flex items-center justify-center overflow-hidden"
+        className="relative min-h-[80dvh] py-16 flex items-center justify-center overflow-hidden"
       >
         <div className="absolute inset-0 z-0">
           <div className="absolute inset-0 bg-gradient-to-b from-[#1A140F]/75 via-[#1A140F]/60 to-[#1A140F]/85 dark:from-rich-black/70 dark:via-rich-black/70 dark:to-rich-black z-10" />
@@ -104,12 +104,12 @@ export default function HomePage() {
           />
         </div>
 
-        <div className="relative z-20 text-center px-6 max-w-4xl text-white dark-overlay">
+        <div className="relative z-20 text-center px-4 sm:px-6 max-w-4xl text-white dark-overlay">
           <motion.span
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.2 }}
-            className="text-gold-400 font-semibold tracking-[0.5em] uppercase text-[12px] mb-6 block"
+            className="text-gold-400 font-semibold tracking-[0.25em] sm:tracking-[0.5em] uppercase text-[11px] sm:text-[12px] mb-4 sm:mb-6 block"
           >
             {hero.tagline || "Exquisite Culinary Experiences"}
           </motion.span>
@@ -117,7 +117,7 @@ export default function HomePage() {
             initial={{ opacity: 0, y: 30 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.4 }}
-            className="text-5xl md:text-7xl font-serif leading-tight mb-8"
+            className="text-3xl sm:text-5xl md:text-7xl font-serif leading-tight mb-6 sm:mb-8"
           >
             {hero.title || "Affordable Elegance,"}
             <br />
@@ -127,17 +127,17 @@ export default function HomePage() {
             initial={{ opacity: 0, y: 30 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.6 }}
-            className="flex flex-col sm:flex-row gap-6 justify-center"
+            className="flex flex-col sm:flex-row gap-4 sm:gap-6 justify-center"
           >
             <Link
               to={hero.primaryBtnLink || "/booking"}
-              className="gold-gradient text-white dark:text-black px-10 py-3 font-bold tracking-widest uppercase text-xs hover:brightness-110 transition-all inline-block text-center focus:outline-none shadow-md rounded-xs"
+              className="w-full sm:w-auto gold-gradient text-white dark:text-black px-8 sm:px-10 py-3.5 sm:py-3 font-bold tracking-widest uppercase text-xs hover:brightness-110 transition-all inline-block text-center focus:outline-none shadow-md rounded-xs"
             >
               {hero.primaryBtnText || "Inquire Now"}
             </Link>
             <Link
               to={hero.secondaryBtnLink || "/menu"}
-              className="border border-[#7A4B1F] dark:border-white/80 bg-[#EAE0D0] dark:bg-black/30 text-[#4A2D11] dark:text-white px-10 py-3 font-bold tracking-widest uppercase text-xs hover:bg-[#DBCDB7] dark:hover:bg-white hover:text-[#2E1B0A] dark:hover:text-black transition-all inline-block text-center rounded-xs shadow-md"
+              className="w-full sm:w-auto border border-[#7A4B1F] dark:border-white/80 bg-[#EAE0D0] dark:bg-black/30 text-[#4A2D11] dark:text-white px-8 sm:px-10 py-3.5 sm:py-3 font-bold tracking-widest uppercase text-xs hover:bg-[#DBCDB7] dark:hover:bg-white hover:text-[#2E1B0A] dark:hover:text-black transition-all inline-block text-center rounded-xs shadow-md"
             >
               {hero.secondaryBtnText || "View Menu"}
             </Link>
@@ -148,15 +148,15 @@ export default function HomePage() {
       {/* Featured Packages */}
       <section
         id="packages"
-        className="py-24 px-10 bg-rich-black relative border-y border-white/10"
+        className="py-16 sm:py-24 px-4 sm:px-6 md:px-10 bg-rich-black relative border-y border-white/10"
       >
         <div className="max-w-7xl mx-auto">
-          <div className="flex flex-col md:flex-row justify-between items-start mb-20 gap-8">
+          <div className="flex flex-col md:flex-row justify-between items-start mb-12 sm:mb-20 gap-6 sm:gap-8">
             <div className="max-w-2xl">
               <span className="text-gold-400 text-[10px] tracking-[0.4em] font-bold uppercase mb-4 block italic">
                 Featured Packages
               </span>
-              <h2 className="text-4xl md:text-6xl font-serif tracking-normal">
+              <h2 className="text-3xl sm:text-4xl md:text-6xl font-serif tracking-normal">
                 Roxan <span className="italic">Catering</span> Collections
               </h2>
             </div>
@@ -170,7 +170,7 @@ export default function HomePage() {
                 whileInView={{ opacity: 1 }}
                 viewport={{ once: true }}
                 transition={{ delay: i * 0.2 }}
-                className={`p-10 flex flex-col justify-between group hover:bg-[#DFD5C2] dark:hover:bg-[#0F0F0F] transition-colors ${i < 2 ? "md:border-r border-[#CFC3AE] dark:border-white/10" : ""}`}
+                className={`p-6 sm:p-10 flex flex-col justify-between group hover:bg-[#DFD5C2] dark:hover:bg-[#0F0F0F] transition-colors ${i < 2 ? "border-b md:border-b-0 md:border-r border-[#CFC3AE] dark:border-white/10" : ""}`}
               >
                 <div>
                   <div className="aspect-[16/9] mb-8 overflow-hidden relative bg-[#D8CEBE] dark:bg-black/40 rounded-xs">
@@ -199,7 +199,7 @@ export default function HomePage() {
                           target.src = fallback;
                         }
                       }}
-                      className="w-full h-full object-cover grayscale hover:grayscale-0 transition-all duration-700"
+                      className="w-full h-full object-cover grayscale-0 md:grayscale md:hover:grayscale-0 transition-all duration-700"
                     />
                   </div>
                   <h3 className="text-2xl font-serif text-white mb-2">
@@ -262,14 +262,14 @@ export default function HomePage() {
       </section>
 
       {/* Menu Teaser / Curated Gastronomy */}
-      <section id="menu-teaser" className="py-24 px-10 bg-[#070707]">
+      <section id="menu-teaser" className="py-16 sm:py-24 px-4 sm:px-6 md:px-10 bg-[#070707]">
         <div className="max-w-7xl mx-auto">
-          <div className="flex flex-col md:flex-row justify-between items-start md:items-end mb-16 gap-6">
+          <div className="flex flex-col md:flex-row justify-between items-start md:items-end mb-10 sm:mb-16 gap-6">
             <div>
               <span className="text-gold-400 text-[10px] tracking-[0.4em] font-bold uppercase mb-4 block italic">
                 Gastronomic Craft
               </span>
-              <h2 className="text-4xl md:text-6xl font-serif">
+              <h2 className="text-3xl sm:text-4xl md:text-6xl font-serif">
                 Curated <span className="italic gold-text-gradient">Selection</span>
               </h2>
             </div>
@@ -282,7 +282,7 @@ export default function HomePage() {
             </Link>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
             {[
               {
                 title: "Slow-Roasted Beef",
@@ -316,7 +316,7 @@ export default function HomePage() {
                 <img
                   src={dish.image}
                   alt={dish.title}
-                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700 grayscale group-hover:grayscale-0"
+                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700 grayscale-0 md:grayscale md:group-hover:grayscale-0"
                 />
                 <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/35 to-transparent" />
                 <div className="absolute bottom-6 left-6 right-6 dark-overlay">
@@ -336,13 +336,13 @@ export default function HomePage() {
       {/* How It Works */}
       <section id="process" className="bg-rich-black border-t border-[#CFC3AE] dark:border-white/10">
         <div className="max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-3">
-          <div className="p-16 md:p-20 border-r border-[#CFC3AE] dark:border-white/10 bg-[#E6DEC8] dark:bg-[#0F0F0F]">
-            <span className="text-gold-400 text-[10px] tracking-[0.4em] font-bold uppercase mb-12 block italic">
+          <div className="p-6 sm:p-12 md:p-20 border-b md:border-b-0 md:border-r border-[#CFC3AE] dark:border-white/10 bg-[#E6DEC8] dark:bg-[#0F0F0F]">
+            <span className="text-gold-400 text-[10px] tracking-[0.4em] font-bold uppercase mb-8 sm:mb-12 block italic">
               {processData?.subtitle || "The Process"}
             </span>
-            <div className="space-y-12">
+            <div className="space-y-8 sm:space-y-12">
               {processSteps.map((step) => (
-                <div key={step.number} className="flex gap-6">
+                <div key={step.number} className="flex gap-4 sm:gap-6">
                   <span className="serif text-3xl gold-text-gradient opacity-75 dark:opacity-50 italic shrink-0">
                     {step.number}
                   </span>
@@ -359,13 +359,13 @@ export default function HomePage() {
             </div>
           </div>
 
-          <div className="p-16 md:p-20 border-r border-[#CFC3AE] dark:border-white/10 flex flex-col justify-center bg-[#DDD3BE] dark:bg-black col-span-1 md:col-span-2">
-            <span className="text-gold-400 text-[10px] tracking-[0.4em] font-bold uppercase mb-8 block italic">
+          <div className="p-6 sm:p-12 md:p-20 md:border-r border-[#CFC3AE] dark:border-white/10 flex flex-col justify-center bg-[#DDD3BE] dark:bg-black col-span-1 md:col-span-2">
+            <span className="text-gold-400 text-[10px] tracking-[0.4em] font-bold uppercase mb-6 sm:mb-8 block italic">
               {testimonials?.subtitle || "Customer Review"}
             </span>
             <div className="max-w-xl">
-              <Quote className="text-gold-400/25 dark:text-gold-400/10 mb-8" size={64} />
-              <p className="serif text-2xl md:text-3xl italic leading-relaxed mb-8 text-white/90 font-light">
+              <Quote className="text-gold-400/25 dark:text-gold-400/10 mb-6 sm:mb-8" size={48} />
+              <p className="serif text-xl sm:text-2xl md:text-3xl italic leading-relaxed mb-8 text-white/90 font-light">
                 "{featuredReview?.quote || "Roxan Policarpio Events & Catering made our dream wedding a reality. The food was absolutely exquisite, the presentation was flawless, and it didn't break the bank. Truly exceptional service!"}"
               </p>
               <div className="flex items-center gap-4">
@@ -386,7 +386,7 @@ export default function HomePage() {
 
       {/* Frequently Asked Questions Showcase */}
       {previewFaqs.length > 0 && (
-        <section className="py-24 px-10 border-t border-[#CFC3AE] dark:border-white/10 bg-[#070707]">
+        <section className="py-16 sm:py-24 px-4 sm:px-6 md:px-10 border-t border-[#CFC3AE] dark:border-white/10 bg-[#070707]">
           <div className="max-w-5xl mx-auto space-y-12">
             <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 border-b border-[#CFC3AE] dark:border-white/10 pb-8">
               <div>
@@ -475,14 +475,14 @@ export default function HomePage() {
       {/* Contact Section */}
       <section
         id="contact"
-        className="py-32 px-10 border-t border-[#CFC3AE] dark:border-white/10 bg-[#DFD5C2] dark:bg-black"
+        className="py-16 sm:py-32 px-4 sm:px-6 md:px-10 border-t border-[#CFC3AE] dark:border-white/10 bg-[#DFD5C2] dark:bg-black"
       >
-        <div className="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-center gap-12">
+        <div className="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-start md:items-center gap-10 sm:gap-12">
           <div className="max-w-md">
             <span className="text-gold-400 text-[10px] tracking-[0.4em] font-bold uppercase mb-4 block italic">
               Get In Touch
             </span>
-            <h2 className="text-4xl md:text-5xl font-serif text-white mb-6">
+            <h2 className="text-3xl sm:text-4xl md:text-5xl font-serif text-white mb-6">
               Let's craft your <span className="italic">perfect</span> event
               together.
             </h2>
@@ -490,10 +490,10 @@ export default function HomePage() {
               {contact.locationNote || "Available for weddings, corporate galas, and private celebrations across the region."}
             </p>
           </div>
-          <div className="flex flex-col gap-6 items-start md:items-end">
+          <div className="flex flex-col gap-4 sm:gap-6 items-start md:items-end w-full md:w-auto">
             <a
               href={`mailto:${contact.email || "rpcatering@gmail.com"}`}
-              className="text-2xl md:text-4xl font-serif text-gold-400 hover:text-white transition-colors italic"
+              className="text-lg sm:text-2xl md:text-4xl font-serif text-gold-400 hover:text-white transition-colors italic break-all"
             >
               {contact.email || "rpcatering@gmail.com"}
             </a>

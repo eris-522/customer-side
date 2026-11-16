@@ -530,7 +530,7 @@ export default function VenueMapPicker({
         <div className="relative">
           <MapPin
             size={18}
-            className="absolute left-5 top-1/2 -translate-y-1/2 text-gold-400 pointer-events-none"
+            className="absolute left-4 sm:left-5 top-1/2 -translate-y-1/2 text-gold-400 pointer-events-none"
           />
           <input
             id={venueNameId}
@@ -539,7 +539,7 @@ export default function VenueMapPicker({
             required
             autoComplete="off"
             placeholder="Search any venue on Google Maps (e.g., Siena's Events Place, The Blue Leaf, Jardin de Miramar...)"
-            className="w-full bg-white/5 border border-white/10 pl-13 pr-12 py-4 text-lg focus:outline-none focus:border-gold-400/60 transition-all font-medium text-white placeholder:text-white/35"
+            className="w-full bg-white/5 border border-white/10 pl-11 sm:pl-13 pr-10 sm:pr-12 py-3.5 sm:py-4 text-base sm:text-lg focus:outline-none focus:border-gold-400/60 transition-all font-medium text-white placeholder:text-white/35"
             value={venueName}
             onFocus={() => {
               if (suggestions.length > 0) {
@@ -686,7 +686,7 @@ export default function VenueMapPicker({
           required
           placeholder="Exact street address will automatically appear here when you type a venue name or move the map pin..."
           rows={3}
-          className="w-full bg-white/5 border border-white/10 px-6 py-4 text-lg focus:outline-none focus:border-gold-400/50 transition-all font-medium resize-none text-white placeholder:text-white/35"
+          className="w-full bg-white/5 border border-white/10 px-4 sm:px-6 py-3.5 sm:py-4 text-base sm:text-lg focus:outline-none focus:border-gold-400/50 transition-all font-medium resize-none text-white placeholder:text-white/35"
           value={venueAddress}
           onChange={(e) => {
             onChange({ venueAddress: e.target.value });
@@ -709,12 +709,12 @@ export default function VenueMapPicker({
           </p>
         </div>
 
-        <div className="relative z-0 isolate w-full h-[360px] md:h-[400px] border border-white/15 rounded-sm overflow-hidden shadow-2xl bg-[#1a1a1a]">
+        <div className="relative z-0 isolate w-full h-[340px] sm:h-[380px] md:h-[400px] border border-white/15 rounded-sm overflow-hidden shadow-2xl bg-[#1a1a1a]">
           {/* Interactive Map Canvas */}
           <div ref={mapContainerRef} className="w-full h-full z-0" />
 
-          {/* Google Maps Embed Style Info Card Overlay (Top-Left) */}
-          <div className="absolute top-3 left-3 z-[400] max-w-[290px] sm:max-w-[330px] bg-white text-gray-900 rounded-xs shadow-lg border border-gray-200 p-3 pointer-events-auto">
+          {/* Google Maps Embed Style Info Card Overlay (Bottom-Left on mobile, Top-Left on sm+) */}
+          <div className="absolute bottom-3 left-3 right-14 sm:bottom-auto sm:right-auto sm:top-3 sm:left-3 z-[400] sm:max-w-[330px] bg-white text-gray-900 rounded-xs shadow-lg border border-gray-200 p-2.5 sm:p-3 pointer-events-auto">
             <div className="flex items-start justify-between gap-2">
               <div className="min-w-0">
                 <p className="font-bold text-xs sm:text-sm text-gray-900 truncate">
@@ -752,7 +752,7 @@ export default function VenueMapPicker({
           </div>
 
           {/* Map / Satellite Switcher & Recenter (Top-Right) */}
-          <div className="absolute top-3 right-3 z-[400] flex items-center gap-1.5 pointer-events-auto">
+          <div className="absolute top-2.5 right-2.5 sm:top-3 sm:right-3 z-[400] flex items-center gap-1.5 pointer-events-auto">
             <div className="bg-white rounded-xs shadow-md border border-gray-200 flex overflow-hidden text-xs font-semibold">
               <button
                 type="button"

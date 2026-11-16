@@ -131,11 +131,16 @@
 }
 
 @layer base {
+  html, body {
+    overflow-x: clip;
+  }
+
   body {
     background-color: var(--bg-primary);
     color: var(--text-primary);
     font-family: var(--font-sans);
     letter-spacing: 0.02em;
+    overflow-wrap: anywhere;
     -webkit-font-smoothing: antialiased;
     transition: background-color 0.25s ease, color 0.25s ease;
   }
@@ -144,10 +149,26 @@
     letter-spacing: inherit;
   }
 
+  @media (max-width: 640px) {
+    input:not([type="checkbox"]):not([type="radio"]),
+    select,
+    textarea {
+      font-size: max(16px, 1em);
+    }
+  }
+
   h1, h2, h3, h4, h5, h6 {
     font-family: var(--font-serif);
     color: var(--text-heading);
     letter-spacing: 0.015em;
+  }
+
+  h1, h2, h3 {
+    text-wrap: balance;
+  }
+
+  p, li {
+    text-wrap: pretty;
   }
 }
 
@@ -473,4 +494,16 @@
   .bg-gold-400.text-white {
     color: #FAF6F0 !important;
   }
+}
+
+.scrollbar-none {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+}
+
+.pb-safe {
+  padding-bottom: max(1rem, env(safe-area-inset-bottom, 0px));
 }

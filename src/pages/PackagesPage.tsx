@@ -83,11 +83,11 @@ export default function PackagesPage() {
   return (
     <div className="min-h-screen bg-rich-black pt-24 font-sans">
       {/* Header */}
-      <header className="px-10 py-20 text-center border-b border-white/10">
+      <header className="px-4 sm:px-6 md:px-10 py-12 sm:py-20 text-center border-b border-white/10">
         <motion.span
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
-          className="text-gold-400 text-[12px] tracking-[0.5em] font-bold uppercase mb-6 block"
+          className="text-gold-400 text-[12px] tracking-[0.3em] sm:tracking-[0.5em] font-bold uppercase mb-4 sm:mb-6 block"
         >
           {packagesCms?.headerSubtitle || "Exclusive Collections"}
         </motion.span>
@@ -95,7 +95,7 @@ export default function PackagesPage() {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.1 }}
-          className="text-6xl md:text-8xl font-serif text-white mb-8"
+          className="text-4xl sm:text-6xl md:text-8xl font-serif text-white mb-6 sm:mb-8"
         >
           {packagesCms?.headerTitle || "Catering"}{" "}
           <span className="italic gold-text-gradient">
@@ -106,7 +106,7 @@ export default function PackagesPage() {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.2 }}
-          className="text-white/40 text-[11px] uppercase tracking-[0.4em] font-bold max-w-2xl mx-auto"
+          className="text-white/40 text-[11px] uppercase tracking-[0.2em] sm:tracking-[0.4em] font-bold max-w-2xl mx-auto"
         >
           {packagesCms?.description ||
             "From intimate gatherings to grand celebrations, find the perfect curation for your event's specific needs and scale."}
@@ -123,7 +123,7 @@ export default function PackagesPage() {
       ) : (
         <>
           {/* Packages Grid Section */}
-          <section className="py-20 px-10">
+          <section className="py-12 sm:py-20 px-4 sm:px-6 md:px-10">
             <div className="max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
               {packages.length === 0 ? (
                 <div className="col-span-full text-center py-10">
@@ -171,10 +171,10 @@ export default function PackagesPage() {
                               target.src = fallback;
                             }
                           }}
-                          className="w-full h-full object-cover grayscale group-hover:grayscale-0 transition-all duration-700 group-hover:scale-105"
+                          className="w-full h-full object-cover grayscale-0 md:grayscale md:group-hover:grayscale-0 transition-all duration-700 group-hover:scale-105"
                         />
                       </div>
-                      <div className="p-8 flex-grow flex flex-col">
+                      <div className="p-5 sm:p-8 flex-grow flex flex-col">
                       <div className="flex justify-between items-start mb-4 gap-4">
                         <h3 className="text-2xl font-serif text-white uppercase tracking-wider">
                           {pkg.name}
@@ -290,12 +290,12 @@ export default function PackagesPage() {
       )}
 
       {/* CTA Section */}
-      <section className="py-32 px-10 border-t border-white/10 bg-[#070707]">
+      <section className="py-16 sm:py-32 px-4 sm:px-6 md:px-10 border-t border-white/10 bg-[#070707]">
         <div className="max-w-7xl mx-auto flex flex-col items-center text-center">
-          <span className="text-gold-400 text-[10px] tracking-[0.4em] font-bold uppercase mb-8 block italic">
+          <span className="text-gold-400 text-[10px] tracking-[0.4em] font-bold uppercase mb-6 sm:mb-8 block italic">
             Begin Your Journey
           </span>
-          <h2 className="text-4xl md:text-7xl font-serif text-white mb-12 leading-tight">
+          <h2 className="text-3xl sm:text-5xl md:text-7xl font-serif text-white mb-8 sm:mb-12 leading-tight">
             Tailored to your <br /> <span className="italic">unique</span>{" "}
             vision.
           </h2>

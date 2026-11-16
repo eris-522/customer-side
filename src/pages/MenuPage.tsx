@@ -159,11 +159,11 @@ export default function MenuPage() {
 
   return (
     <div className="min-h-screen bg-rich-black pt-24 font-sans">
-      <header className="px-10 py-20 text-center border-b border-white/10">
+      <header className="px-4 sm:px-6 md:px-10 py-12 sm:py-20 text-center border-b border-white/10">
         <motion.span
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
-          className="text-gold-400 text-[12px] tracking-[0.5em] font-bold uppercase mb-6 block"
+          className="text-gold-400 text-[12px] tracking-[0.3em] sm:tracking-[0.5em] font-bold uppercase mb-4 sm:mb-6 block"
         >
           {menuCms?.headerSubtitle || "Roxan Policarpio Catering"}
         </motion.span>
@@ -171,7 +171,7 @@ export default function MenuPage() {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.1 }}
-          className="text-6xl md:text-8xl font-serif text-white mb-8"
+          className="text-4xl sm:text-6xl md:text-8xl font-serif text-white mb-6 sm:mb-8"
         >
           {menuCms?.headerTitle || "Curated"}{" "}
           <span className="italic gold-text-gradient">
@@ -182,7 +182,7 @@ export default function MenuPage() {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.2 }}
-          className="text-white/40 text-[11px] uppercase tracking-[0.4em] font-bold max-w-2xl mx-auto"
+          className="text-white/40 text-[11px] uppercase tracking-[0.2em] sm:tracking-[0.4em] font-bold max-w-2xl mx-auto"
         >
           {menuCms?.description || "Explore our dynamic culinary offerings"}
         </motion.p>
@@ -210,12 +210,12 @@ export default function MenuPage() {
       </section>
 
       {/* CTA Section */}
-      <section className="py-32 px-10 border-t border-white/10">
+      <section className="py-16 sm:py-32 px-4 sm:px-6 md:px-10 border-t border-white/10">
         <div className="max-w-7xl mx-auto flex flex-col items-center text-center">
-          <span className="text-gold-400 text-[10px] tracking-[0.4em] font-bold uppercase mb-8 block italic">
+          <span className="text-gold-400 text-[10px] tracking-[0.4em] font-bold uppercase mb-6 sm:mb-8 block italic">
             {menuCms?.ctaSubtitle || "Reserve Your Experience"}
           </span>
-          <h2 className="text-4xl md:text-7xl font-serif text-white mb-12 leading-tight">
+          <h2 className="text-3xl sm:text-5xl md:text-7xl font-serif text-white mb-8 sm:mb-12 leading-tight">
             {menuCms?.ctaTitle || "Ready to taste"} <br />{" "}
             <span className="italic">
               {menuCms?.ctaTitleItalic || "extraordinary"}
@@ -224,7 +224,7 @@ export default function MenuPage() {
           </h2>
           <Link
             to="/booking"
-            className="gold-gradient text-black px-16 py-5 font-bold tracking-widest uppercase text-xs hover:brightness-110 transition-all inline-block text-center"
+            className="w-full sm:w-auto gold-gradient text-black px-8 sm:px-16 py-4 sm:py-5 font-bold tracking-widest uppercase text-xs hover:brightness-110 transition-all inline-block text-center"
           >
             {menuCms?.ctaBtnText || "Inquire Now"}
           </Link>

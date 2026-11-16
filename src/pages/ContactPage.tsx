@@ -51,11 +51,11 @@ export default function ContactPage() {
   return (
     <div className="min-h-screen bg-rich-black pt-24 font-sans text-white">
       {/* Header */}
-      <header className="px-10 py-20 text-center border-b border-white/10">
+      <header className="px-4 sm:px-6 md:px-10 py-12 sm:py-20 text-center border-b border-white/10">
         <motion.span 
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
-          className="text-gold-400 text-[12px] tracking-[0.5em] font-bold uppercase mb-6 block"
+          className="text-gold-400 text-[12px] tracking-[0.3em] sm:tracking-[0.5em] font-bold uppercase mb-4 sm:mb-6 block"
         >
           {contact.headerSubtitle || "Connect With Us"}
         </motion.span>
@@ -63,15 +63,15 @@ export default function ContactPage() {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.1 }}
-          className="text-6xl md:text-8xl font-serif text-white mb-8"
+          className="text-4xl sm:text-6xl md:text-8xl font-serif text-white mb-6 sm:mb-8"
         >
           {contact.headerTitle || "Get In"} <span className="italic gold-text-gradient">{contact.headerTitleItalic || "Touch"}</span>
         </motion.h1>
       </header>
 
       {/* Info Cards Section */}
-      <section className="py-20 px-10">
-        <div className="max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
+      <section className="py-12 sm:py-20 px-4 sm:px-6 md:px-10">
+        <div className="max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 sm:gap-8">
           {contactInfo.map((info, i) => (
             <motion.div
               key={info.title}
@@ -79,14 +79,14 @@ export default function ContactPage() {
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true }}
               transition={{ delay: i * 0.1 }}
-              className="p-8 glass-card border border-white/10 flex flex-col items-center text-center group hover:border-gold-400/50 transition-all duration-500"
+              className="p-6 sm:p-8 glass-card border border-white/10 flex flex-col items-center text-center group hover:border-gold-400/50 transition-all duration-500"
             >
               <div className="w-12 h-12 border border-gold-400/30 flex items-center justify-center text-gold-400 mb-6 group-hover:scale-110 transition-transform duration-500">
                 <info.icon size={20} strokeWidth={1.5} />
               </div>
               <h3 className="text-[10px] uppercase tracking-[0.3em] font-bold text-white/40 mb-2">{info.title}</h3>
               {info.action ? (
-                <a href={info.action} className="text-sm font-serif text-white hover:text-gold-400 transition-colors">
+                <a href={info.action} className="text-sm font-serif text-white hover:text-gold-400 transition-colors break-all">
                   {info.detail}
                 </a>
               ) : (
@@ -98,8 +98,8 @@ export default function ContactPage() {
       </section>
 
       {/* Map Section */}
-      <section className="px-10 pb-20">
-        <div className="max-w-7xl mx-auto h-[450px] border border-white/10 relative overflow-hidden grayscale hover:grayscale-0 transition-all duration-1000">
+      <section className="px-4 sm:px-6 md:px-10 pb-12 sm:pb-20">
+        <div className="max-w-7xl mx-auto h-[340px] sm:h-[450px] border border-white/10 relative overflow-hidden grayscale-0 md:grayscale md:hover:grayscale-0 transition-all duration-1000">
           <iframe 
             src={contact.mapEmbedUrl || "https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d4163.146547807375!2d121.13233027542846!3d14.57230958591067!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x3397c74983e4457f%3A0xa8fd45edcc38ed17!2sRoxan%20Policarpio%20Events%20and%20Catering!5e1!3m2!1sen!2sph!4v1776733590376!5m2!1sen!2sph"}
             width="100%" 
@@ -110,8 +110,8 @@ export default function ContactPage() {
             referrerPolicy="no-referrer-when-downgrade"
             className="filter sepia-[0.25] contrast-[0.95] dark:sepia-0 dark:invert-[0.9] dark:hue-rotate-[180deg]"
           />
-          <div className="absolute top-8 left-8 glass-card border border-white/10 p-4 max-w-[200px]">
-            <p className="text-[10px] uppercase tracking-widest text-gold-400 font-bold mb-2 italic">Our Location</p>
+          <div className="absolute top-3 left-3 sm:top-8 sm:left-8 glass-card border border-white/10 p-3 sm:p-4 max-w-[180px] sm:max-w-[200px]">
+            <p className="text-[10px] uppercase tracking-widest text-gold-400 font-bold mb-1.5 sm:mb-2 italic">Our Location</p>
             <p className="text-[9px] uppercase tracking-widest text-white/60 font-semibold leading-relaxed">
               {contact.locationNote || "Serving premium events across Rizal and Metro Manila."}
             </p>
@@ -120,19 +120,19 @@ export default function ContactPage() {
       </section>
 
       {/* Why Choose Us Section */}
-      <section className="py-24 px-10 bg-[#070707] border-y border-white/10">
-        <div className="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-2 gap-20 items-center">
+      <section className="py-16 sm:py-24 px-4 sm:px-6 md:px-10 bg-[#070707] border-y border-white/10">
+        <div className="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-2 gap-10 sm:gap-20 items-center">
           <div>
             <span className="text-gold-400 text-[10px] tracking-[0.4em] font-bold uppercase mb-4 block italic">
               {contact.whyUsSubtitle || "Why Us"}
             </span>
-            <h2 className="text-4xl md:text-5xl font-serif text-white mb-8 leading-tight">
+            <h2 className="text-3xl sm:text-4xl md:text-5xl font-serif text-white mb-6 sm:mb-8 leading-tight">
               {contact.whyUsTitle || "Crafting Memories"} <br />
               <span className="italic">{contact.whyUsTitleItalic || "Beyond the Plate"}</span>
             </h2>
-            <div className="space-y-8">
+            <div className="space-y-6 sm:space-y-8">
               {whyUsHighlights.map((item, i) => (
-                <div key={item.title || i} className="flex gap-6">
+                <div key={item.title || i} className="flex gap-4 sm:gap-6">
                   <span className="text-gold-400/20 text-3xl font-serif italic">
                     {item.number || `0${i+1}`}
                   </span>
@@ -147,12 +147,12 @@ export default function ContactPage() {
           <div className="grid grid-cols-2 gap-4">
             <img 
               src={contact.whyUsImage1 || "https://images.unsplash.com/photo-1516062423079-7ca13cdc7f5a?auto=format&fit=crop&q=80&w=600"} 
-              className="w-full h-full object-cover grayscale hover:grayscale-0 transition-all duration-700 aspect-[4/5] border border-white/10" 
+              className="w-full h-full object-cover grayscale-0 md:grayscale md:hover:grayscale-0 transition-all duration-700 aspect-[4/5] border border-white/10" 
               alt="Catering Setup"
             />
             <img 
               src={contact.whyUsImage2 || "https://images.unsplash.com/photo-1533143048019-301bd1fcc077?auto=format&fit=crop&q=80&w=600"} 
-              className="w-full h-full object-cover grayscale hover:grayscale-0 transition-all duration-700 aspect-[4/5] mt-8 border border-white/10" 
+              className="w-full h-full object-cover grayscale-0 md:grayscale md:hover:grayscale-0 transition-all duration-700 aspect-[4/5] mt-8 border border-white/10" 
               alt="Gourmet Food"
             />
           </div>
@@ -160,9 +160,9 @@ export default function ContactPage() {
       </section>
 
       {/* Social Links Section */}
-      <section className="py-20 px-10 text-center">
+      <section className="py-14 sm:py-20 px-4 sm:px-6 md:px-10 text-center">
         <span className="text-gold-400 text-[10px] tracking-[0.4em] font-bold uppercase mb-8 block italic">Follow Our Journey</span>
-        <div className="flex justify-center gap-12">
+        <div className="flex flex-wrap justify-center gap-8 sm:gap-12">
           {socials.map((social) => (
             <motion.a
               key={social.name}
@@ -184,20 +184,20 @@ export default function ContactPage() {
       </section>
 
       {/* CTA Section */}
-      <section className="py-32 px-10 border-t border-white/10">
+      <section className="py-16 sm:py-32 px-4 sm:px-6 md:px-10 border-t border-white/10">
         <div className="max-w-7xl mx-auto flex flex-col items-center text-center">
-            <span className="text-gold-400 text-[10px] tracking-[0.4em] font-bold uppercase mb-8 block italic">Reserve Your Date</span>
-            <h2 className="text-4xl md:text-7xl font-serif text-white mb-12 leading-tight uppercase">Ready to <span className="italic">Collaborate?</span></h2>
-            <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
+            <span className="text-gold-400 text-[10px] tracking-[0.4em] font-bold uppercase mb-6 sm:mb-8 block italic">Reserve Your Date</span>
+            <h2 className="text-3xl sm:text-5xl md:text-7xl font-serif text-white mb-8 sm:mb-12 leading-tight uppercase">Ready to <span className="italic">Collaborate?</span></h2>
+            <div className="flex flex-col sm:flex-row items-center justify-center gap-4 w-full sm:w-auto">
               <Link 
                 to="/booking" 
-                className="gold-gradient text-black px-16 py-5 font-bold tracking-widest uppercase text-xs hover:brightness-110 transition-all inline-block"
+                className="w-full sm:w-auto gold-gradient text-black px-8 sm:px-16 py-4 sm:py-5 font-bold tracking-widest uppercase text-xs hover:brightness-110 transition-all inline-block text-center"
               >
                  Request Quote
               </Link>
               <Link
                 to="/faqs"
-                className="border border-white/20 hover:border-gold-400 text-white hover:text-gold-400 px-12 py-5 font-bold tracking-widest uppercase text-xs transition-all inline-block bg-white/5"
+                className="w-full sm:w-auto border border-white/20 hover:border-gold-400 text-white hover:text-gold-400 px-8 sm:px-12 py-4 sm:py-5 font-bold tracking-widest uppercase text-xs transition-all inline-block text-center bg-white/5"
               >
                 Browse FAQs
               </Link>

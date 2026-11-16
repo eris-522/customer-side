@@ -25,11 +25,11 @@ export default function AboutPage() {
   return (
     <div className="min-h-screen bg-rich-black pt-24 font-sans text-white">
       {/* Header */}
-      <header className="px-10 py-20 text-center border-b border-white/10">
+      <header className="px-4 sm:px-6 md:px-10 py-12 sm:py-20 text-center border-b border-white/10">
         <motion.span 
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
-          className="text-gold-400 text-[12px] tracking-[0.5em] font-bold uppercase mb-6 block"
+          className="text-gold-400 text-[12px] tracking-[0.3em] sm:tracking-[0.5em] font-bold uppercase mb-4 sm:mb-6 block"
         >
           {about.headerSubtitle || "Behind the Craft"}
         </motion.span>
@@ -37,15 +37,15 @@ export default function AboutPage() {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.1 }}
-          className="text-6xl md:text-8xl font-serif text-white mb-8"
+          className="text-4xl sm:text-6xl md:text-8xl font-serif text-white mb-6 sm:mb-8"
         >
           {about.headerTitle || "Our"} <span className="italic gold-text-gradient">{about.headerTitleItalic || "Story"}</span>
         </motion.h1>
       </header>
 
       {/* Our Story Section */}
-      <section className="py-24 px-10 border-b border-white/10">
-        <div className="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-2 gap-16 items-center">
+      <section className="py-14 sm:py-24 px-4 sm:px-6 md:px-10 border-b border-white/10">
+        <div className="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-2 gap-10 sm:gap-16 items-center">
           <motion.div
             initial={{ opacity: 0, x: -30 }}
             whileInView={{ opacity: 1, x: 0 }}
@@ -53,7 +53,7 @@ export default function AboutPage() {
             viewport={{ once: true }}
             className="relative"
           >
-            <div className="absolute -inset-4 border border-gold-400/20 z-0"></div>
+            <div className="absolute -inset-2 sm:-inset-4 border border-gold-400/20 z-0"></div>
             <img 
               src={about.storyImage || FALLBACK_STORY_IMAGE} 
               alt="Culinary story" 
@@ -63,7 +63,7 @@ export default function AboutPage() {
                   target.src = FALLBACK_STORY_IMAGE;
                 }
               }}
-              className="relative z-10 w-full aspect-[4/5] object-cover grayscale hover:grayscale-0 transition-all duration-700"
+              className="relative z-10 w-full aspect-[4/5] object-cover grayscale-0 md:grayscale md:hover:grayscale-0 transition-all duration-700"
             />
           </motion.div>
           
@@ -73,13 +73,13 @@ export default function AboutPage() {
             transition={{ duration: 0.8 }}
             viewport={{ once: true }}
           >
-            <span className="text-gold-400 text-[10px] tracking-[0.4em] font-bold uppercase mb-8 block italic font-serif">
+            <span className="text-gold-400 text-[10px] tracking-[0.4em] font-bold uppercase mb-6 sm:mb-8 block italic font-serif">
               {about.storyTagline || "A Culinary Legacy"}
             </span>
-            <p className="text-2xl md:text-3xl font-serif italic text-white/90 mb-8 leading-relaxed">
+            <p className="text-xl sm:text-2xl md:text-3xl font-serif italic text-white/90 mb-6 sm:mb-8 leading-relaxed">
               {about.storyHeadline || "Founded on the belief that fine dining should be an accessible experience for all of life's most meaningful milestones."}
             </p>
-            <div className="space-y-6 text-white/50 text-[11px] uppercase tracking-[0.4em] font-bold leading-loose">
+            <div className="space-y-6 text-white/50 text-[11px] uppercase tracking-[0.18em] sm:tracking-[0.4em] font-bold leading-loose">
               <p>
                 {about.storyParagraph1 || "Roxan Policarpio Events & Catering began as a small passion project, fueled by a deep love for Filipino hospitality and global culinary techniques. Over the years, we have evolved into a full-service catering brand known for our meticulous attention to detail and artistic presentation."}
               </p>
@@ -92,18 +92,18 @@ export default function AboutPage() {
       </section>
 
       {/* Our Values Section */}
-      <section className="py-24 px-10 bg-[#070707]">
+      <section className="py-14 sm:py-24 px-4 sm:px-6 md:px-10 bg-[#070707]">
         <div className="max-w-7xl mx-auto">
-          <div className="text-center mb-20">
+          <div className="text-center mb-12 sm:mb-20">
             <span className="text-gold-400 text-[10px] tracking-[0.4em] font-bold uppercase mb-4 block italic">
               {about.valuesSubtitle || "Our Foundations"}
             </span>
-            <h2 className="text-4xl md:text-6xl font-serif tracking-normal text-white uppercase">
+            <h2 className="text-3xl sm:text-4xl md:text-6xl font-serif tracking-normal text-white uppercase">
               {about.valuesTitle || "The Pillars of"} <span className="italic">{about.valuesTitleItalic || "Excellence"}</span>
             </h2>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-12">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 sm:gap-12">
             {pillars.map((value, i) => {
               const IconComp = ICON_MAP[value.icon] || Sparkles;
               return (
@@ -113,7 +113,7 @@ export default function AboutPage() {
                   whileInView={{ opacity: 1, y: 0 }}
                   viewport={{ once: true }}
                   transition={{ delay: i * 0.2 }}
-                  className="p-10 glass-card border border-white/10 text-center group hover:border-gold-400/50 transition-all duration-500"
+                  className="p-6 sm:p-10 glass-card border border-white/10 text-center group hover:border-gold-400/50 transition-all duration-500"
                 >
                   <div className="mb-8 flex justify-center">
                     <div className="w-16 h-16 border border-gold-400/30 flex items-center justify-center text-gold-400 group-hover:scale-110 transition-transform duration-500">
@@ -132,17 +132,17 @@ export default function AboutPage() {
       </section>
 
       {/* CTA Section */}
-      <section className="py-32 px-10 border-t border-white/10">
+      <section className="py-16 sm:py-32 px-4 sm:px-6 md:px-10 border-t border-white/10">
         <div className="max-w-7xl mx-auto flex flex-col items-center text-center">
-            <span className="text-gold-400 text-[10px] tracking-[0.4em] font-bold uppercase mb-8 block italic">
+            <span className="text-gold-400 text-[10px] tracking-[0.4em] font-bold uppercase mb-6 sm:mb-8 block italic">
               {about.ctaSubtitle || "Let's Create Magic"}
             </span>
-            <h2 className="text-4xl md:text-7xl font-serif text-white mb-12 leading-tight uppercase">
+            <h2 className="text-3xl sm:text-5xl md:text-7xl font-serif text-white mb-8 sm:mb-12 leading-tight uppercase">
               {about.ctaTitle || "Ready to"} <span className="italic">{about.ctaTitleItalic || "Elevate"}</span> <br /> {about.ctaTitleEnd || "Your Celebration?"}
             </h2>
             <Link 
               to={about.ctaBtnLink || "/booking"} 
-              className="gold-gradient text-black px-16 py-5 font-bold tracking-widest uppercase text-xs hover:brightness-110 transition-all inline-block"
+              className="w-full sm:w-auto gold-gradient text-black px-8 sm:px-16 py-4 sm:py-5 font-bold tracking-widest uppercase text-xs hover:brightness-110 transition-all inline-block text-center"
             >
                {about.ctaBtnText || "Book Your Event Now"}
             </Link>
