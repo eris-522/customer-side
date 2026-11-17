@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Bell, X } from 'lucide-react';
+import { Bell, X, CheckCheck } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useNavigate } from 'react-router-dom';
 
@@ -78,9 +78,10 @@ export function NotificationCenter({ isOpen, onClose, notifications, unreadCount
         >
           <div className="p-4 border-b border-[#E6DFD3] dark:border-white/10 sticky top-0 bg-stone-100/95 dark:bg-[#070707] z-10 flex items-center justify-between backdrop-blur-md">
             <h3 className="font-serif text-lg text-gold-500 dark:text-gold-400 italic">Notifications</h3>
-            <div className="flex items-center gap-2 sm:gap-3">
+            <div className="flex items-center gap-1.5 sm:gap-2">
               {unreadCount > 0 && (
-                <button 
+                <button
+                  type="button"
                   onClick={() => {
                     const newlyRead: string[] = [];
                     notifications.forEach((n: any) => {
@@ -90,16 +91,18 @@ export function NotificationCenter({ isOpen, onClose, notifications, unreadCount
                     setReadDuringSession(prev => [...prev, ...newlyRead]);
                     newlyRead.forEach((id: string) => onDismiss && onDismiss(id));
                   }}
-                  className="text-[10px] font-bold text-gold-500 dark:text-gold-400 hover:text-stone-900 dark:hover:text-white uppercase tracking-widest transition-colors cursor-pointer py-1.5 px-2"
+                  title="Mark all as read"
+                  aria-label="Mark all as read"
+                  className="p-2 hover:bg-black/5 dark:hover:bg-white/10 rounded-lg transition-colors text-gold-500 dark:text-gold-400 hover:text-stone-900 dark:hover:text-white cursor-pointer flex items-center justify-center"
                 >
-                  Mark all read
+                  <CheckCheck className="w-5 h-5" />
                 </button>
               )}
               <button
                 type="button"
                 aria-label="Close notifications"
                 onClick={onClose}
-                className="p-2 hover:bg-black/5 dark:hover:bg-white/10 rounded-lg transition-colors text-stone-500 dark:text-white/50 cursor-pointer"
+                className="p-2 hover:bg-black/5 dark:hover:bg-white/10 rounded-lg transition-colors text-stone-500 dark:text-white/50 cursor-pointer flex items-center justify-center"
               >
                 <X className="w-5 h-5" />
               </button>

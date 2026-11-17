@@ -1090,7 +1090,7 @@ export default function AuthPage() {
                     <button
                       type="button"
                       onClick={() => setShowPassword((prev) => !prev)}
-                      className="absolute right-4 top-1/2 -translate-y-1/2 text-white/40 hover:text-gold-400 transition-colors cursor-pointer p-1"
+                      className="absolute right-4 top-1/2 -translate-y-1/2 flex items-center justify-center text-white/40 hover:text-gold-400 transition-colors cursor-pointer p-1"
                       aria-label={showPassword ? "Hide password" : "Show password"}
                       title={showPassword ? "Hide password" : "Show password"}
                     >
@@ -1320,7 +1320,7 @@ export default function AuthPage() {
                         <button
                           type="button"
                           onClick={() => setShowNewPassword((prev) => !prev)}
-                          className="absolute right-4 top-1/2 -translate-y-1/2 text-white/40 hover:text-gold-400 transition-colors cursor-pointer p-1"
+                          className="absolute right-4 top-1/2 -translate-y-1/2 flex items-center justify-center text-white/40 hover:text-gold-400 transition-colors cursor-pointer p-1"
                           aria-label={showNewPassword ? "Hide password" : "Show password"}
                           title={showNewPassword ? "Hide password" : "Show password"}
                         >
@@ -1356,7 +1356,7 @@ export default function AuthPage() {
                         <button
                           type="button"
                           onClick={() => setShowConfirmNewPassword((prev) => !prev)}
-                          className="absolute right-4 top-1/2 -translate-y-1/2 text-white/40 hover:text-gold-400 transition-colors cursor-pointer p-1"
+                          className="absolute right-4 top-1/2 -translate-y-1/2 flex items-center justify-center text-white/40 hover:text-gold-400 transition-colors cursor-pointer p-1"
                           aria-label={
                             showConfirmNewPassword
                               ? "Hide confirm password"
