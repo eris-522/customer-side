@@ -291,7 +291,7 @@ export default function MyInquiriesPage() {
           supabase
             .from("bookings")
             .select(
-              "id, user_id, package_id, event_date, event_time, event_location, guest_count, additional_pax, food_allergies, selected_menu_items, selected_add_ons, status, cancelled_by, cancellation_reason, payment_method, payment_scheme, downpayment_amount, payment_status, receipt_url, reference_number, terms_accepted, final_balance_amount, final_balance_status, final_balance_method, final_balance_reference, final_balance_receipt, installment_schedule, logistics_info, corkage_info, overtime_info, dish_substitutions, modification_requests, created_at, updated_at, packages (id, name, price, additional_pax_price, category_limits, inclusions)",
+              "id, user_id, package_id, event_date, event_time, event_location, guest_count, additional_pax, food_allergies, selected_menu_items, selected_add_ons, status, cancelled_by, cancellation_reason, payment_method, payment_scheme, downpayment_amount, payment_status, receipt_url, reference_number, terms_accepted, final_balance_amount, final_balance_status, final_balance_method, final_balance_reference, final_balance_receipt, installment_schedule, logistics_info, corkage_info, overtime_info, dish_substitutions, modification_requests, created_at, packages (id, name, price, additional_pax_price, category_limits, inclusions)",
             )
             .eq("user_id", authUser.id),
           catalogCache.fetchMenuItems(),
