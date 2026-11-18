@@ -117,3 +117,49 @@ export async function uploadReceiptImage(
   return null;
 }
 
+/**
+ * Uploads an e-signature PNG Data URL to Supabase Storage with 1-year CDN cache headers.
+ * Returns the public URL on success, or falls back to the original Data URL if storage is unavailable.
+ */
+export async function uploadSignatureDataUrl(
+  dataUrl: string,
+  userId?: string
+): Promise<string> {
+  if (!dataUrl || !dataUrl.startsWith("data:image/")) {
+    return dataUrl;
+  }
+
+  try {
+    const res = await fetch(dataUrl);
+    const blob = await res.blob();
+    const timestamp = Date.now();
+    const randomSuffix = Math.random().toString(36).substring(2, 8);
+    const sanitizedUser = userId ? userId.replace(/[^a-zA-Z0-9_-]/g, "") : "guest";
+    const filePath = `signatures/${sanitizedUser}/${timestamp}_${randomSuffix}.png`;
+    const candidateBuckets = ["receipts", "public", "images", "cms"];
+
+    for (const bucket of candidateBuckets) {
+      try {
+        const { data, error } = await supabase.storage.from(bucket).upload(filePath, blob, {
+          contentType: "image/png",
+          cacheControl: "31536000",
+          upsert: true,
+        });
+
+        if (!error && data) {
+          const { data: pubData } = supabase.storage.from(bucket).getPublicUrl(data.path);
+          if (pubData?.publicUrl) {
+            return pubData.publicUrl;
+          }
+        }
+      } catch {
+        // Continue to next bucket
+      }
+    }
+  } catch (err) {
+    console.warn("Signature storage upload failed, falling back to data URL:", err);
+  }
+
+  return dataUrl;
+}
+

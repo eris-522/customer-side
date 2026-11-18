@@ -175,7 +175,7 @@ export default function Navbar() {
     const fetchNotifications = async () => {
       const { data } = await supabase
         .from('bookings')
-        .select('id, status, cancelled_by, cancellation_reason, event_date, created_at, logistics_info, food_allergies, dish_substitutions, modification_requests, final_balance_status')
+        .select('id, status, cancelled_by, cancellation_reason, event_date, created_at, logistics_info, overtime_info, food_allergies, dish_substitutions, modification_requests, final_balance_status')
         .eq('user_id', user.id);
       
       if (data) {
@@ -479,7 +479,7 @@ export default function Navbar() {
       }
     };
 
-    const FOCUS_COOLDOWN_MS = 1_500;
+    const FOCUS_COOLDOWN_MS = 60_000;
     let lastNotifFetchTime = 0;
     let inFlightNotif = false;
     let realtimeDebounce: ReturnType<typeof setTimeout> | null = null;
@@ -500,16 +500,16 @@ export default function Navbar() {
     fetchNotifsRef.current = triggerNotificationsFetch;
     triggerNotificationsFetch(true);
 
-    // Active polling heartbeat every 6 seconds while tab is open/visible
+    // Fallback polling ONLY when Realtime WebSocket is disconnected
     const fallbackPollId = setInterval(() => {
-      if (document.visibilityState === "visible") {
-        triggerNotificationsFetch(true);
+      if (!realtimeConnected && document.visibilityState === "visible") {
+        triggerNotificationsFetch(false);
       }
-    }, 6_000);
+    }, 60_000);
 
     const handleVisibilityOrFocus = () => {
       if (document.visibilityState === "visible") {
-        triggerNotificationsFetch(true);
+        triggerNotificationsFetch(false);
       }
     };
     const handleLocalBookingSync = () => {
@@ -542,7 +542,7 @@ export default function Navbar() {
     const channelName = `user-bookings-${user.id}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
     const channel = supabase
       .channel(channelName)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'bookings' }, (payload: any) => {
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'bookings', filter: `user_id=eq.${user.id}` }, (payload: any) => {
         const payloadUserId = payload.new?.user_id || payload.old?.user_id;
         if (!payloadUserId || payloadUserId === user.id) {
           if (realtimeDebounce) clearTimeout(realtimeDebounce);

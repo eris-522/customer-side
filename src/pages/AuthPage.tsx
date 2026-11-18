@@ -139,7 +139,6 @@ export default function AuthPage() {
   >("none");
   const [recoveryEmail, setRecoveryEmail] = useState("");
   const [recoveryAnswer, setRecoveryAnswer] = useState("");
-  const [fetchedAnswer, setFetchedAnswer] = useState("");
   const [recoveryOtp, setRecoveryOtp] = useState("");
   const [resendingRecoveryOtp, setResendingRecoveryOtp] = useState(false);
   const [newPassword, setNewPassword] = useState("");
@@ -410,12 +409,11 @@ export default function AuthPage() {
           }
         }
 
-        // 2. Account is confirmed — retrieve security question answer
-        const queryPromise = supabase
-          .from("profiles")
-          .select("security_answer")
-          .ilike("email", currentRecoveryEmail)
-          .maybeSingle();
+        // 2. Account is confirmed — check a security question is set up.
+        // The answer itself never leaves the database (checked server-side by verify_security_answer).
+        const queryPromise = supabase.rpc("customer_account_status", {
+          p_email: currentRecoveryEmail,
+        });
 
         const timeoutPromise = new Promise<{ data: any; error: any }>((_, reject) =>
           setTimeout(
@@ -424,18 +422,25 @@ export default function AuthPage() {
           )
         );
 
-        const { data, error } = await Promise.race([queryPromise, timeoutPromise]);
+        const { data: accountStatus, error } = await Promise.race([queryPromise, timeoutPromise]);
 
-        if (error || !data) {
+        if (error || !accountStatus || accountStatus === "not_found") {
           setError("Account not found. Please check your email address.");
-        } else if (!data.security_answer) {
+        } else if (accountStatus === "no_question") {
           setError("No security question set up for this account. Please contact the administrator.");
         } else {
-          setFetchedAnswer(data.security_answer.toLowerCase().trim());
           setForgotPasswordStep("question");
         }
       } else if (forgotPasswordStep === "question") {
-        if (recoveryAnswer.toLowerCase().trim() === fetchedAnswer) {
+        const { data: answerOk, error: answerErr } = await supabase.rpc("verify_security_answer", {
+          p_email: recoveryEmail.trim().toLowerCase(),
+          p_answer: recoveryAnswer,
+        });
+        if (answerErr) {
+          setError("Could not verify your answer right now. Please try again.");
+          return;
+        }
+        if (answerOk === true) {
           // Double-check confirmation status before dispatching recovery OTP email
           const { data: confirmStatus } = await supabase.rpc("check_user_email_confirmed", {
             lookup_email: recoveryEmail.trim().toLowerCase(),
@@ -762,14 +767,12 @@ export default function AuthPage() {
           return;
         }
 
-        // Check if the email is already registered in the profiles table
-        const { data: existingProfile } = await supabase
-          .from("profiles")
-          .select("id")
-          .eq("email", currentEmail)
-          .maybeSingle();
+        // Check if the email is already registered as a customer (RPC: profiles aren't readable before login)
+        const { data: existingStatus } = await supabase.rpc("customer_account_status", {
+          p_email: currentEmail,
+        });
 
-        if (existingProfile) {
+        if (existingStatus && existingStatus !== "not_found") {
           setError(
             "This email is already in use. Please sign in or use a different email.",
           );
@@ -783,6 +786,14 @@ export default function AuthPage() {
             password: password,
             options: {
               emailRedirectTo: "https://rpcatering.vercel.app/auth?confirmed=true",
+              // Copied into public.profiles by the handle_new_user() trigger (the security answer is
+              // then stripped from auth metadata). The client can't write profiles before login.
+              data: {
+                name: fullName,
+                full_name: fullName,
+                phone_number: phoneNumber ? `+63${phoneNumber}` : "",
+                security_answer: securityAnswer.toLowerCase().trim(),
+              },
             },
           },
         );
@@ -830,25 +841,7 @@ export default function AuthPage() {
         }
 
         if (authData.user) {
-          // Sync display name to profiles table (BookingPage reads `profiles.name`)
-          const { error: profileError } = await supabase
-            .from("profiles")
-            .upsert(
-              {
-                id: authData.user.id,
-                name: fullName,
-                email: currentEmail,
-                security_answer: securityAnswer.toLowerCase().trim(),
-                phone_number: phoneNumber ? `+63${phoneNumber}` : "",
-              },
-              { onConflict: "id" },
-            );
-
-          if (profileError) {
-            setError(`Error saving profile: ${profileError.message}`);
-            return;
-          }
-
+          // Profile (name, phone, security answer) is created server-side by the handle_new_user() trigger
           setRegisteredEmail(currentEmail);
           setShowEmailConfirmModal(true);
           setFullName("");

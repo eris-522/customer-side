@@ -37,7 +37,7 @@ import {
 } from "lucide-react";
 import { supabase } from "../utils/supabase";
 import { CATERING_CONTRACT_TERMS } from "../data/cateringContractTerms";
-import { compressReceiptImage, uploadReceiptImage } from "../utils/receiptUploader";
+import { compressReceiptImage, uploadReceiptImage, uploadSignatureDataUrl } from "../utils/receiptUploader";
 import { catalogCache } from "../utils/catalogCache";
 import {
   getSessionUser,
@@ -373,12 +373,9 @@ export default function BookingPage() {
 
       // Fetch active slot conflicts alongside deduplicated catalog cache
       const [bookingsRes, sortedPackages, menuItemsData, groupedInclusions] = await Promise.all([
-        // Only fetch active bookings from today onwards to check for slot conflicts (cuts 90%+ of transferred rows)
-        supabase
-          .from("bookings")
-          .select("event_date, event_time, status")
-          .gte("event_date", todayStr)
-          .not("status", "in", '("Cancelled","Rejected","Declined","Archived")'),
+        // Active booked slots from today onwards (date/time/status only — no other customers' data).
+        // Served by the get_booked_slots() RPC because customers can't read other customers' bookings under RLS.
+        supabase.rpc("get_booked_slots", { p_from: todayStr }),
         catalogCache.fetchPackages(),
         catalogCache.fetchMenuItems(),
         catalogCache.fetchInclusions(),
@@ -874,6 +871,12 @@ export default function BookingPage() {
       }
     }
 
+    // Attempt to upload client e-signature PNG to Supabase Storage bucket
+    let finalSignatureUrl = capturedSignatureDataUrl || "";
+    if (finalSignatureUrl.startsWith("data:image/")) {
+      finalSignatureUrl = await uploadSignatureDataUrl(finalSignatureUrl, sessionUser.id);
+    }
+
     // Clean up any selected menu items that were archived or made unavailable before submission
     const validSelections = formData.menuSelections.filter(itemName => {
       const opt = menuOptions.find(o => o.name === itemName);
@@ -975,7 +978,7 @@ export default function BookingPage() {
           signer_name: (signerFullName || userProfile?.full_name || userProfile?.name || "Client").trim(),
           signer_email: sessionUser.email || userProfile?.email || "",
           signature_mode: signatureMode,
-          signature_data_url: capturedSignatureDataUrl || "",
+          signature_data_url: finalSignatureUrl,
           signed_at: signedAtIso || new Date().toISOString(),
         },
       },
@@ -1024,7 +1027,7 @@ export default function BookingPage() {
             signer_name: (signerFullName || userProfile?.full_name || userProfile?.name || "Client").trim(),
             signer_email: sessionUser.email || userProfile?.email || "",
             signature_mode: signatureMode,
-            signature_data_url: capturedSignatureDataUrl || "",
+            signature_data_url: finalSignatureUrl,
             signed_at: signedAtIso || new Date().toISOString(),
           },
         },

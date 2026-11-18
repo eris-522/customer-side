@@ -290,7 +290,9 @@ export default function MyInquiriesPage() {
         const [bookingsRes, cachedOrFreshMenu, profileData] = await Promise.all([
           supabase
             .from("bookings")
-            .select("*, packages (id, name, price, additional_pax_price, category_limits, inclusions)")
+            .select(
+              "id, user_id, package_id, event_date, event_time, event_location, guest_count, additional_pax, food_allergies, selected_menu_items, selected_add_ons, status, cancelled_by, cancellation_reason, payment_method, payment_scheme, downpayment_amount, payment_status, receipt_url, reference_number, terms_accepted, final_balance_amount, final_balance_status, final_balance_method, final_balance_reference, final_balance_receipt, installment_schedule, logistics_info, corkage_info, overtime_info, dish_substitutions, modification_requests, created_at, updated_at, packages (id, name, price, additional_pax_price, category_limits, inclusions)",
+            )
             .eq("user_id", authUser.id),
           catalogCache.fetchMenuItems(),
           fetchUserProfile(authUser.id).catch(() => null),
@@ -1554,18 +1556,11 @@ export default function MyInquiriesPage() {
           return item;
         });
 
-        // Update database with new installment schedule
-        let { error } = await supabase
-          .from("bookings")
-          .update({
-            installment_schedule: updatedSchedule,
-          })
-          .eq("id", payingBalanceBooking.id);
-
-        // Fallback / sync metadata in food_allergies if used
+        // Prepare fallback metadata only when already present on this booking
         let baseAllergies = payingBalanceBooking.food_allergies || "";
+        const hasPaymentMetadata = baseAllergies.includes("__PAYMENT_METADATA__:");
         let currentMeta: any = {};
-        if (baseAllergies.includes("__PAYMENT_METADATA__:")) {
+        if (hasPaymentMetadata) {
           const parts = baseAllergies.split("__PAYMENT_METADATA__:");
           baseAllergies = parts[0].trim();
           try {
@@ -1575,12 +1570,35 @@ export default function MyInquiriesPage() {
         currentMeta.installments = updatedSchedule;
         const updatedAllergies = `${baseAllergies ? baseAllergies + "\n" : ""}__PAYMENT_METADATA__:${JSON.stringify(currentMeta)}`;
 
-        const fb = await supabase
+        const updatePayload: any = {
+          installment_schedule: updatedSchedule,
+        };
+        if (hasPaymentMetadata) {
+          updatePayload.food_allergies = updatedAllergies;
+        }
+
+        // Single primary UPDATE query (syncs food_allergies metadata in the same round-trip when present)
+        let { error } = await supabase
           .from("bookings")
-          .update({ food_allergies: updatedAllergies })
+          .update(updatePayload)
           .eq("id", payingBalanceBooking.id);
 
-        if (error && fb.error) throw error || fb.error;
+        let syncedAllergies = hasPaymentMetadata
+          ? updatedAllergies
+          : payingBalanceBooking.food_allergies || "";
+
+        if (error && error.message.toLowerCase().includes("column")) {
+          const fb = await supabase
+            .from("bookings")
+            .update({ food_allergies: updatedAllergies })
+            .eq("id", payingBalanceBooking.id);
+          error = fb.error;
+          if (!fb.error) {
+            syncedAllergies = updatedAllergies;
+          }
+        }
+
+        if (error) throw error;
 
         // Update local React state
         setBookings((prev) =>
@@ -1589,7 +1607,7 @@ export default function MyInquiriesPage() {
               ? {
                   ...b,
                   installment_schedule: updatedSchedule,
-                  food_allergies: updatedAllergies,
+                  food_allergies: syncedAllergies,
                 }
               : b,
           ),
