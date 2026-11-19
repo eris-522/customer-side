@@ -539,7 +539,7 @@ export default function VenueMapPicker({
             required
             maxLength={120}
             autoComplete="off"
-            placeholder="Search any venue on Google Maps (e.g., Siena's Events Place, The Blue Leaf, Jardin de Miramar...)"
+            placeholder="Search any venue"
             className="w-full bg-white/5 border border-white/10 pl-11 sm:pl-13 pr-10 sm:pr-12 py-3.5 sm:py-4 text-base sm:text-lg focus:outline-none focus:border-gold-400/60 transition-all font-medium text-white placeholder:text-white/35"
             value={venueName}
             onFocus={() => {

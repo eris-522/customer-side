@@ -1717,11 +1717,11 @@ export default function BookingPage() {
                                   Outdoor Weather Advisory
                                 </span>
                               </div>
-                              <p className="text-xs text-white/95 leading-relaxed font-semibold italic">
-                                &ldquo;Php 2,000.00 laundry charge applies in case of rain without client-provided tents.&rdquo;
+                              <p className="text-xs text-white/95 leading-relaxed font-semibold">
+                                A ₱2,000 laundry fee applies if it rains without tents.
                               </p>
                               <p className="text-[11px] text-white/65 leading-relaxed">
-                                For outdoor banquet setups (garden, poolside, or open lawn), client must ensure adequate weather-proof tents or covered shelters are provided to protect buffet line and dining table linens from rain.
+                                Please provide tents or cover to protect tables and linens.
                               </p>
                             </div>
                           </div>
@@ -1731,10 +1731,10 @@ export default function BookingPage() {
                             <CheckCircle className="text-emerald-400 shrink-0 mt-0.5" size={18} />
                             <div className="space-y-0.5">
                               <p className="text-xs font-bold text-emerald-300 uppercase tracking-wider">
-                                Ground Floor Access (Automatic for Outdoor Venues)
+                                Ground Floor Access
                               </p>
                               <p className="text-xs text-white/75 leading-relaxed">
-                                Outdoor venues (gardens, lawns, open-air areas) are automatically set to Ground Floor. No elevator check or stairs hauling surcharge applies.
+                                Outdoor venues are set to ground floor—no stairs hauling fee applies.
                               </p>
                             </div>
                           </div>
@@ -3406,19 +3406,10 @@ export default function BookingPage() {
 
                 {/* Slim Bottom Action Bar */}
                 <div className="px-4 sm:px-6 py-3.5 border-t border-white/10 bg-black/85 shrink-0 flex flex-col sm:flex-row items-center justify-between gap-3">
-                  <div className="flex flex-wrap items-center gap-3 text-[10px] text-white/50">
+                  <div className="text-[10px] text-white/50">
                     <span>
                       Executing Contract as: <span className="text-gold-300 font-semibold">{signerFullName.trim() || userProfile?.full_name || userProfile?.name || "Client"}</span>
                     </span>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        signingSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })
-                      }
-                      className="text-gold-400 hover:text-gold-300 font-bold uppercase tracking-wider underline-offset-2 hover:underline cursor-pointer"
-                    >
-                      Scroll to Signature ↓
-                    </button>
                   </div>
 
                   <div className="flex flex-col-reverse sm:flex-row items-center gap-3 w-full sm:w-auto">
