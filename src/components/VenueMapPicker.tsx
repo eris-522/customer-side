@@ -537,6 +537,7 @@ export default function VenueMapPicker({
             name="venueName"
             type="text"
             required
+            maxLength={120}
             autoComplete="off"
             placeholder="Search any venue on Google Maps (e.g., Siena's Events Place, The Blue Leaf, Jardin de Miramar...)"
             className="w-full bg-white/5 border border-white/10 pl-11 sm:pl-13 pr-10 sm:pr-12 py-3.5 sm:py-4 text-base sm:text-lg focus:outline-none focus:border-gold-400/60 transition-all font-medium text-white placeholder:text-white/35"
@@ -570,7 +571,7 @@ export default function VenueMapPicker({
             }}
             onChange={(e) => {
               isUserTypingVenueRef.current = true;
-              onChange({ venueName: e.target.value });
+              onChange({ venueName: e.target.value.slice(0, 120) });
             }}
           />
           <div className="absolute right-4 top-1/2 -translate-y-1/2 flex items-center gap-2">
@@ -684,12 +685,13 @@ export default function VenueMapPicker({
           name="venueAddress"
           autoComplete="street-address"
           required
+          maxLength={250}
           placeholder="Exact street address will automatically appear here when you type a venue name or move the map pin..."
           rows={3}
           className="w-full bg-white/5 border border-white/10 px-4 sm:px-6 py-3.5 sm:py-4 text-base sm:text-lg focus:outline-none focus:border-gold-400/50 transition-all font-medium resize-none text-white placeholder:text-white/35"
           value={venueAddress}
           onChange={(e) => {
-            onChange({ venueAddress: e.target.value });
+            onChange({ venueAddress: e.target.value.slice(0, 250) });
           }}
         />
       </div>

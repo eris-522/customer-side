@@ -131,6 +131,24 @@ const parseTime = (timeStr: string) => {
   return hours + (minutes || 0) / 60;
 };
 
+const MAX_ADDITIONAL_PAX = 500;
+const MAX_ALCOHOLIC_BOTTLES = 200;
+const MAX_OUTSIDE_FOOD_DISHES = 50;
+const MAX_ALLERGIES_LENGTH = 300;
+const MAX_SIGNER_NAME_LENGTH = 70;
+const MAX_REFERENCE_NUMBER_LENGTH = 50;
+const SIGNER_NAME_INVALID_REGEX = /[^a-zA-ZÀ-ÿ\sñÑ.'-]/;
+const SIGNER_NAME_VALID_REGEX = /^[a-zA-ZÀ-ÿ\sñÑ.'-]+$/;
+
+const sanitizePositiveInt = (raw: string, max: number): number | null => {
+  const digits = raw.replace(/[^\d]/g, "");
+  if (!digits) return null;
+  const stripped = digits.replace(/^0+(?=\d)/, "");
+  const num = parseInt(stripped, 10);
+  if (isNaN(num)) return null;
+  return Math.min(max, Math.max(0, num));
+};
+
 const steps = [
   { id: 1, title: "Package", icon: Package },
   { id: 2, title: "Details", icon: Calendar },
@@ -217,6 +235,7 @@ export default function BookingPage() {
   const [signedAtIso, setSignedAtIso] = useState<string>("");
   const [termsFormError, setTermsFormError] = useState<string>("");
   const signatureCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const signingSectionRef = useRef<HTMLDivElement | null>(null);
   const isDrawingSigRef = useRef<boolean>(false);
 
   // Feature: Downpayment & Payment Scheme Screen State
@@ -506,7 +525,7 @@ export default function BookingPage() {
       if (!isNaN(guestCountNum) && guestCountNum > maxGuests) {
         const excess = guestCountNum - maxGuests;
         const currentAdd = parseInt(formData.additionalPax, 10) || 0;
-        const newAdd = String(currentAdd + excess);
+        const newAdd = String(Math.min(MAX_ADDITIONAL_PAX, currentAdd + excess));
         setFormData((prev) => ({
           ...prev,
           guestCount: String(maxGuests),
@@ -517,6 +536,12 @@ export default function BookingPage() {
 
       if (isNaN(guestCountNum) || guestCountNum < 10) {
         setStepError("Guest count must be at least 10 for this package.");
+        return;
+      }
+
+      const addPaxNum = parseInt(formData.additionalPax, 10) || 0;
+      if (addPaxNum < 0 || addPaxNum > MAX_ADDITIONAL_PAX) {
+        setStepError(`Additional pax cannot exceed ${MAX_ADDITIONAL_PAX}.`);
         return;
       }
     } else if (currentStep === 3) {
@@ -669,20 +694,23 @@ export default function BookingPage() {
   const selectedPkgForPayment = availablePackages.find((p) => p.id === formData.packageId);
   const basePriceCalc = selectedPkgForPayment && selectedPkgForPayment.price ? parseFloat(String(selectedPkgForPayment.price).replace(/[^0-9.-]+/g, "")) || 0 : 0;
   const addPriceCalc = selectedPkgForPayment && selectedPkgForPayment.additional_pax_price ? parseFloat(String(selectedPkgForPayment.additional_pax_price).replace(/[^0-9.-]+/g, "")) || 0 : 0;
-  const extraPaxCalc = parseInt(formData.additionalPax) || 0;
+  const extraPaxCalc = Math.min(MAX_ADDITIONAL_PAX, Math.max(0, parseInt(formData.additionalPax, 10) || 0));
   // Feature: Taytay Coverage Detection & Venue Accessibility Hauling Fee Calculation
   const hasVenueInput = Boolean(formData.venueName.trim() || formData.venueAddress.trim());
   const combinedVenueText = `${formData.venueName} ${formData.venueAddress}`.toLowerCase();
   const isOutsideTaytay = hasVenueInput && !combinedVenueText.includes("taytay");
-  const totalGuestPaxCalc = (parseInt(formData.guestCount, 10) || 0) + (parseInt(formData.additionalPax, 10) || 0);
+  const totalGuestPaxCalc = (parseInt(formData.guestCount, 10) || 0) + extraPaxCalc;
   const waiterCountCalc = Math.max(2, Math.ceil((totalGuestPaxCalc || maxGuests || 50) / 25));
-  const floorsAboveGround = isSecondFloorOrHigher ? Math.max(1, floorLevel - 1) : 0;
-  const requiresStairsIngress = isSecondFloorOrHigher && !hasElevator;
+  const effectiveIsSecondFloorOrHigher = isOutdoorVenue ? false : isSecondFloorOrHigher;
+  const floorsAboveGround = effectiveIsSecondFloorOrHigher ? Math.max(1, floorLevel - 1) : 0;
+  const requiresStairsIngress = effectiveIsSecondFloorOrHigher && !hasElevator;
   const calculatedHaulingFee = requiresStairsIngress ? 150 * floorsAboveGround * waiterCountCalc : 0;
 
   const lechonFeeCalc = corkageState.hasLechonTable ? 1500 : 0;
-  const alcoholicFeeCalc = (corkageState.alcoholicBeveragesCount || 0) * 400;
-  const outsideFoodFeeCalc = (corkageState.outsideFoodCount || 0) * 400;
+  const safeAlcoholicCount = Math.min(MAX_ALCOHOLIC_BOTTLES, Math.max(0, corkageState.alcoholicBeveragesCount || 0));
+  const safeOutsideFoodCount = Math.min(MAX_OUTSIDE_FOOD_DISHES, Math.max(0, corkageState.outsideFoodCount || 0));
+  const alcoholicFeeCalc = safeAlcoholicCount * 400;
+  const outsideFoodFeeCalc = safeOutsideFoodCount * 400;
   const totalCorkageFeeCalc = lechonFeeCalc + alcoholicFeeCalc + outsideFoodFeeCalc;
 
   const calculatedTotalBudget = basePriceCalc + (addPriceCalc * extraPaxCalc) + calculatedHaulingFee + totalCorkageFeeCalc + totalPrebookedOvertimeFee;
@@ -784,19 +812,33 @@ export default function BookingPage() {
     if (e) e.preventDefault();
 
     const trimmedName = signerFullName.trim();
-    if (trimmedName.length < 2) {
-      setSignerNameError("Please enter the full legal name of the contract signer.");
-      setTermsFormError("Please enter the contract signer's full legal name before proceeding.");
+    if (trimmedName.length < 2 || trimmedName.length > MAX_SIGNER_NAME_LENGTH) {
+      setSignerNameError(
+        trimmedName.length < 2
+          ? "Please enter the full legal name of the contract signer."
+          : `Contract signer name cannot exceed ${MAX_SIGNER_NAME_LENGTH} characters.`,
+      );
+      setTermsFormError("Please enter a valid full legal name for the contract signer before proceeding.");
+      signingSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+      return;
+    }
+
+    if (!SIGNER_NAME_VALID_REGEX.test(trimmedName)) {
+      setSignerNameError("Full legal name can only contain letters, spaces, periods, hyphens, or apostrophes.");
+      setTermsFormError("Contract signer legal name contains invalid characters.");
+      signingSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
       return;
     }
 
     if (signatureMode === "drawn" && !hasDrawnSignature) {
       setTermsFormError("Please draw your signature in the signature pad (or switch to Type Signature).");
+      signingSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
       return;
     }
 
     if (!termsAgreed) {
       setTermsFormError("Please check the agreement box to confirm you accept all 20 contract clauses.");
+      signingSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
       return;
     }
 
@@ -883,16 +925,32 @@ export default function BookingPage() {
       return opt && opt.status !== "Not Available";
     });
 
+    const sanitizedAdditionalPax = Math.min(MAX_ADDITIONAL_PAX, Math.max(0, parseInt(formData.additionalPax, 10) || 0));
+    const sanitizedAllergies = formData.foodAllergies.trim().slice(0, MAX_ALLERGIES_LENGTH);
+    const sanitizedRefNumber = referenceNumber.trim().slice(0, MAX_REFERENCE_NUMBER_LENGTH);
+    const normalizedFloorLevel = effectiveIsSecondFloorOrHigher ? floorLevel : 1;
+    const normalizedHasElevator = effectiveIsSecondFloorOrHigher ? hasElevator : false;
+    const sanitizedCorkagePayload = {
+      hasLechonTable: corkageState.hasLechonTable,
+      lechonFee: lechonFeeCalc,
+      alcoholicBeveragesCount: safeAlcoholicCount,
+      alcoholicFee: alcoholicFeeCalc,
+      outsideFoodCount: safeOutsideFoodCount,
+      outsideFoodFee: outsideFoodFeeCalc,
+      totalCorkageFee: totalCorkageFeeCalc,
+      outsideFoodDisclaimerAgreed: corkageState.outsideFoodDisclaimerAgreed,
+    };
+
     // Primary payload attempting direct column insert
     const primaryPayload: Record<string, any> = {
       user_id: sessionUser.id,
       package_id: formData.packageId,
       event_date: formData.date,
       event_time: formData.time,
-      event_location: `${formData.venueName} - ${formData.venueAddress}`,
+      event_location: `${formData.venueName.trim().slice(0, 120)} - ${formData.venueAddress.trim().slice(0, 250)}`,
       guest_count: parseInt(formData.guestCount) || 0,
-      additional_pax: parseInt(formData.additionalPax) || 0,
-      food_allergies: formData.foodAllergies.trim(),
+      additional_pax: sanitizedAdditionalPax,
+      food_allergies: sanitizedAllergies,
       selected_menu_items: validSelections,
       status: "Pending",
       payment_method: paymentMethod,
@@ -900,7 +958,7 @@ export default function BookingPage() {
       downpayment_amount: calculatedDownpayment,
       payment_status: "Pending Verification",
       receipt_url: finalReceiptUrl,
-      reference_number: referenceNumber.trim(),
+      reference_number: sanitizedRefNumber,
       terms_accepted: true,
       final_balance_amount: calculatedRemainingBalance,
       final_balance_status: "Unpaid",
@@ -908,8 +966,8 @@ export default function BookingPage() {
       selected_add_ons: (() => {
         const list: string[] = [];
         if (corkageState.hasLechonTable) list.push("Lechon Table w/ Chopper Setup");
-        if (corkageState.alcoholicBeveragesCount > 0) list.push(`Alcoholic Beverages / Beer Corkage (${corkageState.alcoholicBeveragesCount} bottle${corkageState.alcoholicBeveragesCount > 1 ? "s" : ""})`);
-        if (corkageState.outsideFoodCount > 0) list.push(`Outside Food Corkage (${corkageState.outsideFoodCount} dish${corkageState.outsideFoodCount > 1 ? "es" : ""})`);
+        if (safeAlcoholicCount > 0) list.push(`Alcoholic Beverages / Beer Corkage (${safeAlcoholicCount} bottle${safeAlcoholicCount > 1 ? "s" : ""})`);
+        if (safeOutsideFoodCount > 0) list.push(`Outside Food Corkage (${safeOutsideFoodCount} dish${safeOutsideFoodCount > 1 ? "es" : ""})`);
         if (overtimeState.catering > 0) list.push(`Overtime: Catering Service (${overtimeState.catering} hr${overtimeState.catering > 1 ? "s" : ""} @ ₱4,000/hr)`);
         if (overtimeState.soundsLights > 0) list.push(`Overtime: Sounds & Lights (${overtimeState.soundsLights} hr${overtimeState.soundsLights > 1 ? "s" : ""} @ ₱1,500/hr)`);
         if (overtimeState.photoBooth > 0) list.push(`Overtime: Photo Booth (${overtimeState.photoBooth} hr${overtimeState.photoBooth > 1 ? "s" : ""} @ ₱1,000/hr)`);
@@ -941,21 +999,12 @@ export default function BookingPage() {
         day_of: null,
         total_overtime_fee: totalPrebookedOvertimeFee,
       },
-      corkage_info: {
-        hasLechonTable: corkageState.hasLechonTable,
-        lechonFee: lechonFeeCalc,
-        alcoholicBeveragesCount: corkageState.alcoholicBeveragesCount,
-        alcoholicFee: alcoholicFeeCalc,
-        outsideFoodCount: corkageState.outsideFoodCount,
-        outsideFoodFee: outsideFoodFeeCalc,
-        totalCorkageFee: totalCorkageFeeCalc,
-        outsideFoodDisclaimerAgreed: corkageState.outsideFoodDisclaimerAgreed,
-      },
+      corkage_info: sanitizedCorkagePayload,
       logistics_info: {
         isOutsideTaytay,
-        isSecondFloorOrHigher,
-        floorLevel: isSecondFloorOrHigher ? floorLevel : 1,
-        hasElevator,
+        isSecondFloorOrHigher: effectiveIsSecondFloorOrHigher,
+        floorLevel: normalizedFloorLevel,
+        hasElevator: normalizedHasElevator,
         requiresStairsIngress,
         venueType: isOutdoorVenue ? "Outdoor" : "Indoor",
         isOutdoor: isOutdoorVenue,
@@ -963,19 +1012,10 @@ export default function BookingPage() {
         haulingFee: calculatedHaulingFee,
         travelFee: 0,
         coords: hasPinnedVenue ? venueCoords : null,
-        corkage: {
-          hasLechonTable: corkageState.hasLechonTable,
-          lechonFee: lechonFeeCalc,
-          alcoholicBeveragesCount: corkageState.alcoholicBeveragesCount,
-          alcoholicFee: alcoholicFeeCalc,
-          outsideFoodCount: corkageState.outsideFoodCount,
-          outsideFoodFee: outsideFoodFeeCalc,
-          totalCorkageFee: totalCorkageFeeCalc,
-          outsideFoodDisclaimerAgreed: corkageState.outsideFoodDisclaimerAgreed,
-        },
+        corkage: sanitizedCorkagePayload,
         contract_signature: {
           signer_user_id: sessionUser.id,
-          signer_name: (signerFullName || userProfile?.full_name || userProfile?.name || "Client").trim(),
+          signer_name: (signerFullName || userProfile?.full_name || userProfile?.name || "Client").trim().slice(0, MAX_SIGNER_NAME_LENGTH),
           signer_email: sessionUser.email || userProfile?.email || "",
           signature_mode: signatureMode,
           signature_data_url: finalSignatureUrl,
@@ -997,14 +1037,14 @@ export default function BookingPage() {
         status: "Pending Verification",
         finalBalanceStatus: "Unpaid",
         installments: paymentScheme === "Installment 20%" ? installmentMilestones : null,
-        ref: referenceNumber.trim(),
+        ref: sanitizedRefNumber,
         receipt: finalReceiptUrl,
         termsAccepted: true,
         logistics: {
           isOutsideTaytay,
-          isSecondFloorOrHigher,
-          floorLevel: isSecondFloorOrHigher ? floorLevel : 1,
-          hasElevator,
+          isSecondFloorOrHigher: effectiveIsSecondFloorOrHigher,
+          floorLevel: normalizedFloorLevel,
+          hasElevator: normalizedHasElevator,
           requiresStairsIngress,
           venueType: isOutdoorVenue ? "Outdoor" : "Indoor",
           isOutdoor: isOutdoorVenue,
@@ -1012,35 +1052,17 @@ export default function BookingPage() {
           haulingFee: calculatedHaulingFee,
           travelFee: 0,
           coords: hasPinnedVenue ? venueCoords : null,
-          corkage: {
-            hasLechonTable: corkageState.hasLechonTable,
-            lechonFee: lechonFeeCalc,
-            alcoholicBeveragesCount: corkageState.alcoholicBeveragesCount,
-            alcoholicFee: alcoholicFeeCalc,
-            outsideFoodCount: corkageState.outsideFoodCount,
-            outsideFoodFee: outsideFoodFeeCalc,
-            totalCorkageFee: totalCorkageFeeCalc,
-            outsideFoodDisclaimerAgreed: corkageState.outsideFoodDisclaimerAgreed,
-          },
+          corkage: sanitizedCorkagePayload,
           contract_signature: {
             signer_user_id: sessionUser.id,
-            signer_name: (signerFullName || userProfile?.full_name || userProfile?.name || "Client").trim(),
+            signer_name: (signerFullName || userProfile?.full_name || userProfile?.name || "Client").trim().slice(0, MAX_SIGNER_NAME_LENGTH),
             signer_email: sessionUser.email || userProfile?.email || "",
             signature_mode: signatureMode,
             signature_data_url: finalSignatureUrl,
             signed_at: signedAtIso || new Date().toISOString(),
           },
         },
-        corkage: {
-          hasLechonTable: corkageState.hasLechonTable,
-          lechonFee: lechonFeeCalc,
-          alcoholicBeveragesCount: corkageState.alcoholicBeveragesCount,
-          alcoholicFee: alcoholicFeeCalc,
-          outsideFoodCount: corkageState.outsideFoodCount,
-          outsideFoodFee: outsideFoodFeeCalc,
-          totalCorkageFee: totalCorkageFeeCalc,
-          outsideFoodDisclaimerAgreed: corkageState.outsideFoodDisclaimerAgreed,
-        },
+        corkage: sanitizedCorkagePayload,
         submittedAt: new Date().toISOString(),
       });
 
@@ -1049,10 +1071,10 @@ export default function BookingPage() {
         package_id: formData.packageId,
         event_date: formData.date,
         event_time: formData.time,
-        event_location: `${formData.venueName} - ${formData.venueAddress}`,
+        event_location: `${formData.venueName.trim().slice(0, 120)} - ${formData.venueAddress.trim().slice(0, 250)}`,
         guest_count: parseInt(formData.guestCount) || 0,
-        additional_pax: parseInt(formData.additionalPax) || 0,
-        food_allergies: `${formData.foodAllergies.trim() ? formData.foodAllergies.trim() + "\n" : ""}__PAYMENT_METADATA__:${paymentMetadata}`,
+        additional_pax: sanitizedAdditionalPax,
+        food_allergies: `${sanitizedAllergies ? sanitizedAllergies + "\n" : ""}__PAYMENT_METADATA__:${paymentMetadata}`,
         selected_menu_items: validSelections,
         status: "Pending",
       };
@@ -1390,9 +1412,11 @@ export default function BookingPage() {
                   <input
                     type="number"
                     min="10"
+                    max={maxGuests + MAX_ADDITIONAL_PAX}
                     placeholder={`e.g. ${maxGuests || 50}`}
                     className="w-full bg-white/5 border border-white/10 px-4 sm:px-6 py-3.5 sm:py-4 text-base sm:text-lg focus:outline-none focus:border-gold-400/50 transition-all font-medium"
                     value={formData.guestCount}
+                    onFocus={(e) => e.target.select()}
                     onChange={(e) => {
                       setStepError("");
                       const val = e.target.value;
@@ -1404,8 +1428,8 @@ export default function BookingPage() {
                         });
                         return;
                       }
-                      const num = parseInt(val, 10);
-                      if (!isNaN(num) && num >= 0) {
+                      const num = sanitizePositiveInt(val, maxGuests + MAX_ADDITIONAL_PAX);
+                      if (num !== null) {
                         if (num > maxGuests) {
                           const currentAdd = parseInt(formData.additionalPax, 10) || 0;
                           let newAdd: number;
@@ -1414,22 +1438,25 @@ export default function BookingPage() {
                           } else {
                             newAdd = num - maxGuests;
                           }
+                          const clampedAdd = Math.min(MAX_ADDITIONAL_PAX, newAdd);
+                          e.target.value = String(maxGuests);
                           setFormData({
                             ...formData,
                             guestCount: String(maxGuests),
-                            additionalPax: String(newAdd),
+                            additionalPax: String(clampedAdd),
                           });
                         } else {
+                          e.target.value = String(num);
                           setFormData({
                             ...formData,
-                            guestCount: val,
+                            guestCount: String(num),
                             additionalPax: num < maxGuests ? "" : formData.additionalPax,
                           });
                         }
                       }
                     }}
                     onKeyDown={(e) => {
-                      if (e.key === "-" || e.key === "." || e.key === "e") {
+                      if (e.key === "-" || e.key === "+" || e.key === "." || e.key === "e" || e.key === "E") {
                         e.preventDefault();
                       }
                     }}
@@ -1526,35 +1553,46 @@ export default function BookingPage() {
                 })()}
                 </div>
                 <div className="space-y-2">
-                  <label className="text-base text-white/80 font-bold flex items-center gap-2">
-                    Additional Pax <span className="text-sm font-normal text-white/50">(Optional)</span>
-                    {selectedPkgForMenu?.additional_pax_price && (
-                      <div className="relative group/tooltip flex items-center justify-center">
-                        <Info size={16} className="text-gold-400/80 cursor-help transition-colors hover:text-gold-400" />
-                        <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-56 p-3 bg-[#0a0a0a] border border-white/10 text-xs text-white/80 text-center rounded opacity-0 invisible group-hover/tooltip:opacity-100 group-hover/tooltip:visible transition-all z-10 pointer-events-none shadow-2xl">
-                          <span className="font-bold text-gold-400 block mb-1">Additional Pax Pricing</span>
-                          Each additional guest costs ₱{selectedPkgForMenu.additional_pax_price}. This will be automatically added to your estimated budget.
-                          <div className="absolute -bottom-1.5 left-1/2 -translate-x-1/2 w-3 h-3 bg-[#0a0a0a] border-b border-r border-white/10 rotate-45"></div>
+                  <div className="flex items-center justify-between gap-2">
+                    <label className="text-base text-white/80 font-bold flex items-center gap-2">
+                      Additional Pax <span className="text-sm font-normal text-white/50">(Optional)</span>
+                      {selectedPkgForMenu?.additional_pax_price && (
+                        <div className="relative group/tooltip flex items-center justify-center">
+                          <Info size={16} className="text-gold-400/80 cursor-help transition-colors hover:text-gold-400" />
+                          <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-56 p-3 bg-[#0a0a0a] border border-white/10 text-xs text-white/80 text-center rounded opacity-0 invisible group-hover/tooltip:opacity-100 group-hover/tooltip:visible transition-all z-10 pointer-events-none shadow-2xl">
+                            <span className="font-bold text-gold-400 block mb-1">Additional Pax Pricing</span>
+                            Each additional guest costs ₱{selectedPkgForMenu.additional_pax_price}. This will be automatically added to your estimated budget.
+                            <div className="absolute -bottom-1.5 left-1/2 -translate-x-1/2 w-3 h-3 bg-[#0a0a0a] border-b border-r border-white/10 rotate-45"></div>
+                          </div>
                         </div>
-                      </div>
-                    )}
-                  </label>
+                      )}
+                    </label>
+                    <span className="text-[11px] font-semibold text-white/45">Max {MAX_ADDITIONAL_PAX}</span>
+                  </div>
                   <input
                     type="number"
                     min="0"
+                    max={MAX_ADDITIONAL_PAX}
                     placeholder="e.g. 10"
                     disabled={!formData.guestCount || parseInt(formData.guestCount) < maxGuests}
                     className={`w-full bg-white/5 border border-white/10 px-4 sm:px-6 py-3.5 sm:py-4 text-base sm:text-lg focus:outline-none focus:border-gold-400/50 transition-all font-medium ${(!formData.guestCount || parseInt(formData.guestCount) < maxGuests) ? "opacity-50 cursor-not-allowed" : ""}`}
                     value={formData.additionalPax}
+                    onFocus={(e) => e.target.select()}
                     onChange={(e) => {
                       setStepError("");
                       const val = e.target.value;
-                      if (val === "" || parseInt(val) >= 0) {
-                        setFormData({ ...formData, additionalPax: val });
+                      if (val === "") {
+                        setFormData({ ...formData, additionalPax: "" });
+                        return;
+                      }
+                      const clamped = sanitizePositiveInt(val, MAX_ADDITIONAL_PAX);
+                      if (clamped !== null) {
+                        e.target.value = String(clamped);
+                        setFormData({ ...formData, additionalPax: String(clamped) });
                       }
                     }}
                     onKeyDown={(e) => {
-                      if (e.key === "-" || e.key === "." || e.key === "e") {
+                      if (e.key === "-" || e.key === "+" || e.key === "." || e.key === "e" || e.key === "E") {
                         e.preventDefault();
                       }
                     }}
@@ -1626,138 +1664,11 @@ export default function BookingPage() {
                       </div>
                     </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                      <div className="space-y-3">
-                        <label className="block text-sm font-bold text-white/90">
-                          1. Is the venue on the 2nd floor or higher?
-                        </label>
-                        <div className="grid grid-cols-2 gap-2.5 sm:gap-3">
-                          <button
-                            type="button"
-                            onClick={() => setIsSecondFloorOrHigher(false)}
-                            className={`py-3 px-2.5 sm:px-4 text-xs sm:text-sm font-bold border transition-all flex items-center justify-center gap-1.5 sm:gap-2 ${
-                              !isSecondFloorOrHigher
-                                ? "bg-gold-400 text-obsidian border-gold-400"
-                                : "bg-white/5 text-white/70 border-white/10 hover:border-white/30"
-                            }`}
-                          >
-                            {!isSecondFloorOrHigher && <Check size={15} className="shrink-0" />}
-                            <span>No (Ground Floor)</span>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setIsSecondFloorOrHigher(true);
-                              if (floorLevel < 2) setFloorLevel(2);
-                            }}
-                            className={`py-3 px-2.5 sm:px-4 text-xs sm:text-sm font-bold border transition-all flex items-center justify-center gap-1.5 sm:gap-2 ${
-                              isSecondFloorOrHigher
-                                ? "bg-gold-400 text-obsidian border-gold-400"
-                                : "bg-white/5 text-white/70 border-white/10 hover:border-white/30"
-                            }`}
-                          >
-                            {isSecondFloorOrHigher && <Check size={15} className="shrink-0" />}
-                            <span>Yes (2nd Floor+)</span>
-                          </button>
-                        </div>
-
-                        {isSecondFloorOrHigher && (
-                          <div className="pt-2 space-y-1.5">
-                            <label className="block text-xs text-white/70 font-semibold uppercase tracking-wider">
-                              Select Venue Floor Level
-                            </label>
-                            <select
-                              value={floorLevel}
-                              onChange={(e) => setFloorLevel(parseInt(e.target.value, 10) || 2)}
-                              className="w-full bg-obsidian border border-gold-400/40 px-4 py-2.5 text-sm text-white font-semibold focus:outline-none focus:border-gold-400"
-                            >
-                              <option value={2} className="bg-obsidian text-black dark:text-black">2nd Floor</option>
-                              <option value={3} className="bg-obsidian text-black dark:text-black">3rd Floor</option>
-                              <option value={4} className="bg-obsidian text-black dark:text-black">4th Floor</option>
-                              <option value={5} className="bg-obsidian text-black dark:text-black">5th Floor</option>
-                              <option value={6} className="bg-obsidian text-black dark:text-black">6th Floor or Higher</option>
-                            </select>
-                          </div>
-                        )}
-                      </div>
-
-                      <div className={`space-y-3 transition-all duration-200 ${!isSecondFloorOrHigher ? "opacity-35 select-none pointer-events-none" : ""}`}>
-                        <div className="flex items-center justify-between">
-                          <label className="block text-sm font-bold text-white/90">
-                            2. Is there an elevator available?
-                          </label>
-                        </div>
-                        <div className="grid grid-cols-2 gap-2.5 sm:gap-3">
-                          <button
-                            type="button"
-                            disabled={!isSecondFloorOrHigher}
-                            onClick={() => setHasElevator(true)}
-                            className={`py-3 px-2.5 sm:px-4 text-xs sm:text-sm font-bold border transition-all flex items-center justify-center gap-1.5 sm:gap-2 ${
-                              !isSecondFloorOrHigher
-                                ? "bg-white/[0.02] text-white/30 border-white/10 cursor-not-allowed"
-                                : hasElevator
-                                ? "bg-gold-400 text-obsidian border-gold-400"
-                                : "bg-white/5 text-white/70 border-white/10 hover:border-white/30"
-                            }`}
-                          >
-                            {isSecondFloorOrHigher && hasElevator && <Check size={15} className="shrink-0" />}
-                            <span>Yes (With Elevator)</span>
-                          </button>
-                          <button
-                            type="button"
-                            disabled={!isSecondFloorOrHigher}
-                            onClick={() => setHasElevator(false)}
-                            className={`py-3 px-2.5 sm:px-4 text-xs sm:text-sm font-bold border transition-all flex items-center justify-center gap-1.5 sm:gap-2 ${
-                              !isSecondFloorOrHigher
-                                ? "bg-white/[0.02] text-white/30 border-white/10 cursor-not-allowed"
-                                : !hasElevator
-                                ? "bg-gold-400 text-obsidian border-gold-400"
-                                : "bg-white/5 text-white/70 border-white/10 hover:border-white/30"
-                            }`}
-                          >
-                            {isSecondFloorOrHigher && !hasElevator && <Check size={15} className="shrink-0" />}
-                            <span>No (Stairs Only)</span>
-                          </button>
-                        </div>
-                        <p className="text-xs text-white/50 leading-relaxed">
-                          {!isSecondFloorOrHigher
-                            ? "Ground floor venues do not require elevator ingress/egress."
-                            : "Service or freight elevator must be accessible for catering equipment and banquet tables during ingress/egress."}
-                        </p>
-                      </div>
-                    </div>
-
-                    {requiresStairsIngress && (
-                      <div className="p-4 bg-gold-400/10 border border-gold-400/40 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                        <div className="space-y-1">
-                          <div className="flex items-center gap-2">
-                            <span className="text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 bg-amber-500/20 text-amber-300 border border-amber-400/40">
-                              Stairs Ingress Required
-                            </span>
-                            <span className="text-sm font-bold text-gold-400">
-                              Hauling Fee
-                            </span>
-                          </div>
-                          <p className="text-xs text-white/80">
-                            ₱150 × {floorsAboveGround} floor{floorsAboveGround > 1 ? "s" : ""} above ground (Floor {floorLevel}) × {waiterCountCalc} assigned waiter{waiterCountCalc > 1 ? "s" : ""} ({totalGuestPaxCalc || maxGuests} pax)
-                          </p>
-                        </div>
-                        <div className="text-left sm:text-right shrink-0">
-                          <p className="text-[10px] uppercase tracking-widest text-white/50 font-bold">
-                            Hauling Surcharge
-                          </p>
-                          <p className="text-xl font-serif font-bold text-gold-400">
-                            +₱{calculatedHaulingFee.toLocaleString()}
-                          </p>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* 3. Venue Setting & Environment (Indoor vs Outdoor with Weather Advisory) */}
-                    <div className="pt-4 border-t border-white/10 space-y-3">
+                    {/* 1. Venue Environment & Setting (Indoor vs Outdoor — Outdoor automatically sets Ground Floor) */}
+                    <div className="space-y-3">
                       <div className="flex flex-wrap items-center justify-between gap-2">
                         <label className="block text-sm font-bold text-white/90">
-                          3. Venue Environment &amp; Setting
+                          1. Venue Environment &amp; Setting
                         </label>
                         <span className="text-xs text-white/50">
                           Weather &amp; Setup Advisory
@@ -1767,7 +1678,7 @@ export default function BookingPage() {
                         <button
                           type="button"
                           onClick={() => setIsOutdoorVenue(false)}
-                          className={`py-3 px-2.5 sm:px-4 text-xs sm:text-sm font-bold border transition-all flex items-center justify-center gap-1.5 sm:gap-2 ${
+                          className={`py-3 px-2.5 sm:px-4 text-xs sm:text-sm font-bold border transition-all flex items-center justify-center gap-1.5 sm:gap-2 cursor-pointer ${
                             !isOutdoorVenue
                               ? "bg-gold-400 text-obsidian border-gold-400 shadow-md"
                               : "bg-white/5 text-white/70 border-white/10 hover:border-white/30"
@@ -1778,8 +1689,13 @@ export default function BookingPage() {
                         </button>
                         <button
                           type="button"
-                          onClick={() => setIsOutdoorVenue(true)}
-                          className={`py-3 px-2.5 sm:px-4 text-xs sm:text-sm font-bold border transition-all flex items-center justify-center gap-1.5 sm:gap-2 ${
+                          onClick={() => {
+                            setIsOutdoorVenue(true);
+                            setIsSecondFloorOrHigher(false);
+                            setFloorLevel(1);
+                            setHasElevator(false);
+                          }}
+                          className={`py-3 px-2.5 sm:px-4 text-xs sm:text-sm font-bold border transition-all flex items-center justify-center gap-1.5 sm:gap-2 cursor-pointer ${
                             isOutdoorVenue
                               ? "bg-gold-400 text-obsidian border-gold-400 shadow-md"
                               : "bg-white/5 text-white/70 border-white/10 hover:border-white/30"
@@ -1790,39 +1706,192 @@ export default function BookingPage() {
                         </button>
                       </div>
 
-                      {/* Outdoor Weather Advisory Callout */}
                       {isOutdoorVenue && (
-                        <div className="p-4 bg-amber-500/15 border border-amber-500/40 text-amber-200 flex items-start gap-3 rounded transition-all">
-                          <CloudRain className="text-amber-400 shrink-0 mt-0.5" size={20} />
-                          <div className="space-y-1">
-                            <div className="flex items-center gap-2">
-                              <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 bg-amber-500/25 text-amber-300 border border-amber-400/40 rounded">
-                                Outdoor Weather Advisory
-                              </span>
+                        <div className="space-y-3">
+                          {/* Outdoor Weather Advisory Callout */}
+                          <div className="p-4 bg-amber-500/15 border border-amber-500/40 text-amber-200 flex items-start gap-3 rounded transition-all">
+                            <CloudRain className="text-amber-400 shrink-0 mt-0.5" size={20} />
+                            <div className="space-y-1">
+                              <div className="flex items-center gap-2">
+                                <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 bg-amber-500/25 text-amber-300 border border-amber-400/40 rounded">
+                                  Outdoor Weather Advisory
+                                </span>
+                              </div>
+                              <p className="text-xs text-white/95 leading-relaxed font-semibold italic">
+                                &ldquo;Php 2,000.00 laundry charge applies in case of rain without client-provided tents.&rdquo;
+                              </p>
+                              <p className="text-[11px] text-white/65 leading-relaxed">
+                                For outdoor banquet setups (garden, poolside, or open lawn), client must ensure adequate weather-proof tents or covered shelters are provided to protect buffet line and dining table linens from rain.
+                              </p>
                             </div>
-                            <p className="text-xs text-white/95 leading-relaxed font-semibold italic">
-                              &ldquo;Php 2,000.00 laundry charge applies in case of rain without client-provided tents.&rdquo;
-                            </p>
-                            <p className="text-[11px] text-white/65 leading-relaxed">
-                              For outdoor banquet setups (garden, poolside, or open lawn), client must ensure adequate weather-proof tents or covered shelters are provided to protect buffet line and dining table linens from rain.
-                            </p>
+                          </div>
+
+                          {/* Automatic Ground Floor Banner */}
+                          <div className="p-3.5 bg-emerald-500/10 border border-emerald-500/30 rounded flex items-start gap-3">
+                            <CheckCircle className="text-emerald-400 shrink-0 mt-0.5" size={18} />
+                            <div className="space-y-0.5">
+                              <p className="text-xs font-bold text-emerald-300 uppercase tracking-wider">
+                                Ground Floor Access (Automatic for Outdoor Venues)
+                              </p>
+                              <p className="text-xs text-white/75 leading-relaxed">
+                                Outdoor venues (gardens, lawns, open-air areas) are automatically set to Ground Floor. No elevator check or stairs hauling surcharge applies.
+                              </p>
+                            </div>
                           </div>
                         </div>
                       )}
                     </div>
+
+                    {/* 2 & 3. Floor Level & Elevator Questionnaire (Only applicable to Indoor venues) */}
+                    {!isOutdoorVenue && (
+                      <div className="pt-4 border-t border-white/10 space-y-5">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                          <div className="space-y-3">
+                            <label className="block text-sm font-bold text-white/90">
+                              2. Is the venue on the 2nd floor or higher?
+                            </label>
+                            <div className="grid grid-cols-2 gap-2.5 sm:gap-3">
+                              <button
+                                type="button"
+                                onClick={() => setIsSecondFloorOrHigher(false)}
+                                className={`py-3 px-2.5 sm:px-4 text-xs sm:text-sm font-bold border transition-all flex items-center justify-center gap-1.5 sm:gap-2 cursor-pointer ${
+                                  !isSecondFloorOrHigher
+                                    ? "bg-gold-400 text-obsidian border-gold-400"
+                                    : "bg-white/5 text-white/70 border-white/10 hover:border-white/30"
+                                }`}
+                              >
+                                {!isSecondFloorOrHigher && <Check size={15} className="shrink-0" />}
+                                <span>No (Ground Floor)</span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setIsSecondFloorOrHigher(true);
+                                  if (floorLevel < 2) setFloorLevel(2);
+                                }}
+                                className={`py-3 px-2.5 sm:px-4 text-xs sm:text-sm font-bold border transition-all flex items-center justify-center gap-1.5 sm:gap-2 cursor-pointer ${
+                                  isSecondFloorOrHigher
+                                    ? "bg-gold-400 text-obsidian border-gold-400"
+                                    : "bg-white/5 text-white/70 border-white/10 hover:border-white/30"
+                                }`}
+                              >
+                                {isSecondFloorOrHigher && <Check size={15} className="shrink-0" />}
+                                <span>Yes (2nd Floor+)</span>
+                              </button>
+                            </div>
+
+                            {isSecondFloorOrHigher && (
+                              <div className="pt-2 space-y-1.5">
+                                <label className="block text-xs text-white/70 font-semibold uppercase tracking-wider">
+                                  Select Venue Floor Level
+                                </label>
+                                <select
+                                  value={floorLevel}
+                                  onChange={(e) => setFloorLevel(parseInt(e.target.value, 10) || 2)}
+                                  className="w-full bg-obsidian border border-gold-400/40 px-4 py-2.5 text-sm text-white font-semibold focus:outline-none focus:border-gold-400"
+                                >
+                                  <option value={2} className="bg-obsidian text-black dark:text-black">2nd Floor</option>
+                                  <option value={3} className="bg-obsidian text-black dark:text-black">3rd Floor</option>
+                                  <option value={4} className="bg-obsidian text-black dark:text-black">4th Floor</option>
+                                  <option value={5} className="bg-obsidian text-black dark:text-black">5th Floor</option>
+                                  <option value={6} className="bg-obsidian text-black dark:text-black">6th Floor or Higher</option>
+                                </select>
+                              </div>
+                            )}
+                          </div>
+
+                          <div className={`space-y-3 transition-all duration-200 ${!isSecondFloorOrHigher ? "opacity-35 select-none pointer-events-none" : ""}`}>
+                            <div className="flex items-center justify-between">
+                              <label className="block text-sm font-bold text-white/90">
+                                3. Is there an elevator available?
+                              </label>
+                            </div>
+                            <div className="grid grid-cols-2 gap-2.5 sm:gap-3">
+                              <button
+                                type="button"
+                                disabled={!isSecondFloorOrHigher}
+                                onClick={() => setHasElevator(true)}
+                                className={`py-3 px-2.5 sm:px-4 text-xs sm:text-sm font-bold border transition-all flex items-center justify-center gap-1.5 sm:gap-2 ${
+                                  !isSecondFloorOrHigher
+                                    ? "bg-white/[0.02] text-white/30 border-white/10 cursor-not-allowed"
+                                    : hasElevator
+                                    ? "bg-gold-400 text-obsidian border-gold-400 cursor-pointer"
+                                    : "bg-white/5 text-white/70 border-white/10 hover:border-white/30 cursor-pointer"
+                                }`}
+                              >
+                                {isSecondFloorOrHigher && hasElevator && <Check size={15} className="shrink-0" />}
+                                <span>Yes (With Elevator)</span>
+                              </button>
+                              <button
+                                type="button"
+                                disabled={!isSecondFloorOrHigher}
+                                onClick={() => setHasElevator(false)}
+                                className={`py-3 px-2.5 sm:px-4 text-xs sm:text-sm font-bold border transition-all flex items-center justify-center gap-1.5 sm:gap-2 ${
+                                  !isSecondFloorOrHigher
+                                    ? "bg-white/[0.02] text-white/30 border-white/10 cursor-not-allowed"
+                                    : !hasElevator
+                                    ? "bg-gold-400 text-obsidian border-gold-400 cursor-pointer"
+                                    : "bg-white/5 text-white/70 border-white/10 hover:border-white/30 cursor-pointer"
+                                }`}
+                              >
+                                {isSecondFloorOrHigher && !hasElevator && <Check size={15} className="shrink-0" />}
+                                <span>No (Stairs Only)</span>
+                              </button>
+                            </div>
+                            <p className="text-xs text-white/50 leading-relaxed">
+                              {!isSecondFloorOrHigher
+                                ? "Ground floor venues do not require elevator ingress/egress."
+                                : "Service or freight elevator must be accessible for catering equipment and banquet tables during ingress/egress."}
+                            </p>
+                          </div>
+                        </div>
+
+                        {requiresStairsIngress && (
+                          <div className="p-4 bg-gold-400/10 border border-gold-400/40 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                            <div className="space-y-1">
+                              <div className="flex items-center gap-2">
+                                <span className="text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 bg-amber-500/20 text-amber-300 border border-amber-400/40">
+                                  Stairs Ingress Required
+                                </span>
+                                <span className="text-sm font-bold text-gold-400">
+                                  Hauling Fee
+                                </span>
+                              </div>
+                              <p className="text-xs text-white/80">
+                                ₱150 × {floorsAboveGround} floor{floorsAboveGround > 1 ? "s" : ""} above ground (Floor {floorLevel}) × {waiterCountCalc} assigned waiter{waiterCountCalc > 1 ? "s" : ""} ({totalGuestPaxCalc || maxGuests} pax)
+                              </p>
+                            </div>
+                            <div className="text-left sm:text-right shrink-0">
+                              <p className="text-[10px] uppercase tracking-widest text-white/50 font-bold">
+                                Hauling Surcharge
+                              </p>
+                              <p className="text-xl font-serif font-bold text-gold-400">
+                                +₱{calculatedHaulingFee.toLocaleString()}
+                              </p>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
                 </div>
                 <div className="col-span-full space-y-2">
-                  <label className="text-base text-white/80 font-bold">
-                    Food Allergies / Dietary Restrictions <span className="text-sm font-normal text-white/50">(Optional)</span>
-                  </label>
+                  <div className="flex items-center justify-between gap-2">
+                    <label className="text-base text-white/80 font-bold">
+                      Food Allergies / Dietary Restrictions <span className="text-sm font-normal text-white/50">(Optional)</span>
+                    </label>
+                    <span className="text-[11px] font-medium text-white/45">
+                      {formData.foodAllergies.length}/{MAX_ALLERGIES_LENGTH}
+                    </span>
+                  </div>
                   <textarea
                     placeholder="e.g. Peanut allergy, vegetarian options needed..."
                     rows={2}
+                    maxLength={MAX_ALLERGIES_LENGTH}
                     className="w-full bg-white/5 border border-white/10 px-4 sm:px-6 py-3.5 sm:py-4 text-base sm:text-lg focus:outline-none focus:border-gold-400/50 transition-all font-medium resize-none"
                     value={formData.foodAllergies}
                     onChange={(e) => {
-                      setFormData({ ...formData, foodAllergies: e.target.value });
+                      setFormData({ ...formData, foodAllergies: e.target.value.slice(0, MAX_ALLERGIES_LENGTH) });
                     }}
                   />
                 </div>
@@ -2088,9 +2157,14 @@ export default function BookingPage() {
 
                     {/* Quantity Stepper */}
                     <div className="pt-2">
-                      <label className="block text-[11px] font-bold uppercase tracking-wider text-white/60 mb-2">
-                        Number of Bottles
-                      </label>
+                      <div className="flex items-center justify-between mb-2">
+                        <label className="block text-[11px] font-bold uppercase tracking-wider text-white/60">
+                          Number of Bottles
+                        </label>
+                        <span className="text-[10px] font-semibold text-white/45">
+                          Max {MAX_ALCOHOLIC_BOTTLES}
+                        </span>
+                      </div>
                       <div className="flex items-center gap-3">
                         <button
                           type="button"
@@ -2101,29 +2175,38 @@ export default function BookingPage() {
                             }))
                           }
                           disabled={corkageState.alcoholicBeveragesCount === 0}
-                          className="w-10 h-10 sm:w-9 sm:h-9 rounded bg-white/10 hover:bg-gold-400 hover:text-black text-white flex items-center justify-center transition-all disabled:opacity-30 disabled:hover:bg-white/10 disabled:hover:text-white"
+                          className="w-10 h-10 sm:w-9 sm:h-9 rounded bg-white/10 hover:bg-gold-400 hover:text-black text-white flex items-center justify-center transition-all disabled:opacity-30 disabled:hover:bg-white/10 disabled:hover:text-white cursor-pointer"
                         >
                           <Minus size={14} />
                         </button>
                         <input
                           type="number"
                           min="0"
+                          max={MAX_ALCOHOLIC_BOTTLES}
                           value={corkageState.alcoholicBeveragesCount}
+                          onFocus={(e) => e.target.select()}
+                          onKeyDown={(e) => {
+                            if (e.key === "-" || e.key === "+" || e.key === "." || e.key === "e" || e.key === "E") {
+                              e.preventDefault();
+                            }
+                          }}
                           onChange={(e) => {
-                            const val = Math.max(0, parseInt(e.target.value, 10) || 0);
-                            setCorkageState((prev) => ({ ...prev, alcoholicBeveragesCount: val }));
+                            const clamped = sanitizePositiveInt(e.target.value, MAX_ALCOHOLIC_BOTTLES) ?? 0;
+                            e.target.value = String(clamped);
+                            setCorkageState((prev) => ({ ...prev, alcoholicBeveragesCount: clamped }));
                           }}
                           className="w-16 text-center py-1.5 bg-white/5 border border-white/20 rounded font-bold text-base text-gold-400 focus:outline-none focus:border-gold-400"
                         />
                         <button
                           type="button"
+                          disabled={corkageState.alcoholicBeveragesCount >= MAX_ALCOHOLIC_BOTTLES}
                           onClick={() =>
                             setCorkageState((prev) => ({
                               ...prev,
-                              alcoholicBeveragesCount: prev.alcoholicBeveragesCount + 1,
+                              alcoholicBeveragesCount: Math.min(MAX_ALCOHOLIC_BOTTLES, prev.alcoholicBeveragesCount + 1),
                             }))
                           }
-                          className="w-10 h-10 sm:w-9 sm:h-9 rounded bg-white/10 hover:bg-gold-400 hover:text-black text-white flex items-center justify-center transition-all"
+                          className="w-10 h-10 sm:w-9 sm:h-9 rounded bg-white/10 hover:bg-gold-400 hover:text-black text-white flex items-center justify-center transition-all disabled:opacity-30 disabled:hover:bg-white/10 disabled:hover:text-white cursor-pointer"
                         >
                           <Plus size={14} />
                         </button>
@@ -2137,7 +2220,7 @@ export default function BookingPage() {
                       Subtotal
                     </span>
                     <span className="text-base font-serif font-bold text-gold-400">
-                      ₱{(corkageState.alcoholicBeveragesCount * 400).toLocaleString()}
+                      ₱{(safeAlcoholicCount * 400).toLocaleString()}
                     </span>
                   </div>
                 </div>
@@ -2203,9 +2286,14 @@ export default function BookingPage() {
 
                     {/* Quantity Stepper */}
                     <div className="pt-2">
-                      <label className="block text-[11px] font-bold uppercase tracking-wider text-white/60 mb-2">
-                        Number of Outside Dishes
-                      </label>
+                      <div className="flex items-center justify-between mb-2">
+                        <label className="block text-[11px] font-bold uppercase tracking-wider text-white/60">
+                          Number of Outside Dishes
+                        </label>
+                        <span className="text-[10px] font-semibold text-white/45">
+                          Max {MAX_OUTSIDE_FOOD_DISHES}
+                        </span>
+                      </div>
                       <div className="flex items-center gap-3">
                         <button
                           type="button"
@@ -2220,33 +2308,42 @@ export default function BookingPage() {
                             })
                           }
                           disabled={corkageState.outsideFoodCount === 0}
-                          className="w-10 h-10 sm:w-9 sm:h-9 rounded bg-white/10 hover:bg-gold-400 hover:text-black text-white flex items-center justify-center transition-all disabled:opacity-30 disabled:hover:bg-white/10 disabled:hover:text-white"
+                          className="w-10 h-10 sm:w-9 sm:h-9 rounded bg-white/10 hover:bg-gold-400 hover:text-black text-white flex items-center justify-center transition-all disabled:opacity-30 disabled:hover:bg-white/10 disabled:hover:text-white cursor-pointer"
                         >
                           <Minus size={14} />
                         </button>
                         <input
                           type="number"
                           min="0"
+                          max={MAX_OUTSIDE_FOOD_DISHES}
                           value={corkageState.outsideFoodCount}
+                          onFocus={(e) => e.target.select()}
+                          onKeyDown={(e) => {
+                            if (e.key === "-" || e.key === "+" || e.key === "." || e.key === "e" || e.key === "E") {
+                              e.preventDefault();
+                            }
+                          }}
                           onChange={(e) => {
-                            const val = Math.max(0, parseInt(e.target.value, 10) || 0);
+                            const clamped = sanitizePositiveInt(e.target.value, MAX_OUTSIDE_FOOD_DISHES) ?? 0;
+                            e.target.value = String(clamped);
                             setCorkageState((prev) => ({
                               ...prev,
-                              outsideFoodCount: val,
-                              outsideFoodDisclaimerAgreed: val === 0 ? false : prev.outsideFoodDisclaimerAgreed,
+                              outsideFoodCount: clamped,
+                              outsideFoodDisclaimerAgreed: clamped === 0 ? false : prev.outsideFoodDisclaimerAgreed,
                             }));
                           }}
                           className="w-16 text-center py-1.5 bg-white/5 border border-white/20 rounded font-bold text-base text-gold-400 focus:outline-none focus:border-gold-400"
                         />
                         <button
                           type="button"
+                          disabled={corkageState.outsideFoodCount >= MAX_OUTSIDE_FOOD_DISHES}
                           onClick={() =>
                             setCorkageState((prev) => ({
                               ...prev,
-                              outsideFoodCount: prev.outsideFoodCount + 1,
+                              outsideFoodCount: Math.min(MAX_OUTSIDE_FOOD_DISHES, prev.outsideFoodCount + 1),
                             }))
                           }
-                          className="w-10 h-10 sm:w-9 sm:h-9 rounded bg-white/10 hover:bg-gold-400 hover:text-black text-white flex items-center justify-center transition-all"
+                          className="w-10 h-10 sm:w-9 sm:h-9 rounded bg-white/10 hover:bg-gold-400 hover:text-black text-white flex items-center justify-center transition-all disabled:opacity-30 disabled:hover:bg-white/10 disabled:hover:text-white cursor-pointer"
                         >
                           <Plus size={14} />
                         </button>
@@ -2260,7 +2357,7 @@ export default function BookingPage() {
                       Subtotal
                     </span>
                     <span className="text-base font-serif font-bold text-gold-400">
-                      ₱{(corkageState.outsideFoodCount * 400).toLocaleString()}
+                      ₱{(safeOutsideFoodCount * 400).toLocaleString()}
                     </span>
                   </div>
                 </div>
@@ -2727,14 +2824,14 @@ export default function BookingPage() {
                                 Stairs Ingress Required (Floor {floorLevel} • +₱{calculatedHaulingFee.toLocaleString()})
                               </span>
                             )}
-                            {isSecondFloorOrHigher && hasElevator && (
+                            {effectiveIsSecondFloorOrHigher && hasElevator && (
                               <span className="text-[10px] font-bold uppercase tracking-widest px-2.5 py-1 bg-white/10 border border-white/20 text-white/80">
                                 Floor {floorLevel} (Elevator Available)
                               </span>
                             )}
                             {isOutdoorVenue && (
                               <span className="text-[10px] font-bold uppercase tracking-widest px-2.5 py-1 bg-amber-500/20 border border-amber-400/40 text-amber-300 flex items-center gap-1">
-                                <CloudRain size={12} /> Outdoor Venue (Weather Advisory Applies)
+                                <CloudRain size={12} /> Outdoor Venue (Ground Floor • Weather Advisory Applies)
                               </span>
                             )}
                           </div>
@@ -2992,290 +3089,337 @@ export default function BookingPage() {
                 </div>
               </div>
 
-              {/* Scrollable Agreement Body */}
-              <div className="p-4 sm:p-6 overflow-y-auto space-y-6 text-sm text-white/80 leading-relaxed scrollbar-thin flex-1 min-h-0">
-                {/* Dynamic Summary Banner */}
-                <div className="p-4 bg-gold-400/5 border border-gold-400/20 rounded-xl text-xs space-y-1.5 text-white/80">
-                  <div className="flex items-center justify-between text-gold-300 font-bold uppercase tracking-wider">
-                    <span className="flex items-center gap-1.5">
-                      <Info size={14} className="text-gold-400" /> Contract Highlights for Your Reservation
-                    </span>
-                    {formData.date && (
-                      <span className="font-mono text-[10px] text-white/60">
-                        Event: {formData.date}
-                      </span>
-                    )}
-                  </div>
-                  <p className="text-white/70">
-                    By confirming this reservation, the client agrees that all down payment amounts are strictly <strong>NON-REFUNDABLE</strong> and <strong>NON-TRANSFERABLE</strong>.
-                    Standard catering service is limited to <strong>4 hours</strong>. Please review all 20 contractual clauses below.
-                  </p>
-                </div>
-
-                {/* Clauses List */}
-                {(() => {
-                  const filtered = CATERING_CONTRACT_TERMS.filter((term) => {
-                    const matchCat =
-                      termsModalCategory === "all" ||
-                      term.category === termsModalCategory ||
-                      (termsModalCategory === "adjustments" && term.category === "logistics");
-
-                    const query = termsModalSearch.toLowerCase().trim();
-                    const matchQuery =
-                      !query ||
-                      term.title.toLowerCase().includes(query) ||
-                      term.content.toLowerCase().includes(query) ||
-                      (term.badge && term.badge.toLowerCase().includes(query)) ||
-                      (term.rates &&
-                        term.rates.some(
-                          (r) =>
-                            r.label.toLowerCase().includes(query) ||
-                            r.price.toLowerCase().includes(query)
-                        ));
-
-                    return matchCat && matchQuery;
-                  });
-
-                  if (filtered.length === 0) {
-                    return (
-                      <div className="text-center py-12 text-white/50 text-xs">
-                        No terms match your search filter.
-                      </div>
-                    );
-                  }
-
-                  return (
-                    <div className="space-y-4">
-                      {filtered.map((term) => (
-                        <div
-                          key={term.id}
-                          className="p-4 sm:p-5 bg-white/[0.02] border border-white/10 rounded-xl space-y-3 hover:border-gold-400/20 transition-colors"
-                        >
-                          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/5 pb-2.5">
-                            <div className="flex items-center gap-2.5">
-                              <span className="w-6 h-6 rounded-full bg-gold-400/20 text-gold-400 flex items-center justify-center text-xs font-bold font-serif shrink-0">
-                                {term.number}
-                              </span>
-                              <h4 className="text-xs sm:text-sm font-bold text-white uppercase tracking-wider">
-                                {term.title}
-                              </h4>
-                            </div>
-                            {term.badge && (
-                              <span className="text-[10px] font-bold uppercase px-2.5 py-0.5 bg-gold-400/10 text-gold-400 border border-gold-400/20 rounded-full tracking-wider">
-                                {term.badge}
-                              </span>
-                            )}
-                          </div>
-
-                          <p className="text-xs text-white/70 leading-relaxed">
-                            {term.content}
-                          </p>
-
-                          {/* Rate Breakdown Table */}
-                          {term.rates && term.rates.length > 0 && (
-                            <div className="overflow-hidden rounded-lg border border-white/10 bg-black/40 text-xs mt-2">
-                              <table className="w-full text-left">
-                                <thead>
-                                  <tr className="bg-white/5 text-gold-400 text-[10px] uppercase font-bold tracking-wider">
-                                    <th className="py-2 px-3">Service / Inclusions</th>
-                                    <th className="py-2 px-3 text-right">Fee</th>
-                                  </tr>
-                                </thead>
-                                <tbody className="divide-y divide-white/5">
-                                  {term.rates.map((rate, idx) => (
-                                    <tr key={idx}>
-                                      <td className="py-2 px-3">
-                                        <p className="font-semibold text-white">{rate.label}</p>
-                                        {rate.note && (
-                                          <p className="text-[10px] text-white/50 mt-0.5">{rate.note}</p>
-                                        )}
-                                      </td>
-                                      <td className="py-2 px-3 text-right font-mono font-bold text-gold-300 whitespace-nowrap">
-                                        {rate.price}
-                                      </td>
-                                    </tr>
-                                  ))}
-                                </tbody>
-                              </table>
-                            </div>
-                          )}
-
-                          {/* Warning callout */}
-                          {term.alertNotice && (
-                            <div className="p-2.5 bg-amber-500/10 border border-amber-500/30 rounded-lg flex items-start gap-2 text-xs text-amber-200 mt-2">
-                              <AlertTriangle size={14} className="text-amber-400 shrink-0 mt-0.5" />
-                              <span>{term.alertNotice}</span>
-                            </div>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  );
-                })()}
-              </div>
-
-              {/* Agreement E-Signature & Acceptance Form */}
+              {/* Scrollable Agreement Body + Contract Signing at End */}
               <form
                 onSubmit={handleAcceptTerms}
                 noValidate
-                className="p-4 sm:p-6 border-t border-white/10 bg-black/80 flex flex-col gap-3.5 shrink-0 max-h-[45dvh] sm:max-h-none overflow-y-auto"
+                className="flex flex-col flex-1 min-h-0 overflow-hidden"
               >
-                <div className="grid grid-cols-1 md:grid-cols-12 gap-3.5 items-start">
-                  {/* Left: Signer Legal Name + Clause 19 Signer Notice */}
-                  <div className="md:col-span-5 space-y-2">
-                    <div>
-                      <label
-                        htmlFor="contract-signer-name"
-                        className="block text-[11px] font-bold uppercase tracking-wider text-gold-400 mb-1"
-                      >
-                        Contract Signer Full Legal Name *
-                      </label>
+                <div className="p-4 sm:p-6 overflow-y-auto space-y-6 text-sm text-white/80 leading-relaxed scrollbar-thin flex-1 min-h-0">
+                  {/* Dynamic Summary Banner */}
+                  <div className="p-4 bg-gold-400/5 border border-gold-400/20 rounded-xl text-xs space-y-1.5 text-white/80">
+                    <div className="flex items-center justify-between text-gold-300 font-bold uppercase tracking-wider">
+                      <span className="flex items-center gap-1.5">
+                        <Info size={14} className="text-gold-400" /> Contract Highlights for Your Reservation
+                      </span>
+                      {formData.date && (
+                        <span className="font-mono text-[10px] text-white/60">
+                          Event: {formData.date}
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-white/70">
+                      By confirming this reservation, the client agrees that all down payment amounts are strictly <strong>NON-REFUNDABLE</strong> and <strong>NON-TRANSFERABLE</strong>.
+                      Standard catering service is limited to <strong>4 hours</strong>. Please review all 20 contractual clauses below, then sign at the bottom.
+                    </p>
+                  </div>
+
+                  {/* Clauses List */}
+                  {(() => {
+                    const filtered = CATERING_CONTRACT_TERMS.filter((term) => {
+                      const matchCat =
+                        termsModalCategory === "all" ||
+                        term.category === termsModalCategory ||
+                        (termsModalCategory === "adjustments" && term.category === "logistics");
+
+                      const query = termsModalSearch.toLowerCase().trim();
+                      const matchQuery =
+                        !query ||
+                        term.title.toLowerCase().includes(query) ||
+                        term.content.toLowerCase().includes(query) ||
+                        (term.badge && term.badge.toLowerCase().includes(query)) ||
+                        (term.rates &&
+                          term.rates.some(
+                            (r) =>
+                              r.label.toLowerCase().includes(query) ||
+                              r.price.toLowerCase().includes(query)
+                          ));
+
+                      return matchCat && matchQuery;
+                    });
+
+                    if (filtered.length === 0) {
+                      return (
+                        <div className="text-center py-12 text-white/50 text-xs">
+                          No terms match your search filter.
+                        </div>
+                      );
+                    }
+
+                    return (
+                      <div className="space-y-4">
+                        {filtered.map((term) => (
+                          <div
+                            key={term.id}
+                            className="p-4 sm:p-5 bg-white/[0.02] border border-white/10 rounded-xl space-y-3 hover:border-gold-400/20 transition-colors"
+                          >
+                            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/5 pb-2.5">
+                              <div className="flex items-center gap-2.5">
+                                <span className="w-6 h-6 rounded-full bg-gold-400/20 text-gold-400 flex items-center justify-center text-xs font-bold font-serif shrink-0">
+                                  {term.number}
+                                </span>
+                                <h4 className="text-xs sm:text-sm font-bold text-white uppercase tracking-wider">
+                                  {term.title}
+                                </h4>
+                              </div>
+                              {term.badge && (
+                                <span className="text-[10px] font-bold uppercase px-2.5 py-0.5 bg-gold-400/10 text-gold-400 border border-gold-400/20 rounded-full tracking-wider">
+                                  {term.badge}
+                                </span>
+                              )}
+                            </div>
+
+                            <p className="text-xs text-white/70 leading-relaxed">
+                              {term.content}
+                            </p>
+
+                            {/* Rate Breakdown Table */}
+                            {term.rates && term.rates.length > 0 && (
+                              <div className="overflow-hidden rounded-lg border border-white/10 bg-black/40 text-xs mt-2">
+                                <table className="w-full text-left">
+                                  <thead>
+                                    <tr className="bg-white/5 text-gold-400 text-[10px] uppercase font-bold tracking-wider">
+                                      <th className="py-2 px-3">Service / Inclusions</th>
+                                      <th className="py-2 px-3 text-right">Fee</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody className="divide-y divide-white/5">
+                                    {term.rates.map((rate, idx) => (
+                                      <tr key={idx}>
+                                        <td className="py-2 px-3">
+                                          <p className="font-semibold text-white">{rate.label}</p>
+                                          {rate.note && (
+                                            <p className="text-[10px] text-white/50 mt-0.5">{rate.note}</p>
+                                          )}
+                                        </td>
+                                        <td className="py-2 px-3 text-right font-mono font-bold text-gold-300 whitespace-nowrap">
+                                          {rate.price}
+                                        </td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              </div>
+                            )}
+
+                            {/* Warning callout */}
+                            {term.alertNotice && (
+                              <div className="p-2.5 bg-amber-500/10 border border-amber-500/30 rounded-lg flex items-start gap-2 text-xs text-amber-200 mt-2">
+                                <AlertTriangle size={14} className="text-amber-400 shrink-0 mt-0.5" />
+                                <span>{term.alertNotice}</span>
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    );
+                  })()}
+
+                  {/* Contract Execution & Electronic Signature (Scrolls at the end of the contract) */}
+                  <div
+                    ref={signingSectionRef}
+                    className="p-4 sm:p-5 rounded-xl bg-black/50 border border-gold-400/25 space-y-4"
+                  >
+                    <div className="border-b border-white/10 pb-2.5 flex flex-wrap items-center justify-between gap-2">
+                      <h4 className="text-xs sm:text-sm font-bold text-gold-400 uppercase tracking-wider flex items-center gap-2">
+                        <ShieldCheck size={16} /> Contract Execution &amp; Electronic Signature
+                      </h4>
+                      <span className="text-[10px] text-white/50 uppercase tracking-wider font-semibold">
+                        Final Step
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-start">
+                      {/* Left: Signer Legal Name + Clause 19 Signer Notice */}
+                      <div className="md:col-span-5 space-y-2">
+                        <div>
+                          <div className="flex items-center justify-between gap-2 mb-1">
+                            <label
+                              htmlFor="contract-signer-name"
+                              className="block text-[11px] font-bold uppercase tracking-wider text-gold-400"
+                            >
+                              Contract Signer Full Legal Name *
+                            </label>
+                            <span className="text-[10px] text-white/45 font-medium">
+                              {signerFullName.length}/{MAX_SIGNER_NAME_LENGTH}
+                            </span>
+                          </div>
+                          <input
+                            id="contract-signer-name"
+                            type="text"
+                            required
+                            maxLength={MAX_SIGNER_NAME_LENGTH}
+                            autoComplete="name"
+                            autoCorrect="off"
+                            spellCheck={false}
+                            value={signerFullName}
+                            aria-invalid={Boolean(signerNameError)}
+                            aria-describedby="contract-signer-hint contract-signer-error"
+                            onChange={(e) => {
+                              const raw = e.target.value;
+                              if (SIGNER_NAME_INVALID_REGEX.test(raw)) {
+                                setSignerNameError(
+                                  "Full legal name can only contain letters, spaces, periods, hyphens, or apostrophes."
+                                );
+                              } else {
+                                setSignerNameError("");
+                              }
+                              const sanitized = raw
+                                .replace(/[^a-zA-ZÀ-ÿ\sñÑ.'-]/g, "")
+                                .slice(0, MAX_SIGNER_NAME_LENGTH);
+                              setSignerFullName(sanitized);
+                              if (termsFormError) setTermsFormError("");
+                            }}
+                            onBlur={() => {
+                              const trimmed = signerFullName.trim();
+                              if (trimmed.length < 2) {
+                                setSignerNameError("Please enter the full legal name of the contract signer.");
+                              } else if (!SIGNER_NAME_VALID_REGEX.test(trimmed)) {
+                                setSignerNameError(
+                                  "Full legal name can only contain letters, spaces, periods, hyphens, or apostrophes."
+                                );
+                              }
+                            }}
+                            placeholder="Enter your full legal name"
+                            className={`w-full bg-white/5 border px-3 py-2.5 text-xs text-white rounded-lg focus:outline-none ${
+                              signerNameError
+                                ? "border-red-500/70 focus:border-red-400"
+                                : "border-white/15 focus:border-gold-400/60"
+                            }`}
+                          />
+                          <p id="contract-signer-hint" className="text-[10px] text-white/50 mt-1.5 leading-snug">
+                            Per Clause 19, <strong>only this Contract Signer</strong> may file post-event feedback or disputes within the strict 24-hour window.
+                          </p>
+                          {signerNameError && (
+                            <p id="contract-signer-error" role="alert" className="text-[10px] text-red-400 font-semibold mt-1">
+                              {signerNameError}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Right: Signature Pad (Draw or Type) */}
+                      <div className="md:col-span-7 space-y-1.5">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-[11px] font-bold uppercase tracking-wider text-gold-400">
+                            Client Electronic Signature *
+                          </span>
+                          <div className="flex items-center gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setSignatureMode("drawn");
+                                if (termsFormError) setTermsFormError("");
+                              }}
+                              className={`px-2.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider cursor-pointer transition-colors ${
+                                signatureMode === "drawn"
+                                  ? "bg-gold-400 text-black"
+                                  : "bg-white/5 text-white/60 border border-white/10 hover:text-white"
+                              }`}
+                            >
+                              Draw
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setSignatureMode("typed");
+                                if (termsFormError) setTermsFormError("");
+                              }}
+                              className={`px-2.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider cursor-pointer transition-colors ${
+                                signatureMode === "typed"
+                                  ? "bg-gold-400 text-black"
+                                  : "bg-white/5 text-white/60 border border-white/10 hover:text-white"
+                              }`}
+                            >
+                              Type
+                            </button>
+                            {signatureMode === "drawn" && hasDrawnSignature && (
+                              <button
+                                type="button"
+                                onClick={clearSignatureCanvas}
+                                className="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-red-500/15 text-red-300 border border-red-500/30 hover:bg-red-500/25 cursor-pointer"
+                              >
+                                Clear
+                              </button>
+                            )}
+                          </div>
+                        </div>
+
+                        {signatureMode === "drawn" ? (
+                          <div className="relative rounded-lg border border-gold-400/35 bg-[#faf8f3] overflow-hidden h-28">
+                            <canvas
+                              ref={signatureCanvasRef}
+                              width={520}
+                              height={140}
+                              onPointerDown={handleSigPointerDown}
+                              onPointerMove={handleSigPointerMove}
+                              onPointerUp={handleSigPointerUp}
+                              onPointerCancel={handleSigPointerUp}
+                              className="w-full h-full touch-none cursor-crosshair block"
+                              aria-label="Draw your contract signature"
+                            />
+                            {!hasDrawnSignature && (
+                              <span className="pointer-events-none absolute inset-0 flex items-center justify-center text-xs italic text-neutral-400 select-none">
+                                Sign here using mouse or touch
+                              </span>
+                            )}
+                          </div>
+                        ) : (
+                          <div className="rounded-lg border border-gold-400/35 bg-[#faf8f3] h-28 px-4 flex items-center justify-between">
+                            <span className="font-serif italic text-2xl text-[#162447] truncate">
+                              {signerFullName.trim() || "Your Signature Preview"}
+                            </span>
+                            <span className="text-[10px] uppercase tracking-wider font-bold text-neutral-500 shrink-0 ml-2">
+                              E-Signature
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    <label htmlFor="contract-terms-checkbox" className="flex items-start gap-3 cursor-pointer select-none group pt-1">
                       <input
-                        id="contract-signer-name"
-                        type="text"
-                        required
-                        autoComplete="name"
-                        autoCorrect="off"
-                        spellCheck={false}
-                        value={signerFullName}
-                        aria-invalid={Boolean(signerNameError)}
-                        aria-describedby="contract-signer-hint contract-signer-error"
+                        id="contract-terms-checkbox"
+                        type="checkbox"
+                        checked={termsAgreed}
                         onChange={(e) => {
-                          setSignerFullName(e.target.value);
-                          if (signerNameError) setSignerNameError("");
+                          setTermsAgreed(e.target.checked);
                           if (termsFormError) setTermsFormError("");
                         }}
-                        onBlur={() => {
-                          if (signerFullName.trim().length < 2) {
-                            setSignerNameError("Please enter the full legal name of the contract signer.");
-                          }
-                        }}
-                        placeholder="Enter your full legal name"
-                        className={`w-full bg-white/5 border px-3 py-2 text-xs text-white rounded-lg focus:outline-none ${
-                          signerNameError
-                            ? "border-red-500/70 focus:border-red-400"
-                            : "border-white/15 focus:border-gold-400/60"
-                        }`}
+                        className="mt-0.5 w-4 h-4 rounded border-white/20 text-gold-400 focus:ring-gold-400/20 accent-[#c5a059] cursor-pointer"
                       />
-                      <p id="contract-signer-hint" className="text-[10px] text-white/50 mt-1 leading-snug">
-                        Per Clause 19, <strong>only this Contract Signer</strong> may file post-event feedback or disputes within the strict 24-hour window.
-                      </p>
-                      {signerNameError && (
-                        <p id="contract-signer-error" role="alert" className="text-[10px] text-red-400 font-semibold mt-1">
-                          {signerNameError}
-                        </p>
+                      <span className="text-xs text-white/80 font-medium group-hover:text-white transition-colors">
+                        I have read, understood, and agree to the full <strong>20-Clause Catering Service Agreement</strong>, including the non-refundable deposit, 4-hour service limit, post-event damage appraisal (Clause 13), and strict 24-hour signer-only dispute &amp; social media policy (Clause 19).
+                      </span>
+                    </label>
+
+                    <div aria-live="polite" className="min-h-0">
+                      {termsFormError && (
+                        <div role="alert" className="p-2.5 rounded-lg bg-red-500/15 border border-red-500/40 text-red-200 text-xs font-semibold flex items-center gap-2">
+                          <AlertTriangle size={14} className="text-red-400 shrink-0" />
+                          <span>{termsFormError}</span>
+                        </div>
                       )}
                     </div>
                   </div>
+                </div>
 
-                  {/* Right: Signature Pad (Draw or Type) */}
-                  <div className="md:col-span-7 space-y-1.5">
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="text-[11px] font-bold uppercase tracking-wider text-gold-400">
-                        Client Electronic Signature *
-                      </span>
-                      <div className="flex items-center gap-1.5">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setSignatureMode("drawn");
-                            if (termsFormError) setTermsFormError("");
-                          }}
-                          className={`px-2.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider cursor-pointer transition-colors ${
-                            signatureMode === "drawn"
-                              ? "bg-gold-400 text-black"
-                              : "bg-white/5 text-white/60 border border-white/10 hover:text-white"
-                          }`}
-                        >
-                          Draw
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setSignatureMode("typed");
-                            if (termsFormError) setTermsFormError("");
-                          }}
-                          className={`px-2.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider cursor-pointer transition-colors ${
-                            signatureMode === "typed"
-                              ? "bg-gold-400 text-black"
-                              : "bg-white/5 text-white/60 border border-white/10 hover:text-white"
-                          }`}
-                        >
-                          Type
-                        </button>
-                        {signatureMode === "drawn" && hasDrawnSignature && (
-                          <button
-                            type="button"
-                            onClick={clearSignatureCanvas}
-                            className="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-red-500/15 text-red-300 border border-red-500/30 hover:bg-red-500/25 cursor-pointer"
-                          >
-                            Clear
-                          </button>
-                        )}
-                      </div>
-                    </div>
-
-                    {signatureMode === "drawn" ? (
-                      <div className="relative rounded-lg border border-gold-400/35 bg-[#faf8f3] overflow-hidden h-24 sm:h-20">
-                        <canvas
-                          ref={signatureCanvasRef}
-                          width={520}
-                          height={140}
-                          onPointerDown={handleSigPointerDown}
-                          onPointerMove={handleSigPointerMove}
-                          onPointerUp={handleSigPointerUp}
-                          onPointerCancel={handleSigPointerUp}
-                          className="w-full h-full touch-none cursor-crosshair block"
-                          aria-label="Draw your contract signature"
-                        />
-                        {!hasDrawnSignature && (
-                          <span className="pointer-events-none absolute inset-0 flex items-center justify-center text-xs italic text-neutral-400 select-none">
-                            Sign here using mouse or touch
-                          </span>
-                        )}
-                      </div>
-                    ) : (
-                      <div className="rounded-lg border border-gold-400/35 bg-[#faf8f3] h-24 sm:h-20 px-4 flex items-center justify-between">
-                        <span className="font-serif italic text-2xl text-[#162447] truncate">
-                          {signerFullName.trim() || "Your Signature Preview"}
-                        </span>
-                        <span className="text-[10px] uppercase tracking-wider font-bold text-neutral-500 shrink-0 ml-2">
-                          E-Signature
-                        </span>
-                      </div>
-                    )}
+                {/* Slim Bottom Action Bar */}
+                <div className="px-4 sm:px-6 py-3.5 border-t border-white/10 bg-black/85 shrink-0 flex flex-col sm:flex-row items-center justify-between gap-3">
+                  <div className="flex flex-wrap items-center gap-3 text-[10px] text-white/50">
+                    <span>
+                      Executing Contract as: <span className="text-gold-300 font-semibold">{signerFullName.trim() || userProfile?.full_name || userProfile?.name || "Client"}</span>
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        signingSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })
+                      }
+                      className="text-gold-400 hover:text-gold-300 font-bold uppercase tracking-wider underline-offset-2 hover:underline cursor-pointer"
+                    >
+                      Scroll to Signature ↓
+                    </button>
                   </div>
-                </div>
-
-                <label htmlFor="contract-terms-checkbox" className="flex items-start gap-3 cursor-pointer select-none group">
-                  <input
-                    id="contract-terms-checkbox"
-                    type="checkbox"
-                    checked={termsAgreed}
-                    onChange={(e) => {
-                      setTermsAgreed(e.target.checked);
-                      if (termsFormError) setTermsFormError("");
-                    }}
-                    className="mt-0.5 w-4 h-4 rounded border-white/20 text-gold-400 focus:ring-gold-400/20 accent-[#c5a059] cursor-pointer"
-                  />
-                  <span className="text-xs text-white/80 font-medium group-hover:text-white transition-colors">
-                    I have read, understood, and agree to the full <strong>20-Clause Catering Service Agreement</strong>, including the non-refundable deposit, 4-hour service limit, post-event damage appraisal (Clause 13), and strict 24-hour signer-only dispute &amp; social media policy (Clause 19).
-                  </span>
-                </label>
-
-                <div aria-live="polite" className="min-h-0">
-                  {termsFormError && (
-                    <div role="alert" className="p-2.5 rounded-lg bg-red-500/15 border border-red-500/40 text-red-200 text-xs font-semibold flex items-center gap-2">
-                      <AlertTriangle size={14} className="text-red-400 shrink-0" />
-                      <span>{termsFormError}</span>
-                    </div>
-                  )}
-                </div>
-
-                <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
-                  <p className="text-[10px] text-white/50">
-                    Executing Contract as: <span className="text-gold-300 font-semibold">{signerFullName.trim() || userProfile?.full_name || userProfile?.name || "Client"}</span>
-                  </p>
 
                   <div className="flex flex-col-reverse sm:flex-row items-center gap-3 w-full sm:w-auto">
                     <button
@@ -3729,13 +3873,23 @@ export default function BookingPage() {
 
                 {/* Reference Number Input */}
                 <div className="space-y-2 text-left">
-                  <label className="text-xs font-bold uppercase tracking-wider text-white/90 block">
-                    Transaction Reference Number <span className="text-white/40 font-normal">(Optional but recommended)</span>
-                  </label>
+                  <div className="flex items-center justify-between gap-2">
+                    <label className="text-xs font-bold uppercase tracking-wider text-white/90 block">
+                      Transaction Reference Number <span className="text-white/40 font-normal">(Optional but recommended)</span>
+                    </label>
+                    <span className="text-[10px] font-medium text-white/45">
+                      {referenceNumber.length}/{MAX_REFERENCE_NUMBER_LENGTH}
+                    </span>
+                  </div>
                   <input
                     type="text"
+                    maxLength={MAX_REFERENCE_NUMBER_LENGTH}
                     value={referenceNumber}
-                    onChange={(e) => setReferenceNumber(e.target.value)}
+                    onChange={(e) =>
+                      setReferenceNumber(
+                        e.target.value.replace(/[^a-zA-Z0-9\s-]/g, "").slice(0, MAX_REFERENCE_NUMBER_LENGTH)
+                      )
+                    }
                     placeholder="e.g. 9012 3456 7890 or Trace ID"
                     className="w-full bg-white/5 border border-white/10 px-4 py-3 text-sm focus:outline-none focus:border-gold-400/50 rounded-lg font-medium text-white"
                   />
