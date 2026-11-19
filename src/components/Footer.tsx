@@ -1,37 +1,151 @@
+import { Link } from "react-router-dom";
+import { Facebook, Instagram, MessageCircle, Phone, Mail, CalendarPlus, type LucideIcon } from "lucide-react";
 import { useCMS } from "../context/CMSContext";
+
+type FooterLinkItem = { name: string; url: string };
+
+const isExternal = (url: string) => /^https?:\/\//i.test(url);
+
+const socialIconFor = (link: FooterLinkItem): LucideIcon | null => {
+  const key = `${link.name} ${link.url}`.toLowerCase();
+  if (key.includes("facebook") || key.includes("fb.com")) return Facebook;
+  if (key.includes("instagram")) return Instagram;
+  if (key.includes("messenger") || key.includes("m.me")) return MessageCircle;
+  return null;
+};
+
+const isBookingLink = (link: FooterLinkItem) =>
+  link.url === "/booking" || /inquire|book/i.test(link.name);
+
+function FooterTextLink({ link, className }: { link: FooterLinkItem; className: string }) {
+  if (isExternal(link.url)) {
+    return (
+      <a href={link.url} target="_blank" rel="noreferrer" className={className}>
+        {link.name}
+      </a>
+    );
+  }
+  return (
+    <Link to={link.url} className={className}>
+      {link.name}
+    </Link>
+  );
+}
 
 export default function Footer() {
   const { cms } = useCMS();
   const { footer, contact } = cms;
 
-  const links = footer?.quickLinks && footer.quickLinks.length > 0
-    ? footer.quickLinks
-    : [
-        { name: "Facebook", url: contact.facebookUrl || "https://facebook.com" },
-        { name: "Instagram", url: contact.instagramUrl || "https://instagram.com" },
-        { name: "Terms & Conditions", url: "/terms" },
-        { name: "FAQs", url: "/faqs" },
-        { name: "Inquire Now", url: "/booking" },
-      ];
+  const links: FooterLinkItem[] =
+    footer?.quickLinks && footer.quickLinks.length > 0
+      ? footer.quickLinks
+      : [
+          { name: "Facebook", url: contact.facebookUrl || "https://facebook.com" },
+          { name: "Instagram", url: contact.instagramUrl || "https://instagram.com" },
+          { name: "Terms & Conditions", url: "/terms" },
+          { name: "FAQs", url: "/faqs" },
+          { name: "Inquire Now", url: "/booking" },
+        ];
+
+  const socialLinks = links.filter((l) => socialIconFor(l));
+  const bookingLink = links.find((l) => !socialIconFor(l) && isBookingLink(l));
+  const textLinks = links.filter((l) => !socialIconFor(l) && l !== bookingLink);
+
+  const brandName = footer?.brandName || "Roxan Policarpio Events & Catering";
+  const phoneHref = contact?.phone ? `tel:${contact.phone.replace(/[^\d+]/g, "")}` : "";
 
   return (
-    <footer className="bg-[#D6C9B3] dark:bg-black border-t border-[#C4B59B] dark:border-white/10 pt-8 pb-safe sm:pb-8 px-4 sm:px-6 md:px-10 text-center transition-colors">
-      <div className="max-w-7xl mx-auto w-full flex flex-col md:flex-row justify-between items-center gap-4">
-        <p className="order-last md:order-none text-[11px] sm:text-[10px] uppercase tracking-[0.16em] sm:tracking-[0.2em] text-[#3D3227] dark:text-white/40 font-semibold">
-          &copy; {new Date().getFullYear()} {footer?.brandName || "Roxan Policarpio Events & Catering"}. {footer?.copyrightText || "All Rights Reserved."}
-        </p>
-        <div className="flex items-center gap-x-1 sm:gap-x-5 gap-y-1 md:gap-10 flex-wrap justify-center">
-          {links.map((link) => (
-            <a
-              key={link.name}
-              href={link.url}
-              target={link.url.startsWith("http") ? "_blank" : undefined}
-              rel={link.url.startsWith("http") ? "noreferrer" : undefined}
-              className="text-xs sm:text-[10px] uppercase tracking-[0.14em] sm:tracking-[0.2em] text-[#3D3227] dark:text-white/55 sm:dark:text-white/40 hover:text-gold-500 dark:hover:text-gold-400 transition-colors font-semibold inline-flex items-center min-h-11 sm:min-h-0 px-2.5 sm:px-0 py-1"
-            >
-              {link.name}
-            </a>
-          ))}
+    <footer className="bg-[#D6C9B3] dark:bg-black border-t border-[#C4B59B] dark:border-white/10 px-4 sm:px-6 md:px-10 pt-10 sm:pt-12 pb-safe sm:pb-8 transition-colors">
+      <div className="max-w-7xl mx-auto w-full">
+        <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-8 text-center md:text-left">
+          {/* Brand + contact */}
+          <div className="flex flex-col items-center md:items-start gap-4">
+            <Link to="/" className="flex flex-col items-center md:items-start">
+              <span className="text-lg font-serif tracking-[0.16em] text-gold-500 dark:text-gold-400 font-bold uppercase">
+                Roxan Policarpio
+              </span>
+              <span className="text-sm text-[#3D3227] dark:text-white/60 font-semibold -mt-0.5">
+                Events &amp; Catering
+              </span>
+            </Link>
+
+            {(contact?.phone || contact?.email) && (
+              <div className="flex flex-col items-center md:items-start gap-1">
+                {contact?.phone && (
+                  <a
+                    href={phoneHref}
+                    className="inline-flex items-center gap-2 min-h-10 text-sm font-medium text-[#3D3227] dark:text-white/70 hover:text-gold-500 dark:hover:text-gold-400 transition-colors"
+                  >
+                    <Phone size={15} className="text-gold-500 dark:text-gold-400" aria-hidden="true" />
+                    {contact.phone}
+                  </a>
+                )}
+                {contact?.email && (
+                  <a
+                    href={`mailto:${contact.email}`}
+                    className="inline-flex items-center gap-2 min-h-10 text-sm font-medium text-[#3D3227] dark:text-white/70 hover:text-gold-500 dark:hover:text-gold-400 transition-colors"
+                  >
+                    <Mail size={15} className="text-gold-500 dark:text-gold-400" aria-hidden="true" />
+                    {contact.email}
+                  </a>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Actions: CTA, socials, links */}
+          <div className="flex flex-col items-center md:items-end gap-5">
+            {bookingLink && (
+              <Link
+                to={bookingLink.url}
+                className="gold-gradient text-white dark:text-black w-full max-w-xs md:w-auto min-h-12 px-8 rounded-lg inline-flex items-center justify-center gap-2 text-sm font-bold tracking-wide shadow-md hover:brightness-105 transition-all"
+              >
+                <CalendarPlus size={17} aria-hidden="true" />
+                {bookingLink.name}
+              </Link>
+            )}
+
+            {socialLinks.length > 0 && (
+              <div className="flex items-center gap-3">
+                {socialLinks.map((link) => {
+                  const Icon = socialIconFor(link)!;
+                  return (
+                    <a
+                      key={link.name}
+                      href={link.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      aria-label={link.name}
+                      title={link.name}
+                      className="w-11 h-11 rounded-full border border-[#B9A88B] dark:border-white/15 flex items-center justify-center text-[#3D3227] dark:text-white/70 hover:text-gold-500 dark:hover:text-gold-400 hover:border-gold-500 dark:hover:border-gold-400 transition-colors"
+                    >
+                      <Icon size={18} aria-hidden="true" />
+                    </a>
+                  );
+                })}
+              </div>
+            )}
+
+            {textLinks.length > 0 && (
+              <nav aria-label="Footer" className="flex flex-wrap items-center justify-center md:justify-end gap-x-1">
+                {textLinks.map((link, i) => (
+                  <span key={link.name} className="inline-flex items-center">
+                    {i > 0 && <span aria-hidden="true" className="text-[#3D3227]/40 dark:text-white/20 px-1">·</span>}
+                    <FooterTextLink
+                      link={link}
+                      className="inline-flex items-center min-h-10 px-2 text-sm font-semibold text-[#3D3227] dark:text-white/60 hover:text-gold-500 dark:hover:text-gold-400 transition-colors"
+                    />
+                  </span>
+                ))}
+              </nav>
+            )}
+          </div>
+        </div>
+
+        <div className="mt-8 pt-5 border-t border-[#C4B59B] dark:border-white/10 text-center md:text-left">
+          <p className="text-xs text-[#3D3227]/80 dark:text-white/40 font-medium leading-relaxed">
+            &copy; {new Date().getFullYear()} {brandName}. {footer?.copyrightText || "All Rights Reserved."}
+          </p>
         </div>
       </div>
     </footer>

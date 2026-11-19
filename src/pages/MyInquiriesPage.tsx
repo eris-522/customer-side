@@ -8,6 +8,7 @@ import {
   Users,
   Package,
   ChevronRight,
+  ChevronLeft,
   CreditCard,
   Eye,
   X,
@@ -1795,6 +1796,30 @@ export default function MyInquiriesPage() {
     };
   }, [anyDialogOpen]);
 
+  // Status filter row: show ‹ › chevrons on phones only when more chips are off-screen
+  const filterScrollRef = useRef<HTMLDivElement>(null);
+  const [filterEdges, setFilterEdges] = useState({ left: false, right: false });
+  useEffect(() => {
+    const el = filterScrollRef.current;
+    if (!el) return;
+    const update = () => {
+      const left = el.scrollLeft > 4;
+      const right = el.scrollLeft + el.clientWidth < el.scrollWidth - 4;
+      setFilterEdges((prev) => (prev.left === left && prev.right === right ? prev : { left, right }));
+    };
+    update();
+    el.addEventListener("scroll", update, { passive: true });
+    window.addEventListener("resize", update);
+    return () => {
+      el.removeEventListener("scroll", update);
+      window.removeEventListener("resize", update);
+    };
+  }, [loading, bookings.length]);
+  const scrollFilters = (dir: -1 | 1) => {
+    const el = filterScrollRef.current;
+    if (el) el.scrollBy({ left: dir * el.clientWidth * 0.6, behavior: "smooth" });
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-rich-black flex items-center justify-center">
@@ -1861,7 +1886,8 @@ export default function MyInquiriesPage() {
         )}
 
         {bookings.length > 0 && (
-          <div role="group" aria-label="Filter inquiries by status" className="flex sm:flex-wrap overflow-x-auto scrollbar-none snap-x scroll-px-4 justify-start sm:justify-center gap-2 mb-5 sm:mb-10 pb-1 -mx-4 px-4 sm:mx-0 sm:px-0">
+          <div className="relative mb-5 sm:mb-10">
+          <div ref={filterScrollRef} role="group" aria-label="Filter inquiries by status" className="flex sm:flex-wrap overflow-x-auto scrollbar-none snap-x scroll-px-4 justify-start sm:justify-center gap-2 pb-1 -mx-4 px-4 sm:mx-0 sm:px-0">
             {["All", "Pending", "Confirmed", "Completed", "Cancelled"].map((f) => (
               <button
                 key={f}
@@ -1872,6 +1898,31 @@ export default function MyInquiriesPage() {
                 {f}
               </button>
             ))}
+          </div>
+          {filterEdges.left && (
+            <button
+              type="button"
+              aria-label="Show previous filters"
+              onClick={() => scrollFilters(-1)}
+              className="sm:hidden absolute -left-4 top-0 bottom-1 w-14 flex items-center justify-start pl-2 bg-gradient-to-r from-[var(--bg-primary)] from-45% to-transparent text-gold-400 cursor-pointer"
+            >
+              <span className="w-8 h-8 rounded-full flex items-center justify-center bg-[var(--bg-surface)] border border-white/10 shadow-md">
+                <ChevronLeft size={16} />
+              </span>
+            </button>
+          )}
+          {filterEdges.right && (
+            <button
+              type="button"
+              aria-label="Show more filters"
+              onClick={() => scrollFilters(1)}
+              className="sm:hidden absolute -right-4 top-0 bottom-1 w-14 flex items-center justify-end pr-2 bg-gradient-to-l from-[var(--bg-primary)] from-45% to-transparent text-gold-400 cursor-pointer"
+            >
+              <span className="w-8 h-8 rounded-full flex items-center justify-center bg-[var(--bg-surface)] border border-white/10 shadow-md">
+                <ChevronRight size={16} />
+              </span>
+            </button>
+          )}
           </div>
         )}
 
