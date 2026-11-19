@@ -593,56 +593,40 @@ export default function VenueMapPicker({
 
         {/* Google Maps Autocomplete Suggestions Dropdown */}
         {showDropdown && suggestions.length > 0 && (
-          <div className="absolute left-0 right-0 top-full mt-1.5 z-[1000] bg-[#111111] border border-gold-400/40 rounded-md shadow-2xl max-h-80 overflow-y-auto divide-y divide-white/10">
-            <div className="px-4 py-2 bg-white/5 flex items-center justify-between text-[11px] uppercase tracking-widest text-gold-400 font-bold">
-              <span className="flex items-center gap-1.5">
-                <MapPin size={12} className="text-red-500" />
-                Google Maps Places
-              </span>
-              <span>Select or Press Enter</span>
-            </div>
+          <div
+            role="listbox"
+            aria-label="Venue suggestions"
+            className="absolute left-0 right-0 top-full mt-1 z-[1000] bg-[#111111] border border-white/15 rounded-lg shadow-2xl max-h-72 overflow-y-auto overscroll-contain py-1"
+          >
             {suggestions.map((item, idx) => {
               const isHighlighted = idx === highlightedIndex;
               return (
                 <button
                   key={`${item.id}-${idx}`}
                   type="button"
+                  role="option"
+                  aria-selected={isHighlighted}
                   onMouseEnter={() => setHighlightedIndex(idx)}
                   onClick={() => handleSelectSuggestion(item)}
-                  className={`w-full text-left px-4 py-3.5 transition-colors flex items-start gap-3.5 cursor-pointer group ${
-                    isHighlighted ? "bg-gold-400/15" : "hover:bg-gold-400/10"
+                  className={`w-full text-left px-3.5 py-2.5 min-h-12 flex items-center gap-3 transition-colors cursor-pointer ${
+                    isHighlighted ? "bg-gold-400/10" : "hover:bg-white/5"
                   }`}
                 >
-                  <div
-                    className={`w-8 h-8 rounded-full border flex items-center justify-center shrink-0 mt-0.5 transition-colors ${
-                      isHighlighted
-                        ? "bg-gold-400 text-black border-gold-400"
-                        : "bg-gold-400/10 border-gold-400/30 text-gold-400 group-hover:bg-gold-400 group-hover:text-black"
-                    }`}
-                  >
-                    <MapPin size={15} />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span
-                        className={`font-bold transition-colors text-sm ${
-                          isHighlighted
-                            ? "text-gold-400"
-                            : "text-white group-hover:text-gold-400"
-                        }`}
-                      >
-                        {item.name}
+                  <MapPin
+                    size={16}
+                    className={`shrink-0 ${isHighlighted ? "text-gold-400" : "text-white/40"}`}
+                    aria-hidden="true"
+                  />
+                  <span className="flex-1 min-w-0">
+                    <span className="block text-sm font-semibold text-white truncate">
+                      {item.name}
+                    </span>
+                    {item.address && (
+                      <span className="block text-xs text-white/55 truncate">
+                        {item.address}
                       </span>
-                      {item.category && (
-                        <span className="text-[10px] uppercase tracking-wider px-2 py-0.5 bg-white/10 text-white/70 rounded-xs font-semibold">
-                          {item.category}
-                        </span>
-                      )}
-                    </div>
-                    <p className="text-xs text-white/70 mt-0.5 leading-relaxed">
-                      {item.address}
-                    </p>
-                  </div>
+                    )}
+                  </span>
                 </button>
               );
             })}
@@ -652,48 +636,48 @@ export default function VenueMapPicker({
 
       {/* Venue Address Box (auto-populated from Google Maps search or draggable pin, and editable) */}
       <div className="space-y-2">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <label
-            htmlFor={venueAddressId}
-            className="text-base text-white/80 font-bold flex items-center gap-2"
-          >
-            Venue Address <span className="text-red-400">*</span>
-            {isReverseGeocoding && (
-              <span className="inline-flex items-center gap-1.5 text-xs text-gold-400 font-normal">
-                <Loader2 size={13} className="animate-spin" />
-                Updating from moved pin...
-              </span>
-            )}
-          </label>
-          <button
-            type="button"
-            onClick={handleLocateFromAddress}
-            disabled={isLocatingAddress || (!venueAddress.trim() && !venueName.trim())}
-            className="text-xs font-bold text-gold-400 hover:text-gold-300 flex items-center gap-1.5 px-3 py-1 border border-gold-400/30 hover:border-gold-400 bg-gold-400/5 rounded-xs transition-all disabled:opacity-40 cursor-pointer"
-          >
-            {isLocatingAddress ? (
-              <Loader2 size={12} className="animate-spin" />
-            ) : (
-              <Navigation size={12} />
-            )}
-            Sync Pin to Address
-          </button>
-        </div>
+        <label
+          htmlFor={venueAddressId}
+          className="text-base text-white/80 font-bold flex items-center gap-2"
+        >
+          Venue Address <span className="text-red-400">*</span>
+          {isReverseGeocoding && (
+            <Loader2 size={14} className="animate-spin text-gold-400" aria-label="Updating address" />
+          )}
+        </label>
 
-        <textarea
-          id={venueAddressId}
-          name="venueAddress"
-          autoComplete="street-address"
-          required
-          maxLength={250}
-          placeholder="Exact street address will automatically appear here when you type a venue name or move the map pin..."
-          rows={3}
-          className="w-full bg-white/5 border border-white/10 px-4 sm:px-6 py-3.5 sm:py-4 text-base sm:text-lg focus:outline-none focus:border-gold-400/50 transition-all font-medium resize-none text-white placeholder:text-white/35"
-          value={venueAddress}
-          onChange={(e) => {
-            onChange({ venueAddress: e.target.value.slice(0, 250) });
-          }}
-        />
+        <div className="relative">
+          <textarea
+            id={venueAddressId}
+            name="venueAddress"
+            autoComplete="street-address"
+            required
+            maxLength={250}
+            placeholder="Auto-fills from your venue or map pin"
+            rows={2}
+            className="w-full bg-white/5 border border-white/10 pl-4 sm:pl-6 pr-12 py-3.5 sm:py-4 text-base focus:outline-none focus:border-gold-400/50 transition-all font-medium resize-none text-white placeholder:text-white/35"
+            value={venueAddress}
+            onChange={(e) => {
+              onChange({ venueAddress: e.target.value.slice(0, 250) });
+            }}
+          />
+          {venueAddress.trim() && (
+            <button
+              type="button"
+              onClick={handleLocateFromAddress}
+              disabled={isLocatingAddress}
+              aria-label="Move map pin to this address"
+              title="Move map pin to this address"
+              className="absolute top-1.5 right-1.5 w-10 h-10 flex items-center justify-center rounded-md text-gold-400 hover:bg-gold-400/10 transition-colors disabled:opacity-50 cursor-pointer"
+            >
+              {isLocatingAddress ? (
+                <Loader2 size={16} className="animate-spin" />
+              ) : (
+                <Navigation size={16} />
+              )}
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Embedded Interactive Google Map with Draggable Pin */}

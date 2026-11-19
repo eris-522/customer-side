@@ -135,6 +135,24 @@
     overflow-x: clip;
   }
 
+  html {
+    /* Keep anchored/focused content clear of the fixed header */
+    scroll-padding-top: 6rem;
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+  }
+
+  /* Native-feeling taps: no grey flash, no double-tap-zoom delay */
+  a, button, [role="button"], label, summary, input, select, textarea {
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--accent-gold);
+    outline-offset: 2px;
+  }
+
   body {
     background-color: var(--bg-primary);
     color: var(--text-primary);
@@ -147,6 +165,12 @@
 
   input, button, select, textarea, table {
     letter-spacing: inherit;
+  }
+
+  /* Buttons/labels/badges must never split a short word mid-letter ("DRA/W");
+     only break a word when it alone can't fit the line. */
+  button, [role="button"], [role="radio"], [role="tab"], label {
+    overflow-wrap: break-word;
   }
 
   @media (max-width: 640px) {
@@ -506,4 +530,63 @@
 
 .pb-safe {
   padding-bottom: max(1rem, env(safe-area-inset-bottom, 0px));
+}
+
+/* =========================================================================
+   MOBILE & TOUCH EXPERIENCE LAYER
+   ========================================================================= */
+
+/* Immediate press feedback on touch screens, where :hover never fires */
+@media (hover: none) and (pointer: coarse) {
+  a, button, [role="button"], summary {
+    transition-property: opacity, transform, background-color, border-color, color, box-shadow;
+  }
+  a:active, button:not(:disabled):active, [role="button"]:active, summary:active {
+    opacity: 0.72;
+  }
+  .gold-gradient:not(:disabled):active {
+    opacity: 1;
+    transform: scale(0.98);
+    filter: brightness(0.95);
+  }
+}
+
+@media (max-width: 639px) {
+  /* Legibility floor: micro labels (9-10px) become readable on phones */
+  .text-\[8px\],
+  .text-\[9px\],
+  .text-\[10px\] {
+    font-size: 11px;
+  }
+
+  /* Ultra-wide letterspacing wastes width and hurts reading on small screens */
+  .tracking-\[0\.3em\],
+  .tracking-\[0\.25em\],
+  .tracking-\[0\.2em\] {
+    letter-spacing: 0.14em;
+  }
+}
+
+/* My Inquiries: lift compact in-card controls to comfortable touch targets on phones */
+@media (max-width: 639px) {
+  .inquiries-page :is(button, a).min-h-7:not([class*="-my-"]),
+  .inquiries-page :is(button, a).min-h-8:not([class*="-my-"]),
+  .inquiries-page :is(button, a).min-h-9:not([class*="-my-"]),
+  .inquiries-page :is(button, a).min-h-10:not([class*="-my-"])  {
+    min-height: 2.75rem;
+  }
+}
+
+/* Full-screen overlays should never scroll-chain into the page behind them */
+.fixed.inset-0 {
+  overscroll-behavior: contain;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

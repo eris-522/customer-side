@@ -111,6 +111,14 @@ const cleanDueDate = (d?: string | null): string =>
 
 type InquiryTab = "payments" | "menu" | "breakdown" | "complaints";
 
+// Compact tab labels for phone-width screens (full labels show from `sm` up)
+const TAB_SHORT_LABELS: Record<string, string> = {
+  payments: "Payments",
+  menu: "Menu",
+  breakdown: "Costs",
+  complaints: "Feedback",
+};
+
 export default function MyInquiriesPage() {
   const navigate = useNavigate();
   const [bookings, setBookings] = useState<any[]>([]);
@@ -1746,6 +1754,47 @@ export default function MyInquiriesPage() {
     }
   };
 
+  // While any dialog/sheet is open: lock page scroll behind it and let Escape
+  // close the top-most one (never while a submission is in flight).
+  const anyDialogOpen = Boolean(
+    cancelModalId || viewingReceiptUrl || payingBalanceBooking || modifyingBooking,
+  );
+  const closeTopDialogRef = useRef<() => void>(() => {});
+  closeTopDialogRef.current = () => {
+    if (viewingReceiptUrl) {
+      setViewingReceiptUrl(null);
+    } else if (cancelModalId) {
+      if (cancellingId !== null) return;
+      setCancelModalId(null);
+      setCancelReason("");
+      setCancelReasonError("");
+    } else if (payingBalanceBooking) {
+      if (isSubmittingBalance) return;
+      setPayingBalanceBooking(null);
+      setPayingMilestone(null);
+      setPayingExcessSurcharge(null);
+      setPayingDamageInvoice(null);
+    } else if (modifyingBooking) {
+      if (isSubmittingMod) return;
+      clearModErrorToast();
+      setModifyingBooking(null);
+    }
+  };
+
+  useEffect(() => {
+    if (!anyDialogOpen) return;
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") closeTopDialogRef.current();
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.body.style.overflow = prevOverflow;
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [anyDialogOpen]);
+
   if (loading) {
     return (
       <div className="min-h-screen bg-rich-black flex items-center justify-center">
@@ -1782,13 +1831,13 @@ export default function MyInquiriesPage() {
     );
 
   return (
-    <div className="min-h-screen bg-rich-black pt-24 sm:pt-32 pb-16 sm:pb-20 px-4 sm:px-6 font-sans text-white">
+    <div className="inquiries-page min-h-screen bg-rich-black pt-24 sm:pt-32 pb-16 sm:pb-20 px-4 sm:px-6 font-sans text-white">
       <div className="max-w-5xl mx-auto">
-        <header className="mb-12 text-center border-b border-white/10 pb-8">
+        <header className="mb-5 sm:mb-12 text-center border-b border-white/10 pt-2 sm:pt-0 pb-5 sm:pb-8">
           <motion.span
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
-            className="text-gold-400 text-sm tracking-[0.3em] font-bold uppercase mb-4 block"
+            className="text-gold-400 text-xs sm:text-sm tracking-[0.3em] font-bold uppercase mb-2 sm:mb-4 block"
           >
             Your Reservations
           </motion.span>
@@ -1796,7 +1845,7 @@ export default function MyInquiriesPage() {
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.1 }}
-            className="text-4xl md:text-6xl font-serif"
+            className="text-3xl sm:text-4xl md:text-6xl font-serif"
           >
             My <span className="italic gold-text-gradient">Inquiries</span>
           </motion.h1>
@@ -1812,12 +1861,13 @@ export default function MyInquiriesPage() {
         )}
 
         {bookings.length > 0 && (
-          <div className="flex sm:flex-wrap overflow-x-auto scrollbar-none justify-start sm:justify-center gap-2 mb-8 sm:mb-10 pb-1 -mx-4 px-4 sm:mx-0 sm:px-0">
+          <div role="group" aria-label="Filter inquiries by status" className="flex sm:flex-wrap overflow-x-auto scrollbar-none snap-x scroll-px-4 justify-start sm:justify-center gap-2 mb-5 sm:mb-10 pb-1 -mx-4 px-4 sm:mx-0 sm:px-0">
             {["All", "Pending", "Confirmed", "Completed", "Cancelled"].map((f) => (
               <button
                 key={f}
                 onClick={() => setFilter(f)}
-                className={`shrink-0 px-4 sm:px-6 py-2.5 text-xs font-bold tracking-widest uppercase transition-all rounded-xs cursor-pointer ${filter === f ? "bg-gold-400 text-white dark:text-black shadow-sm" : "bg-white/5 text-white/60 hover:text-white hover:bg-white/10"}`}
+                aria-pressed={filter === f}
+                className={`shrink-0 snap-start min-h-10 px-4 sm:px-6 py-2 text-xs font-bold tracking-wider sm:tracking-widest uppercase transition-all rounded-full sm:rounded-xs cursor-pointer ${filter === f ? "bg-gold-400 text-white dark:text-black shadow-sm" : "bg-white/5 text-white/60 hover:text-white hover:bg-white/10"}`}
               >
                 {f}
               </button>
@@ -1829,7 +1879,7 @@ export default function MyInquiriesPage() {
           <motion.div
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
-            className="text-center py-32 px-6 glass-card border border-white/10 flex flex-col items-center relative overflow-hidden"
+            className="text-center py-14 sm:py-32 px-5 sm:px-6 glass-card border border-white/10 rounded-lg flex flex-col items-center relative overflow-hidden"
           >
             <div className="absolute top-0 left-1/2 -translate-x-1/2 w-1/2 h-32 bg-gold-400/5 blur-[80px] pointer-events-none" />
             <div className="w-24 h-24 rounded-full bg-white/5 border border-white/10 flex items-center justify-center mb-8 relative">
@@ -1843,7 +1893,7 @@ export default function MyInquiriesPage() {
             <h3 className="text-2xl font-serif text-white mb-4">
               {filter === "All" ? "No Inquiries Yet" : `No ${filter} Bookings`}
             </h3>
-            <p className="text-white/50 mb-10 tracking-wide font-medium max-w-md mx-auto leading-relaxed">
+            <p className="text-white/50 mb-8 sm:mb-10 tracking-wide font-medium max-w-md mx-auto leading-relaxed">
               {filter === "All"
                 ? "Your booking history is currently empty. Start planning your special event with our curated catering collections today."
                 : `You don't have any bookings marked as ${filter.toLowerCase()} at the moment.`}
@@ -1852,21 +1902,21 @@ export default function MyInquiriesPage() {
             {filter === "All" ? (
               <Link
                 to="/booking"
-                className="gold-gradient text-black px-12 py-4 font-bold tracking-widest uppercase text-xs hover:brightness-110 transition-all inline-flex items-center gap-3 shadow-[0_0_30px_rgba(197,160,89,0.15)]"
+                className="gold-gradient text-black w-full sm:w-auto justify-center min-h-12 px-12 py-4 rounded-lg sm:rounded-none font-bold tracking-widest uppercase text-xs hover:brightness-110 transition-all inline-flex items-center gap-3 shadow-[0_0_30px_rgba(197,160,89,0.15)]"
               >
                 Start a Booking <ChevronRight size={16} />
               </Link>
             ) : (
               <button
                 onClick={() => setFilter("All")}
-                className="border border-white/20 text-white hover:border-gold-400 hover:text-gold-400 px-10 py-3 font-bold tracking-widest uppercase text-xs transition-all"
+                className="border border-white/20 text-white hover:border-gold-400 hover:text-gold-400 w-full sm:w-auto min-h-12 px-10 py-3 rounded-lg sm:rounded-none font-bold tracking-widest uppercase text-xs transition-all"
               >
                 View All Inquiries
               </button>
             )}
           </motion.div>
         ) : (
-          <div className="grid gap-6">
+          <div className="grid gap-4 sm:gap-6">
             {filteredBookings.map((booking, i) => {
               const status = String(booking.status || "Pending").trim();
               const statusLower = status.toLowerCase();
@@ -2334,7 +2384,7 @@ export default function MyInquiriesPage() {
                   />
 
                   {/* 1. Event Hero Header */}
-                  <div className="p-5 sm:p-6 pb-4">
+                  <div className="p-4 pl-5 sm:p-6 pb-4">
                     <div className="flex flex-wrap items-start justify-between gap-3">
                       <div className="space-y-1 min-w-0">
                         <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
@@ -2385,7 +2435,7 @@ export default function MyInquiriesPage() {
                     </div>
 
                     {/* Compact Event Metadata Strip */}
-                    <div className="mt-3.5 flex flex-wrap items-center gap-x-6 gap-y-2 text-xs sm:text-sm text-white/80">
+                    <div className="mt-3.5 flex flex-col sm:flex-row sm:flex-wrap sm:items-center gap-x-6 gap-y-2 text-[13px] sm:text-sm text-white/80">
                       <div className="inline-flex flex-wrap items-center gap-2">
                         <Calendar size={15} className="text-gold-400 shrink-0" aria-hidden="true" />
                         <span className="font-medium text-white">{formattedEventDate}</span>
@@ -2414,7 +2464,7 @@ export default function MyInquiriesPage() {
 
                       <div className="inline-flex items-start gap-2 min-w-0 max-w-full">
                         <MapPin size={15} className="text-gold-400 shrink-0 mt-0.5" aria-hidden="true" />
-                        <span className="text-white/70 leading-snug line-clamp-1">
+                        <span className="text-white/70 leading-snug line-clamp-2 sm:line-clamp-1">
                           {booking.event_location || "Location TBD"}
                         </span>
                       </div>
@@ -2624,8 +2674,8 @@ export default function MyInquiriesPage() {
                   )}
 
                   {/* 3. Unified Financial Summary Strip */}
-                  <div className={`mx-5 sm:mx-6 mb-4 rounded-md bg-white/[0.03] border border-white/10 grid grid-cols-1 ${excessGuestFee > 0 && damageFee > 0 ? "sm:grid-cols-2 lg:grid-cols-5" : (excessGuestFee > 0 || damageFee > 0) ? "sm:grid-cols-2 lg:grid-cols-4" : "sm:grid-cols-3"} divide-y sm:divide-y-0 sm:divide-x divide-white/10`}>
-                    <div className="px-4 py-3">
+                  <div className={`mx-4 sm:mx-6 mb-4 rounded-md bg-white/[0.03] border border-white/10 grid grid-cols-2 ${excessGuestFee > 0 && damageFee > 0 ? "sm:grid-cols-2 lg:grid-cols-5" : (excessGuestFee > 0 || damageFee > 0) ? "sm:grid-cols-2 lg:grid-cols-4" : "sm:grid-cols-3"} sm:divide-x divide-white/10`}>
+                    <div className="col-span-2 sm:col-span-1 px-4 py-3 border-b border-white/10 sm:border-b-0">
                       <p className="text-[10px] uppercase tracking-wider font-semibold text-white/45">
                         Estimated Total
                       </p>
@@ -2645,8 +2695,8 @@ export default function MyInquiriesPage() {
                       </p>
                     </div>
 
-                    <div className="px-4 py-3">
-                      <div className="flex items-center justify-between gap-2">
+                    <div className="px-4 py-3 border-r border-white/10 sm:border-r-0 min-w-0">
+                      <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1">
                         <p className="text-[10px] uppercase tracking-wider font-semibold text-white/45">
                           {paymentData ? `Deposit · ${paymentData.method}` : "Deposit"}
                         </p>
@@ -2655,7 +2705,7 @@ export default function MyInquiriesPage() {
                             type="button"
                             aria-describedby={cardHeadingId}
                             onClick={() => setViewingReceiptUrl(paymentData.receipt)}
-                            className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-gold-400 hover:text-gold-200 transition-colors min-h-6 px-1.5 -my-1 rounded focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-400 cursor-pointer"
+                            className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-gold-400 hover:text-gold-200 transition-colors min-h-8 sm:min-h-6 px-2 sm:px-1.5 -mx-2 sm:mx-0 -my-2 sm:-my-1 rounded focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-400 cursor-pointer"
                           >
                             <Eye size={11} aria-hidden="true" /> View Slip
                           </button>
@@ -2681,7 +2731,7 @@ export default function MyInquiriesPage() {
                       </p>
                     </div>
 
-                    <div className="px-4 py-3">
+                    <div className="px-4 py-3 min-w-0">
                       <p className="text-[10px] uppercase tracking-wider font-semibold text-white/45">
                         Balance Due
                       </p>
@@ -2728,7 +2778,7 @@ export default function MyInquiriesPage() {
                     </div>
 
                     {excessGuestFee > 0 && (
-                      <div className="px-4 py-3">
+                      <div className={`px-4 py-3 min-w-0 border-t border-white/10 sm:border-t-0 ${damageFee > 0 ? "border-r sm:border-r-0" : "col-span-2 sm:col-span-1"}`}>
                         <div className="flex items-center justify-between gap-2">
                           <p className="text-[10px] uppercase tracking-wider font-semibold text-rose-300/80">
                             Excess Surcharge
@@ -2738,7 +2788,7 @@ export default function MyInquiriesPage() {
                               type="button"
                               aria-describedby={cardHeadingId}
                               onClick={() => setViewingReceiptUrl(excessReceiptUrl)}
-                              className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-gold-400 hover:text-gold-200 transition-colors min-h-6 px-1.5 -my-1 rounded focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-400 cursor-pointer"
+                              className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-gold-400 hover:text-gold-200 transition-colors min-h-8 sm:min-h-6 px-2 sm:px-1.5 -mx-2 sm:mx-0 -my-2 sm:-my-1 rounded focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-400 cursor-pointer"
                             >
                               <Eye size={11} aria-hidden="true" /> View Slip
                             </button>
@@ -2774,7 +2824,7 @@ export default function MyInquiriesPage() {
                     )}
 
                     {damageFee > 0 && (
-                      <div className="px-4 py-3">
+                      <div className={`px-4 py-3 min-w-0 border-t border-white/10 sm:border-t-0 ${excessGuestFee > 0 ? "" : "col-span-2 sm:col-span-1"}`}>
                         <div className="flex items-center justify-between gap-2">
                           <p className="text-[10px] uppercase tracking-wider font-semibold text-orange-300/85">
                             Damage Invoice
@@ -2784,7 +2834,7 @@ export default function MyInquiriesPage() {
                               type="button"
                               aria-describedby={cardHeadingId}
                               onClick={() => setViewingReceiptUrl(damageReceiptUrl)}
-                              className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-gold-400 hover:text-gold-200 transition-colors min-h-6 px-1.5 -my-1 rounded focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-400 cursor-pointer"
+                              className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-gold-400 hover:text-gold-200 transition-colors min-h-8 sm:min-h-6 px-2 sm:px-1.5 -mx-2 sm:mx-0 -my-2 sm:-my-1 rounded focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-400 cursor-pointer"
                             >
                               <Eye size={11} aria-hidden="true" /> View Slip
                             </button>
@@ -2821,11 +2871,11 @@ export default function MyInquiriesPage() {
                   </div>
 
                   {/* 4. Accessible Tab Navigation Bar */}
-                  <div className="px-4 sm:px-6 border-t border-b border-white/10 bg-black/25 flex items-center gap-1 overflow-x-auto scrollbar-none">
+                  <div className="px-2 sm:px-6 border-t border-b border-white/10 bg-black/25 flex items-center gap-1 overflow-x-auto scrollbar-none">
                     <div
                       role="tablist"
                       aria-labelledby={cardHeadingId}
-                      className="flex items-center gap-1 sm:gap-2 min-w-max"
+                      className="flex items-center gap-0.5 sm:gap-2 min-w-full sm:min-w-max"
                     >
                       {availableTabs.map((tab, tabIdx) => {
                         const isSelected = activeTab === tab.key;
@@ -2840,25 +2890,30 @@ export default function MyInquiriesPage() {
                             tabIndex={isSelected ? 0 : -1}
                             onClick={() => selectTab(tab.key)}
                             onKeyDown={(e) => handleTabKeyDown(e, tabIdx)}
-                            className={`min-h-10 px-3 sm:px-4 py-2.5 text-xs font-semibold tracking-wider uppercase border-b-2 transition-colors inline-flex items-center gap-2 cursor-pointer focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-gold-400 ${
+                            aria-label={tab.badge ? `${tab.label} (${tab.badge})` : tab.label}
+                            title={tab.label}
+                            className={`${isSelected ? "flex-[2.2]" : "flex-1"} sm:flex-none shrink-0 justify-center min-h-12 sm:min-h-10 px-2 sm:px-4 py-2.5 text-[11px] sm:text-xs font-semibold tracking-wide sm:tracking-wider uppercase border-b-2 transition-[flex-grow,color,border-color] duration-200 inline-flex items-center gap-1.5 sm:gap-2 cursor-pointer focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-gold-400 ${
                               isSelected
                                 ? "border-gold-400 text-gold-300"
                                 : "border-transparent text-white/50 hover:text-white/85"
                             }`}
                           >
                             {tab.key === "payments" && (
-                              <CreditCard size={13} aria-hidden="true" />
+                              <CreditCard size={16} className="sm:w-[13px] sm:h-[13px] shrink-0" aria-hidden="true" />
                             )}
                             {tab.key === "menu" && (
-                              <Utensils size={13} aria-hidden="true" />
+                              <Utensils size={16} className="sm:w-[13px] sm:h-[13px] shrink-0" aria-hidden="true" />
                             )}
                             {tab.key === "breakdown" && (
-                              <Receipt size={13} aria-hidden="true" />
+                              <Receipt size={16} className="sm:w-[13px] sm:h-[13px] shrink-0" aria-hidden="true" />
                             )}
                             {tab.key === "complaints" && (
-                              <MessageSquare size={13} aria-hidden="true" />
+                              <MessageSquare size={16} className="sm:w-[13px] sm:h-[13px] shrink-0" aria-hidden="true" />
                             )}
-                            <span>{tab.label}</span>
+                            {isSelected && (
+                              <span className="sm:hidden whitespace-nowrap">{TAB_SHORT_LABELS[tab.key] || tab.label}</span>
+                            )}
+                            <span className="hidden sm:inline">{tab.label}</span>
                             {tab.badge && (
                               <span
                                 className={`px-1.5 py-0.2 rounded text-[10px] font-bold tabular-nums ${
@@ -2887,7 +2942,7 @@ export default function MyInquiriesPage() {
                     role="tabpanel"
                     id={`panel-${bookingKey}-${activeTab}`}
                     aria-labelledby={`tab-${bookingKey}-${activeTab}`}
-                    className="p-5 sm:p-6"
+                    className="p-4 sm:p-6"
                   >
                     {/* TAB 1: PAYMENTS & INSTALLMENT SCHEDULE */}
                     {activeTab === "payments" && (paymentData || excessGuestFee > 0 || damageFee > 0) && (
@@ -2975,7 +3030,7 @@ export default function MyInquiriesPage() {
                               </p>
                             </div>
 
-                            <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto shrink-0">
+                            <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto sm:self-auto shrink-0 [&>button]:flex-1 sm:[&>button]:flex-none [&>button]:justify-center">
                               {singleSettlementReceipt && (
                                 <button
                                   type="button"
@@ -3159,12 +3214,12 @@ export default function MyInquiriesPage() {
                                         </div>
                                       </div>
 
-                                      <div className="flex items-center justify-between sm:justify-end gap-3 self-stretch sm:self-auto pt-2 sm:pt-0 border-t sm:border-t-0 border-white/5">
+                                      <div className="flex flex-wrap items-center justify-between sm:justify-end gap-x-3 gap-y-2 self-stretch sm:self-auto pt-2 sm:pt-0 border-t sm:border-t-0 border-white/5">
                                         <span className="font-serif font-bold text-gold-400 text-sm tabular-nums">
                                           ₱{Number(inst.amount).toLocaleString()}
                                         </span>
 
-                                        <div className="flex items-center gap-1.5">
+                                        <div className="flex items-center gap-1.5 [&>button]:justify-center">
                                           {hasReceipt && (
                                             <button
                                               type="button"
@@ -3261,7 +3316,7 @@ export default function MyInquiriesPage() {
                               )}
                             </div>
 
-                            <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto shrink-0">
+                            <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto sm:self-auto shrink-0 [&>button]:flex-1 sm:[&>button]:flex-none [&>button]:justify-center">
                               {excessReceiptUrl && (
                                 <button
                                   type="button"
@@ -3345,7 +3400,7 @@ export default function MyInquiriesPage() {
                                 )}
                               </div>
 
-                              <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto shrink-0">
+                              <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto sm:self-auto shrink-0 [&>button]:flex-1 sm:[&>button]:flex-none [&>button]:justify-center">
                                 {damageReceiptUrl && (
                                   <button
                                     type="button"
@@ -3457,7 +3512,7 @@ export default function MyInquiriesPage() {
                                 type="button"
                                 aria-describedby={cardHeadingId}
                                 onClick={() => handleOpenModifyModal(booking)}
-                                className="px-4 py-2 min-h-9 gold-gradient text-black hover:brightness-110 text-xs font-bold uppercase tracking-wider rounded transition-all shadow inline-flex items-center gap-1.5 cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-400"
+                                className="w-full sm:w-auto justify-center px-4 py-2 min-h-9 gold-gradient text-black hover:brightness-110 text-xs font-bold uppercase tracking-wider rounded transition-all shadow inline-flex items-center gap-1.5 cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-400"
                               >
                                 <Sliders size={13} aria-hidden="true" /> Modify Menu &amp; Details
                               </button>
@@ -4433,7 +4488,7 @@ export default function MyInquiriesPage() {
 
                   {/* 6. Quiet Secondary Action Footer */}
                   {(statusLower === "pending" || isApproved) && (
-                    <div className="px-5 sm:px-6 py-2.5 bg-black/20 border-t border-white/5 flex justify-end">
+                    <div className="px-3 sm:px-6 py-1.5 sm:py-2.5 bg-black/20 border-t border-white/5 flex justify-center sm:justify-end">
                       <button
                         type="button"
                         aria-describedby={cardHeadingId}
@@ -4458,16 +4513,24 @@ export default function MyInquiriesPage() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[100] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4"
+            className="fixed inset-0 z-[100] bg-black/80 backdrop-blur-sm flex items-end sm:items-center justify-center sm:p-4"
+            onClick={() => {
+              if (cancellingId !== null) return;
+              setCancelModalId(null);
+              setCancelReason("");
+              setCancelReasonError("");
+            }}
           >
             <motion.div
               role="dialog"
               aria-modal="true"
               aria-labelledby="cancel-modal-title"
-              initial={{ scale: 0.95, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.95, opacity: 0 }}
-              className="glass-card border border-white/10 p-8 max-w-sm w-full text-center relative overflow-hidden"
+              initial={{ y: 48, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              exit={{ y: 48, opacity: 0 }}
+              transition={{ type: "spring", stiffness: 420, damping: 38 }}
+              onClick={(e) => e.stopPropagation()}
+              className="glass-card bg-rich-black border border-white/10 px-6 pt-7 pb-safe sm:p-8 max-w-sm w-full max-h-[92dvh] overflow-y-auto text-center relative overflow-hidden rounded-t-2xl sm:rounded-xl"
             >
               <div className="absolute top-0 left-0 w-full h-1 bg-red-500" />
               <h2 id="cancel-modal-title" className="text-3xl font-serif text-white mb-2 italic">
@@ -4511,7 +4574,7 @@ export default function MyInquiriesPage() {
                 )}
               </div>
 
-              <div className="flex gap-4">
+              <div className="flex flex-col-reverse sm:flex-row gap-3 sm:gap-4">
                 <button
                   onClick={() => {
                     setCancelModalId(null);
@@ -4519,14 +4582,14 @@ export default function MyInquiriesPage() {
                     setCancelReasonError("");
                   }}
                   disabled={cancellingId !== null}
-                  className="flex-1 py-3 border border-white/10 text-white/70 hover:text-white hover:border-white/30 transition-all text-sm font-bold tracking-wide"
+                  className="flex-1 min-h-12 py-3 rounded-lg sm:rounded-none border border-white/10 text-white/70 hover:text-white hover:border-white/30 transition-all text-sm font-bold tracking-wide"
                 >
                   Keep Booking
                 </button>
                 <button
                   onClick={confirmCancelBooking}
                   disabled={cancellingId !== null}
-                  className="flex-1 py-3 bg-red-500/10 border border-red-500/50 text-red-400 font-bold tracking-wide text-sm hover:bg-red-500/20 transition-all disabled:opacity-50"
+                  className="flex-1 min-h-12 py-3 rounded-lg sm:rounded-none bg-red-500/10 border border-red-500/50 text-red-400 font-bold tracking-wide text-sm hover:bg-red-500/20 transition-all disabled:opacity-50"
                 >
                   {cancellingId === cancelModalId
                     ? "Cancelling..."
@@ -4545,17 +4608,18 @@ export default function MyInquiriesPage() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[110] bg-black/90 backdrop-blur-md flex items-center justify-center p-4"
+            className="fixed inset-0 z-[110] bg-black/90 backdrop-blur-md flex items-end sm:items-center justify-center sm:p-4"
             onClick={() => setViewingReceiptUrl(null)}
           >
             <motion.div
               role="dialog"
               aria-modal="true"
               aria-labelledby="receipt-modal-title"
-              initial={{ scale: 0.95, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.95, opacity: 0 }}
-              className="glass-card border border-white/15 p-6 max-w-lg w-full relative overflow-hidden rounded-xl bg-[#0c0c0c] shadow-2xl"
+              initial={{ y: 48, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              exit={{ y: 48, opacity: 0 }}
+              transition={{ type: "spring", stiffness: 420, damping: 38 }}
+              className="glass-card border border-white/15 px-4 pt-5 pb-safe sm:p-6 max-w-lg w-full relative overflow-hidden rounded-t-2xl sm:rounded-xl bg-[#0c0c0c] shadow-2xl"
               onClick={(e) => e.stopPropagation()}
             >
               <div className="flex items-center justify-between pb-4 mb-4 border-b border-white/10">
@@ -4572,11 +4636,11 @@ export default function MyInquiriesPage() {
                   <X size={18} aria-hidden="true" />
                 </button>
               </div>
-              <div className="max-h-[65vh] overflow-auto flex items-center justify-center bg-black/50 rounded-lg p-2 border border-white/5">
+              <div className="max-h-[70dvh] sm:max-h-[65vh] overflow-auto overscroll-contain flex items-center justify-center bg-black/50 rounded-lg p-2 border border-white/5">
                 <img
                   src={viewingReceiptUrl}
                   alt="Proof of Payment"
-                  className="max-h-[60vh] w-auto object-contain rounded"
+                  className="max-h-[66dvh] sm:max-h-[60vh] w-auto object-contain rounded"
                   onError={(e) => {
                     (e.target as HTMLImageElement).src = "https://images.unsplash.com/photo-1554415707-9e4c07d3882d?auto=format&fit=crop&q=80&w=800";
                   }}
@@ -4602,16 +4666,17 @@ export default function MyInquiriesPage() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[105] bg-black/85 backdrop-blur-md flex items-center justify-center p-3 sm:p-6"
+            className="fixed inset-0 z-[105] bg-black/85 backdrop-blur-md flex items-end sm:items-center justify-center sm:p-6"
           >
             <motion.div
               role="dialog"
               aria-modal="true"
               aria-labelledby="balance-modal-title"
-              initial={{ scale: 0.95, opacity: 0, y: 20 }}
-              animate={{ scale: 1, opacity: 1, y: 0 }}
-              exit={{ scale: 0.95, opacity: 0, y: 20 }}
-              className="glass-card border border-white/15 max-w-2xl w-full max-h-[92dvh] flex flex-col relative overflow-hidden shadow-2xl rounded-xl bg-[#0c0c0c]"
+              initial={{ y: 48, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              exit={{ y: 48, opacity: 0 }}
+              transition={{ type: "spring", stiffness: 420, damping: 38 }}
+              className="glass-card border border-white/15 max-w-2xl w-full max-h-[94dvh] sm:max-h-[92dvh] flex flex-col relative overflow-hidden shadow-2xl rounded-t-2xl sm:rounded-xl bg-[#0c0c0c]"
             >
               {/* Header */}
               <div className="p-4 sm:p-6 border-b border-white/10 flex items-center justify-between gap-2 bg-black/40 shrink-0">
@@ -4637,14 +4702,14 @@ export default function MyInquiriesPage() {
                     setPayingExcessSurcharge(null);
                     setPayingDamageInvoice(null);
                   }}
-                  className="text-white/40 hover:text-white p-2 rounded-lg hover:bg-white/5 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-400 shrink-0 cursor-pointer"
+                  className="text-white/40 hover:text-white min-w-11 min-h-11 -mr-2 flex items-center justify-center rounded-full hover:bg-white/5 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-400 shrink-0 cursor-pointer"
                 >
                   <X size={20} aria-hidden="true" />
                 </button>
               </div>
 
               {/* Scrollable Content */}
-              <div className="p-4 sm:p-8 overflow-y-auto space-y-6 scrollbar-thin flex-1">
+              <div className="p-4 sm:p-8 overflow-y-auto overscroll-contain space-y-6 scrollbar-none flex-1">
                 {balanceError && (
                   <div role="alert" className="p-4 bg-red-950/90 border border-red-500/50 rounded-lg text-red-200 text-xs font-bold flex items-center gap-2">
                     <AlertTriangle size={16} className="text-red-400 shrink-0" aria-hidden="true" />
@@ -4914,7 +4979,7 @@ export default function MyInquiriesPage() {
               </div>
 
               {/* Action Buttons */}
-              <div className="p-4 sm:p-6 border-t border-white/10 bg-black/60 flex flex-col-reverse sm:flex-row items-center justify-between gap-3 sm:gap-4 shrink-0">
+              <div className="px-4 pt-3 pb-safe sm:p-6 border-t border-white/10 bg-black/60 flex flex-col-reverse sm:flex-row items-center justify-between gap-2.5 sm:gap-4 shrink-0">
                 <button
                   type="button"
                   onClick={() => {
@@ -4923,7 +4988,7 @@ export default function MyInquiriesPage() {
                     setPayingExcessSurcharge(null);
                     setPayingDamageInvoice(null);
                   }}
-                  className="w-full sm:w-auto px-6 py-3 border border-white/20 text-white/70 text-xs font-bold uppercase tracking-wider hover:bg-white/5 transition-colors rounded-sm cursor-pointer"
+                  className="w-full sm:w-auto min-h-12 sm:min-h-0 px-6 py-3 border border-white/20 text-white/70 text-xs font-bold uppercase tracking-wider hover:bg-white/5 transition-colors rounded-lg sm:rounded-sm cursor-pointer"
                 >
                   Cancel
                 </button>
@@ -4931,7 +4996,7 @@ export default function MyInquiriesPage() {
                   type="button"
                   onClick={handleSubmitBalancePayment}
                   disabled={isSubmittingBalance || !balanceReceiptImage || !balanceRef.trim()}
-                  className="w-full sm:w-auto px-8 py-3 gold-gradient text-black text-xs font-bold uppercase tracking-wider hover:brightness-110 transition-all disabled:opacity-40 disabled:cursor-not-allowed rounded-sm flex items-center justify-center gap-2 shadow-lg shadow-gold-400/10 cursor-pointer"
+                  className="w-full sm:w-auto min-h-12 sm:min-h-0 px-8 py-3 gold-gradient text-black text-xs font-bold uppercase tracking-wider hover:brightness-110 transition-all disabled:opacity-40 disabled:cursor-not-allowed rounded-lg sm:rounded-sm flex items-center justify-center gap-2 shadow-lg shadow-gold-400/10 cursor-pointer"
                 >
                   {isSubmittingBalance
                     ? "Submitting Receipt..."
@@ -4955,16 +5020,17 @@ export default function MyInquiriesPage() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-center justify-center p-2.5 sm:p-4 bg-black/80 backdrop-blur-md overflow-y-auto"
+            className="fixed inset-0 z-[105] flex items-end sm:items-center justify-center sm:p-4 bg-black/80 backdrop-blur-md overflow-y-auto"
           >
             <motion.div
               role="dialog"
               aria-modal="true"
               aria-labelledby="modify-modal-title"
-              initial={{ scale: 0.95, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-[#0b0b0b] border border-white/15 w-full max-w-4xl rounded-xl shadow-2xl overflow-hidden my-3 sm:my-6 max-h-[92dvh] flex flex-col"
+              initial={{ y: 48, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              exit={{ y: 48, opacity: 0 }}
+              transition={{ type: "spring", stiffness: 420, damping: 38 }}
+              className="bg-[#0b0b0b] border border-white/15 w-full max-w-4xl rounded-t-2xl sm:rounded-xl shadow-2xl overflow-hidden sm:my-6 max-h-[94dvh] sm:max-h-[92dvh] flex flex-col"
             >
               {/* Modal Header */}
               <div className="p-4 sm:p-6 border-b border-white/10 flex items-center justify-between gap-2 bg-black/40 shrink-0">
@@ -4986,14 +5052,14 @@ export default function MyInquiriesPage() {
                     clearModErrorToast();
                     setModifyingBooking(null);
                   }}
-                  className="p-2 text-white/50 hover:text-white hover:bg-white/10 rounded-full transition-colors cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-400 shrink-0"
+                  className="min-w-11 min-h-11 -mr-2 flex items-center justify-center text-white/50 hover:text-white hover:bg-white/10 rounded-full transition-colors cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-400 shrink-0"
                 >
                   <X size={20} aria-hidden="true" />
                 </button>
               </div>
 
               {/* Modal Body */}
-              <div className="p-4 sm:p-6 overflow-y-auto space-y-6 text-left flex-1 custom-scrollbar">
+              <div className="p-4 sm:p-6 overflow-y-auto overscroll-contain space-y-6 text-left flex-1 scrollbar-none">
                 {/* Relocated 14-Day Modification Contract Policy Notice */}
                 <div className="p-3.5 rounded-lg bg-gold-400/[0.06] border border-gold-400/25 flex items-start gap-3">
                   <Clock size={15} className="text-gold-400 shrink-0 mt-0.5" aria-hidden="true" />
@@ -5203,14 +5269,14 @@ export default function MyInquiriesPage() {
               </div>
 
               {/* Modal Actions */}
-              <div className="p-4 sm:p-5 border-t border-white/10 bg-black/60 flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-between gap-3 shrink-0">
+              <div className="px-4 pt-3 pb-safe sm:p-5 border-t border-white/10 bg-black/60 flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-between gap-2.5 sm:gap-3 shrink-0">
                 <button
                   type="button"
                   onClick={() => {
                     clearModErrorToast();
                     setModifyingBooking(null);
                   }}
-                  className="w-full sm:w-auto px-4 py-2.5 sm:py-2 border border-white/20 text-white/70 text-xs font-bold uppercase tracking-wider hover:bg-white/5 rounded text-center cursor-pointer"
+                  className="w-full sm:w-auto min-h-12 sm:min-h-0 px-4 py-2.5 sm:py-2 border border-white/20 text-white/70 text-xs font-bold uppercase tracking-wider hover:bg-white/5 rounded-lg sm:rounded text-center cursor-pointer"
                 >
                   Cancel
                 </button>
@@ -5218,7 +5284,7 @@ export default function MyInquiriesPage() {
                   type="button"
                   onClick={handleSubmitModification}
                   disabled={isSubmittingMod}
-                  className="w-full sm:w-auto px-6 py-2.5 sm:py-2 gold-gradient text-black text-xs font-bold uppercase tracking-wider hover:brightness-110 rounded transition-all disabled:opacity-40 shadow flex items-center justify-center gap-1.5 cursor-pointer"
+                  className="w-full sm:w-auto min-h-12 sm:min-h-0 px-6 py-2.5 sm:py-2 gold-gradient text-black text-xs font-bold uppercase tracking-wider hover:brightness-110 rounded-lg sm:rounded transition-all disabled:opacity-40 shadow flex items-center justify-center gap-1.5 cursor-pointer"
                 >
                   {isSubmittingMod ? "Saving Changes..." : "Save Changes & Notify Coordinator"}
                 </button>
@@ -5238,7 +5304,7 @@ export default function MyInquiriesPage() {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: -16, scale: 0.96 }}
             transition={{ duration: 0.2 }}
-            className="fixed top-4 left-4 right-4 sm:left-auto sm:top-6 sm:right-6 z-[100] sm:max-w-sm sm:w-full px-4 py-3.5 bg-[#FDF8F6] dark:bg-[#1a0a0a]/95 border border-red-700/30 dark:border-red-500/50 text-[#991B1B] dark:text-red-200 rounded-lg shadow-xl shadow-stone-900/10 dark:shadow-2xl backdrop-blur-md flex items-center justify-between gap-3"
+            className="fixed top-[max(1rem,env(safe-area-inset-top))] left-4 right-4 sm:left-auto sm:top-6 sm:right-6 z-[120] sm:max-w-sm sm:w-full px-4 py-3.5 bg-[#FDF8F6] dark:bg-[#1a0a0a]/95 border border-red-700/30 dark:border-red-500/50 text-[#991B1B] dark:text-red-200 rounded-lg shadow-xl shadow-stone-900/10 dark:shadow-2xl backdrop-blur-md flex items-center justify-between gap-3"
           >
             <div className="flex items-center gap-2.5">
               <AlertTriangle size={18} className="text-[#991B1B] dark:text-red-400 shrink-0" />
@@ -5264,7 +5330,7 @@ export default function MyInquiriesPage() {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: -16, scale: 0.96 }}
             transition={{ duration: 0.2 }}
-            className="fixed top-4 left-4 right-4 sm:left-auto sm:top-6 sm:right-6 z-[100] sm:max-w-sm sm:w-full px-4 py-3.5 bg-[#F4EFE6] dark:bg-[#0a1a10]/95 border border-emerald-700/30 dark:border-emerald-500/50 text-[#065F46] dark:text-emerald-200 rounded-lg shadow-xl shadow-stone-900/10 dark:shadow-2xl backdrop-blur-md flex items-center justify-between gap-3"
+            className="fixed top-[max(1rem,env(safe-area-inset-top))] left-4 right-4 sm:left-auto sm:top-6 sm:right-6 z-[120] sm:max-w-sm sm:w-full px-4 py-3.5 bg-[#F4EFE6] dark:bg-[#0a1a10]/95 border border-emerald-700/30 dark:border-emerald-500/50 text-[#065F46] dark:text-emerald-200 rounded-lg shadow-xl shadow-stone-900/10 dark:shadow-2xl backdrop-blur-md flex items-center justify-between gap-3"
           >
             <div className="flex items-center gap-2.5">
               <CheckCircle size={18} className="text-[#065F46] dark:text-emerald-400 shrink-0" />

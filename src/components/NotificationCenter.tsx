@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { Bell, X, CheckCheck } from 'lucide-react';
-import { motion, AnimatePresence } from 'motion/react';
+import { motion, AnimatePresence, useDragControls } from 'motion/react';
 import { useNavigate } from 'react-router-dom';
 
 interface NotificationCenterProps {
@@ -10,9 +11,11 @@ interface NotificationCenterProps {
   unreadCount: number;
   readIds?: string[];
   onDismiss?: (id: string) => void;
+  /** Render as a bottom sheet (portaled to <body>) on phone-width screens. */
+  mobileSheet?: boolean;
 }
 
-export function NotificationCenter({ isOpen, onClose, notifications, unreadCount, readIds = [], onDismiss }: NotificationCenterProps) {
+export function NotificationCenter({ isOpen, onClose, notifications, unreadCount, readIds = [], onDismiss, mobileSheet = false }: NotificationCenterProps) {
   const navigate = useNavigate();
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [readDuringSession, setReadDuringSession] = useState<string[]>([]);
@@ -37,6 +40,30 @@ export function NotificationCenter({ isOpen, onClose, notifications, unreadCount
     }
     return `${item.id}-${item.status}`;
   };
+
+  const dragControls = useDragControls();
+  const [isPhone, setIsPhone] = useState(() =>
+    typeof window !== "undefined" && window.matchMedia("(max-width: 639px)").matches,
+  );
+  const isMobile = mobileSheet && isPhone;
+
+  useEffect(() => {
+    const mq = window.matchMedia("(max-width: 639px)");
+    const onChange = () => setIsPhone(mq.matches);
+    onChange();
+    mq.addEventListener("change", onChange);
+    return () => mq.removeEventListener("change", onChange);
+  }, []);
+
+  // Lock page scroll behind the bottom sheet on phones
+  useEffect(() => {
+    if (!isOpen || !isMobile) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, [isOpen, isMobile]);
 
   useEffect(() => {
     if (!isOpen) {
@@ -66,17 +93,55 @@ export function NotificationCenter({ isOpen, onClose, notifications, unreadCount
     return timeB - timeA;
   });
 
-  return (
+  const content = (
     <AnimatePresence>
+      {isOpen && isMobile && (
+        <motion.div
+          key="notif-backdrop"
+          data-notif-root
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.2 }}
+          className="fixed inset-0 z-[99] bg-black/55 backdrop-blur-[2px]"
+          onClick={onClose}
+          aria-hidden="true"
+        />
+      )}
       {isOpen && (
         <motion.div
-          initial={{ opacity: 0, y: 10, scale: 0.95 }}
-          animate={{ opacity: 1, y: 0, scale: 1 }}
-          exit={{ opacity: 0, y: 10, scale: 0.95 }}
-          transition={{ duration: 0.2 }}
-          className="fixed left-3 right-3 top-[4.25rem] w-auto max-h-[calc(100dvh-5.5rem)] sm:absolute sm:left-auto sm:right-0 sm:top-auto sm:mt-4 sm:w-96 sm:max-h-[420px] glass-card border border-[#E6DFD3] dark:border-white/10 shadow-2xl z-[100] overflow-hidden flex flex-col rounded-xl"
+          key="notif-panel"
+          data-notif-root
+          role="dialog"
+          aria-label="Notifications"
+          initial={isMobile ? { y: "100%" } : { opacity: 0, y: 10, scale: 0.95 }}
+          animate={isMobile ? { y: 0 } : { opacity: 1, y: 0, scale: 1 }}
+          exit={isMobile ? { y: "100%" } : { opacity: 0, y: 10, scale: 0.95 }}
+          transition={isMobile ? { type: "spring", stiffness: 380, damping: 38 } : { duration: 0.2 }}
+          drag={isMobile ? "y" : false}
+          dragDirectionLock
+          dragConstraints={{ top: 0, bottom: 0 }}
+          dragElastic={{ top: 0, bottom: 0.6 }}
+          dragListener={false}
+          dragControls={dragControls}
+          onDragEnd={(_, info) => {
+            if (info.offset.y > 100 || info.velocity.y > 600) onClose();
+          }}
+          className="fixed inset-x-0 bottom-0 w-auto max-h-[85dvh] rounded-t-2xl pb-[env(safe-area-inset-bottom,0px)] sm:pb-0 sm:absolute sm:inset-x-auto sm:bottom-auto sm:right-0 sm:mt-4 sm:w-96 sm:max-h-[420px] sm:rounded-xl glass-card bg-rich-black border border-[#E6DFD3] dark:border-white/10 shadow-2xl z-[100] overflow-hidden flex flex-col"
         >
-          <div className="p-4 border-b border-[#E6DFD3] dark:border-white/10 sticky top-0 bg-stone-100/95 dark:bg-[#070707] z-10 flex items-center justify-between backdrop-blur-md">
+          {/* Grab handle (mobile) — drag down to dismiss */}
+          <div
+            className="sm:hidden flex justify-center pt-2.5 pb-1 bg-stone-100/95 dark:bg-[#070707] touch-none cursor-grab"
+            onPointerDown={(e) => dragControls.start(e)}
+          >
+            <span className="w-10 h-1.5 rounded-full bg-stone-400/60 dark:bg-white/20" />
+          </div>
+          <div
+            className="px-4 py-3 sm:p-4 border-b border-[#E6DFD3] dark:border-white/10 sticky top-0 bg-stone-100/95 dark:bg-[#070707] z-10 flex items-center justify-between backdrop-blur-md touch-none sm:touch-auto"
+            onPointerDown={(e) => {
+              if (isMobile && !(e.target as HTMLElement).closest("button")) dragControls.start(e);
+            }}
+          >
             <h3 className="font-serif text-lg text-gold-500 dark:text-gold-400 italic">Notifications</h3>
             <div className="flex items-center gap-1.5 sm:gap-2">
               {unreadCount > 0 && (
@@ -109,7 +174,7 @@ export function NotificationCenter({ isOpen, onClose, notifications, unreadCount
             </div>
           </div>
           
-          <div className="flex-1 overflow-y-auto bg-rich-black text-left scrollbar-thin">
+          <div className="flex-1 overflow-y-auto overscroll-contain bg-rich-black text-left scrollbar-none">
             {notifications.length === 0 ? (
               <div className="p-10 text-center flex flex-col items-center">
                 <Bell className="text-stone-300 dark:text-white/10 mb-4" size={32} />
@@ -466,4 +531,6 @@ export function NotificationCenter({ isOpen, onClose, notifications, unreadCount
       )}
     </AnimatePresence>
   );
+
+  return isMobile && typeof document !== "undefined" ? createPortal(content, document.body) : content;
 }

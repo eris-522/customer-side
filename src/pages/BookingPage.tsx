@@ -34,6 +34,11 @@ import {
   Minus,
   Plus,
   Sparkles,
+  Trees,
+  DoorOpen,
+  Building,
+  ArrowUpDown,
+  Footprints,
 } from "lucide-react";
 import { supabase } from "../utils/supabase";
 import { CATERING_CONTRACT_TERMS } from "../data/cateringContractTerms";
@@ -181,6 +186,54 @@ const sanitizePositiveInt = (raw: string, max: number): number | null => {
   if (isNaN(num)) return null;
   return Math.min(max, Math.max(0, num));
 };
+
+const ordinalFloor = (n: number) =>
+  `${n}${n === 2 ? "nd" : n === 3 ? "rd" : "th"}`;
+
+// Selectable option card used by the Venue Accessibility questionnaire
+function ChoiceCard({
+  selected,
+  onClick,
+  icon,
+  title,
+  hint,
+}: {
+  selected: boolean;
+  onClick: () => void;
+  icon: React.ReactNode;
+  title: string;
+  hint?: string;
+}) {
+  return (
+    <button
+      type="button"
+      role="radio"
+      aria-checked={selected}
+      onClick={onClick}
+      className={`relative w-full min-h-[4.5rem] p-3 sm:p-3.5 rounded-lg border text-left flex items-start gap-2.5 transition-colors cursor-pointer ${
+        selected
+          ? "border-gold-400 bg-gold-400/10"
+          : "border-white/10 bg-white/5 hover:border-white/30"
+      }`}
+    >
+      <span className={`mt-0.5 shrink-0 ${selected ? "text-gold-400" : "text-white/45"}`}>{icon}</span>
+      <span className="min-w-0 flex-1 pr-5">
+        <span className={`block text-sm font-bold leading-tight ${selected ? "text-gold-400" : "text-white/90"}`}>
+          {title}
+        </span>
+        {hint && <span className="block text-[11px] text-white/55 leading-snug mt-0.5">{hint}</span>}
+      </span>
+      <span
+        aria-hidden="true"
+        className={`absolute top-2.5 right-2.5 w-4 h-4 rounded-full border flex items-center justify-center ${
+          selected ? "bg-gold-400 border-gold-400 text-white dark:text-black" : "border-white/25"
+        }`}
+      >
+        {selected && <Check size={10} strokeWidth={4} />}
+      </span>
+    </button>
+  );
+}
 
 const steps = [
   { id: 1, title: "Package", icon: Package },
@@ -1157,6 +1210,28 @@ export default function BookingPage() {
     {} as Record<string, string[]>,
   );
 
+  // Dialog ergonomics: lock the page behind any open dialog and let Escape step
+  // back out (payment -> closed, terms -> closed). Never while submitting.
+  const anyBookingDialogOpen = showTermsModal || showPaymentModal || showSuccessModal;
+  useEffect(() => {
+    if (!anyBookingDialogOpen) return;
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      if (showPaymentModal) {
+        if (!isProcessingPayment) setShowPaymentModal(false);
+      } else if (showTermsModal) {
+        setShowTermsModal(false);
+      }
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.body.style.overflow = prevOverflow;
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [anyBookingDialogOpen, showPaymentModal, showTermsModal, isProcessingPayment]);
+
   if (loadingData) {
     return (
       <div className="min-h-screen bg-rich-black flex items-center justify-center">
@@ -1170,11 +1245,11 @@ export default function BookingPage() {
   return (
     <div className="min-h-screen bg-rich-black pt-24 font-sans text-white">
       {/* Header */}
-      <header className="px-4 sm:px-6 md:px-10 pt-10 sm:pt-16 pb-8 sm:pb-12 text-center border-b border-white/10">
+      <header className="px-4 sm:px-6 md:px-10 pt-4 sm:pt-16 pb-5 sm:pb-12 text-center border-b border-white/10">
         <motion.span
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
-          className="text-gold-400 text-base tracking-wide font-bold mb-4 block italic"
+          className="text-gold-400 text-sm sm:text-base tracking-wide font-bold mb-2 sm:mb-4 block italic"
         >
           Event Reservation
         </motion.span>
@@ -1182,7 +1257,7 @@ export default function BookingPage() {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.1 }}
-          className="text-3xl sm:text-4xl md:text-6xl font-serif text-white uppercase italic"
+          className="text-2xl sm:text-4xl md:text-6xl font-serif text-white uppercase italic"
         >
           Booking{" "}
           <span className="gold-text-gradient not-italic font-bold">Flow</span>
@@ -1190,9 +1265,25 @@ export default function BookingPage() {
       </header>
 
       {/* Progress Bar */}
-      <div className="max-w-4xl mx-auto px-4 sm:px-6 md:px-10 py-6 sm:py-12">
-        <div className="flex justify-between relative">
-          <div className="absolute top-1/2 left-0 w-full h-[1px] bg-white/10 -translate-y-1/2 z-0" />
+      <div className="max-w-4xl mx-auto px-4 sm:px-6 md:px-10 py-5 sm:py-12">
+        <p className="sm:hidden text-center text-xs font-bold tracking-wide text-white/60 mb-3">
+          Step {currentStep} of {steps.length} &middot;{" "}
+          <span className="text-gold-400">{steps[currentStep - 1]?.title}</span>
+        </p>
+        <div
+          className="flex justify-between relative"
+          role="progressbar"
+          aria-label="Booking progress"
+          aria-valuemin={1}
+          aria-valuemax={steps.length}
+          aria-valuenow={currentStep}
+        >
+          <div className="absolute top-4 sm:top-5 left-4 right-4 sm:left-5 sm:right-5 h-[2px] bg-white/10 -translate-y-1/2 z-0 rounded-full overflow-hidden">
+            <div
+              className="h-full bg-gold-400 transition-[width] duration-500 ease-out"
+              style={{ width: `${((currentStep - 1) / (steps.length - 1)) * 100}%` }}
+            />
+          </div>
           {steps.map((step) => (
             <div
               key={step.id}
@@ -1203,12 +1294,12 @@ export default function BookingPage() {
                   currentStep >= step.id
                     ? "bg-gold-400 border-gold-400 text-white dark:text-black shadow-sm"
                     : "bg-rich-black border-white/10 text-white/40"
-                }`}
+                } ${currentStep === step.id ? "ring-4 ring-gold-400/20" : ""}`}
               >
                 <step.icon size={16} strokeWidth={2.5} />
               </div>
               <span
-                className={`text-[11px] sm:text-sm tracking-wide mt-2 sm:mt-3 font-bold text-center ${
+                className={`hidden sm:block text-sm tracking-wide mt-3 font-bold text-center ${
                   currentStep >= step.id ? "text-gold-400" : "text-white/60"
                 }`}
               >
@@ -1281,14 +1372,14 @@ export default function BookingPage() {
               initial={{ opacity: 0, x: 20 }}
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: -20 }}
-              className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"
+              className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6"
             >
-              <div className="col-span-full mb-8">
+              <div className="col-span-full mb-1 sm:mb-8">
                 <h2 className="text-2xl font-serif mb-2">
                   Select Your Collection{" "}
                   <span className="text-red-400 text-lg">*</span>
                 </h2>
-                <p className="text-base text-white/80 font-semibold">
+                <p className="text-sm sm:text-base text-white/80 font-semibold">
                   Choose the base package that fits your event scale.
                 </p>
               </div>
@@ -1296,19 +1387,19 @@ export default function BookingPage() {
                 <button
                   key={pkg.id}
                   onClick={() => handlePackageSelect(pkg.id)}
-                  className={`p-5 sm:p-8 glass-card border transition-all duration-300 text-left group flex flex-col relative hover:-translate-y-2 hover:shadow-2xl hover:shadow-gold-400/20 ${
+                  className={`p-5 sm:p-8 glass-card border transition-all duration-300 text-left group flex flex-col relative rounded-lg sm:rounded-none [@media(hover:hover)]:hover:-translate-y-2 [@media(hover:hover)]:hover:shadow-2xl [@media(hover:hover)]:hover:shadow-gold-400/20 active:scale-[0.99] ${
                     formData.packageId === pkg.id
                       ? "border-gold-400 bg-gold-400/5"
                       : "border-white/10 hover:border-gold-400/50"
                   }`}
                 >
-                  {pkg.tag && pkg.tag.toLowerCase() !== "none" && (
-                    <div className="absolute top-4 left-4 z-10 bg-gold-400 text-black px-3 py-1 text-[9px] font-bold uppercase tracking-widest rounded-sm">
-                      {pkg.tag}
-                    </div>
-                  )}
                   <div className="flex-grow flex flex-col w-full">
-                    <div className="flex justify-between items-start mb-4 gap-4 mt-2">
+                    {pkg.tag && pkg.tag.toLowerCase() !== "none" && (
+                      <span className="self-start mb-3 bg-gold-400 text-white dark:text-black px-3 py-1 text-[10px] font-bold uppercase tracking-widest rounded-sm">
+                        {pkg.tag}
+                      </span>
+                    )}
+                    <div className="flex justify-between items-start mb-4 gap-4">
                       <h3 className="text-xl font-serif text-white uppercase tracking-wider">
                         {pkg.name}
                       </h3>
@@ -1317,7 +1408,7 @@ export default function BookingPage() {
                       </span>
                     </div>
 
-                    <div className="flex justify-between items-center mb-6 pb-6 border-b border-white/10">
+                    <div className="flex justify-between items-center mb-4 sm:mb-6 pb-4 sm:pb-6 border-b border-white/10">
                       <span className="text-sm text-white/80 font-bold">
                         {pkg.pax} Guests
                       </span>
@@ -1328,7 +1419,7 @@ export default function BookingPage() {
                       )}
                     </div>
 
-                    <div className="space-y-4 mb-10">
+                    <div className="space-y-4 mb-6 sm:mb-10">
                       {(() => {
                         const allCategorizedItems = Object.values(inclusionCategories).flat();
                         const pkgInclusions = Array.isArray(pkg.inclusions) ? pkg.inclusions : [];
@@ -1383,7 +1474,7 @@ export default function BookingPage() {
                     </div>
                     
                     <div className="mt-auto w-full">
-                      <div className={`w-full py-4 border text-[10px] uppercase tracking-[0.3em] font-bold transition-all flex items-center justify-center gap-3 ${
+                      <div className={`w-full min-h-12 py-3.5 sm:py-4 rounded-md sm:rounded-none border text-xs sm:text-[10px] uppercase tracking-[0.18em] sm:tracking-[0.3em] font-bold transition-all flex items-center justify-center gap-3 ${
                         formData.packageId === pkg.id
                           ? "bg-gold-400 text-black border-gold-400"
                           : "border-gold-400/20 text-gold-400 group-hover:bg-gold-400 group-hover:text-black"
@@ -1404,10 +1495,10 @@ export default function BookingPage() {
               initial={{ opacity: 0, x: 20 }}
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: -20 }}
-              className="glass-card border border-white/10 p-4 sm:p-8 md:p-16"
+              className="glass-card border border-white/10 rounded-lg sm:rounded-none p-4 sm:p-8 md:p-16"
             >
-              <div className="mb-8 sm:mb-12">
-                <h2 className="text-3xl font-serif mb-2 uppercase tracking-wide">
+              <div className="mb-6 sm:mb-12">
+                <h2 className="text-2xl sm:text-3xl font-serif mb-2 uppercase tracking-wide">
                   Event{" "}
                   <span className="italic gold-text-gradient">
                     Specifications
@@ -1455,6 +1546,8 @@ export default function BookingPage() {
                   </label>
                   <input
                     type="number"
+                    inputMode="numeric"
+                    pattern="[0-9]*"
                     min="10"
                     max={maxGuests + MAX_ADDITIONAL_PAX}
                     placeholder={`e.g. ${maxGuests || 50}`}
@@ -1515,6 +1608,54 @@ export default function BookingPage() {
                       Package covers up to {maxGuests} pax. Excess guests above {maxGuests} are automatically allocated to Additional Pax.
                     </p>
                   )}
+                </div>
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <label className="text-base text-white/80 font-bold flex items-center gap-2">
+                      Additional Pax <span className="text-sm font-normal text-white/50">(Optional)</span>
+                      {selectedPkgForMenu?.additional_pax_price && (
+                        <div className="relative group/tooltip flex items-center justify-center">
+                          <Info size={16} className="text-gold-400/80 cursor-help transition-colors hover:text-gold-400" />
+                          <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-56 p-3 bg-[#0a0a0a] border border-white/10 text-xs text-white/80 text-center rounded opacity-0 invisible group-hover/tooltip:opacity-100 group-hover/tooltip:visible transition-all z-10 pointer-events-none shadow-2xl">
+                            <span className="font-bold text-gold-400 block mb-1">Additional Pax Pricing</span>
+                            Each additional guest costs ₱{selectedPkgForMenu.additional_pax_price}. This will be automatically added to your estimated budget.
+                            <div className="absolute -bottom-1.5 left-1/2 -translate-x-1/2 w-3 h-3 bg-[#0a0a0a] border-b border-r border-white/10 rotate-45"></div>
+                          </div>
+                        </div>
+                      )}
+                    </label>
+                    <span className="text-[11px] font-semibold text-white/45">Max {MAX_ADDITIONAL_PAX}</span>
+                  </div>
+                  <input
+                    type="number"
+                    inputMode="numeric"
+                    pattern="[0-9]*"
+                    min="0"
+                    max={MAX_ADDITIONAL_PAX}
+                    placeholder="e.g. 10"
+                    disabled={!formData.guestCount || parseInt(formData.guestCount) < maxGuests}
+                    className={`w-full bg-white/5 border border-white/10 px-4 sm:px-6 py-3.5 sm:py-4 text-base sm:text-lg focus:outline-none focus:border-gold-400/50 transition-all font-medium ${(!formData.guestCount || parseInt(formData.guestCount) < maxGuests) ? "opacity-50 cursor-not-allowed" : ""}`}
+                    value={formData.additionalPax}
+                    onFocus={(e) => e.target.select()}
+                    onChange={(e) => {
+                      setStepError("");
+                      const val = e.target.value;
+                      if (val === "") {
+                        setFormData({ ...formData, additionalPax: "" });
+                        return;
+                      }
+                      const clamped = sanitizePositiveInt(val, MAX_ADDITIONAL_PAX);
+                      if (clamped !== null) {
+                        e.target.value = String(clamped);
+                        setFormData({ ...formData, additionalPax: String(clamped) });
+                      }
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === "-" || e.key === "+" || e.key === "." || e.key === "e" || e.key === "E") {
+                        e.preventDefault();
+                      }
+                    }}
+                  />
                 </div>
                 <div className="space-y-2">
                   <label className="text-base text-white/80 font-bold">
@@ -1596,52 +1737,6 @@ export default function BookingPage() {
                   );
                 })()}
                 </div>
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between gap-2">
-                    <label className="text-base text-white/80 font-bold flex items-center gap-2">
-                      Additional Pax <span className="text-sm font-normal text-white/50">(Optional)</span>
-                      {selectedPkgForMenu?.additional_pax_price && (
-                        <div className="relative group/tooltip flex items-center justify-center">
-                          <Info size={16} className="text-gold-400/80 cursor-help transition-colors hover:text-gold-400" />
-                          <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-56 p-3 bg-[#0a0a0a] border border-white/10 text-xs text-white/80 text-center rounded opacity-0 invisible group-hover/tooltip:opacity-100 group-hover/tooltip:visible transition-all z-10 pointer-events-none shadow-2xl">
-                            <span className="font-bold text-gold-400 block mb-1">Additional Pax Pricing</span>
-                            Each additional guest costs ₱{selectedPkgForMenu.additional_pax_price}. This will be automatically added to your estimated budget.
-                            <div className="absolute -bottom-1.5 left-1/2 -translate-x-1/2 w-3 h-3 bg-[#0a0a0a] border-b border-r border-white/10 rotate-45"></div>
-                          </div>
-                        </div>
-                      )}
-                    </label>
-                    <span className="text-[11px] font-semibold text-white/45">Max {MAX_ADDITIONAL_PAX}</span>
-                  </div>
-                  <input
-                    type="number"
-                    min="0"
-                    max={MAX_ADDITIONAL_PAX}
-                    placeholder="e.g. 10"
-                    disabled={!formData.guestCount || parseInt(formData.guestCount) < maxGuests}
-                    className={`w-full bg-white/5 border border-white/10 px-4 sm:px-6 py-3.5 sm:py-4 text-base sm:text-lg focus:outline-none focus:border-gold-400/50 transition-all font-medium ${(!formData.guestCount || parseInt(formData.guestCount) < maxGuests) ? "opacity-50 cursor-not-allowed" : ""}`}
-                    value={formData.additionalPax}
-                    onFocus={(e) => e.target.select()}
-                    onChange={(e) => {
-                      setStepError("");
-                      const val = e.target.value;
-                      if (val === "") {
-                        setFormData({ ...formData, additionalPax: "" });
-                        return;
-                      }
-                      const clamped = sanitizePositiveInt(val, MAX_ADDITIONAL_PAX);
-                      if (clamped !== null) {
-                        e.target.value = String(clamped);
-                        setFormData({ ...formData, additionalPax: String(clamped) });
-                      }
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key === "-" || e.key === "+" || e.key === "." || e.key === "e" || e.key === "E") {
-                        e.preventDefault();
-                      }
-                    }}
-                  />
-                </div>
                 <VenueMapPicker
                   venueName={formData.venueName}
                   venueAddress={formData.venueAddress}
@@ -1698,241 +1793,184 @@ export default function BookingPage() {
                     </div>
                   )}
 
-                  <div className="p-4 sm:p-6 bg-white/[0.03] border border-white/10 space-y-5">
-                    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/10 pb-3">
-                      <div className="flex items-center gap-2.5">
+                  <div className="p-4 sm:p-6 bg-white/[0.03] border border-white/10 rounded-xl space-y-6">
+                    <div className="flex items-start gap-3">
+                      <div className="w-9 h-9 rounded-lg bg-gold-400/10 border border-gold-400/25 flex items-center justify-center shrink-0">
                         <Building2 className="text-gold-400" size={18} />
-                        <h4 className="text-base font-bold text-white tracking-wide">
+                      </div>
+                      <div className="min-w-0">
+                        <h4 className="text-base font-bold text-white tracking-wide leading-tight">
                           Venue Accessibility
                         </h4>
+                        <p className="text-xs text-white/55 mt-0.5">
+                          Helps us plan setup, weather cover and equipment hauling.
+                        </p>
                       </div>
                     </div>
 
-                    {/* 1. Venue Environment & Setting (Indoor vs Outdoor — Outdoor automatically sets Ground Floor) */}
-                    <div className="space-y-3">
-                      <div className="flex flex-wrap items-center justify-between gap-2">
-                        <label className="block text-sm font-bold text-white/90">
-                          1. Venue Environment &amp; Setting
-                        </label>
-                        <span className="text-xs text-white/50">
-                          Weather &amp; Setup Advisory
-                        </span>
-                      </div>
+                    {/* Venue setting (Outdoor automatically sets Ground Floor) */}
+                    <fieldset className="space-y-2.5">
+                      <legend className="text-sm font-bold text-white/90 mb-2.5">Where is the event held?</legend>
                       <div className="grid grid-cols-2 gap-2.5 sm:gap-3">
-                        <button
-                          type="button"
+                        <ChoiceCard
+                          selected={!isOutdoorVenue}
                           onClick={() => setIsOutdoorVenue(false)}
-                          className={`py-3 px-2.5 sm:px-4 text-xs sm:text-sm font-bold border transition-all flex items-center justify-center gap-1.5 sm:gap-2 cursor-pointer ${
-                            !isOutdoorVenue
-                              ? "bg-gold-400 text-obsidian border-gold-400 shadow-md"
-                              : "bg-white/5 text-white/70 border-white/10 hover:border-white/30"
-                          }`}
-                        >
-                          {!isOutdoorVenue && <Check size={15} className="shrink-0" />}
-                          <span>Indoor (Covered / Hall)</span>
-                        </button>
-                        <button
-                          type="button"
+                          icon={<Building2 size={18} />}
+                          title="Indoor"
+                          hint="Hall or covered area"
+                        />
+                        <ChoiceCard
+                          selected={isOutdoorVenue}
                           onClick={() => {
                             setIsOutdoorVenue(true);
                             setIsSecondFloorOrHigher(false);
                             setFloorLevel(1);
                             setHasElevator(false);
                           }}
-                          className={`py-3 px-2.5 sm:px-4 text-xs sm:text-sm font-bold border transition-all flex items-center justify-center gap-1.5 sm:gap-2 cursor-pointer ${
-                            isOutdoorVenue
-                              ? "bg-gold-400 text-obsidian border-gold-400 shadow-md"
-                              : "bg-white/5 text-white/70 border-white/10 hover:border-white/30"
-                          }`}
-                        >
-                          {isOutdoorVenue && <Check size={15} className="shrink-0" />}
-                          <span>Outdoor (Garden / Open Air)</span>
-                        </button>
+                          icon={<Trees size={18} />}
+                          title="Outdoor"
+                          hint="Garden or open air"
+                        />
                       </div>
 
-                      {isOutdoorVenue && (
-                        <div className="space-y-3">
-                          {/* Outdoor Weather Advisory Callout */}
-                          <div className="p-4 bg-amber-500/15 border border-amber-500/40 text-amber-200 flex items-start gap-3 rounded transition-all">
-                            <CloudRain className="text-amber-400 shrink-0 mt-0.5" size={20} />
-                            <div className="space-y-1">
-                              <div className="flex items-center gap-2">
-                                <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 bg-amber-500/25 text-amber-300 border border-amber-400/40 rounded">
-                                  Outdoor Weather Advisory
-                                </span>
+                      <AnimatePresence initial={false}>
+                        {isOutdoorVenue && (
+                          <motion.div
+                            initial={{ opacity: 0, height: 0 }}
+                            animate={{ opacity: 1, height: "auto" }}
+                            exit={{ opacity: 0, height: 0 }}
+                            className="overflow-hidden"
+                          >
+                            <div className="mt-1 p-3.5 rounded-lg bg-amber-500/10 border border-amber-500/30 flex items-start gap-3">
+                              <CloudRain className="text-amber-400 shrink-0 mt-0.5" size={18} />
+                              <div className="text-xs leading-relaxed space-y-1">
+                                <p className="text-white/90 font-semibold">
+                                  ₱2,000 laundry fee applies if it rains without tents.
+                                </p>
+                                <p className="text-white/60">
+                                  Please provide cover for tables and linens. Outdoor venues count as ground floor, so no hauling fee applies.
+                                </p>
                               </div>
-                              <p className="text-xs text-white/95 leading-relaxed font-semibold">
-                                A ₱2,000 laundry fee applies if it rains without tents.
-                              </p>
-                              <p className="text-[11px] text-white/65 leading-relaxed">
-                                Please provide tents or cover to protect tables and linens.
-                              </p>
                             </div>
-                          </div>
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
+                    </fieldset>
 
-                          {/* Automatic Ground Floor Banner */}
-                          <div className="p-3.5 bg-emerald-500/10 border border-emerald-500/30 rounded flex items-start gap-3">
-                            <CheckCircle className="text-emerald-400 shrink-0 mt-0.5" size={18} />
-                            <div className="space-y-0.5">
-                              <p className="text-xs font-bold text-emerald-300 uppercase tracking-wider">
-                                Ground Floor Access
-                              </p>
-                              <p className="text-xs text-white/75 leading-relaxed">
-                                Outdoor venues are set to ground floor—no stairs hauling fee applies.
-                              </p>
-                            </div>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* 2 & 3. Floor Level & Elevator Questionnaire (Only applicable to Indoor venues) */}
+                    {/* Floor level & elevator (Indoor venues only) */}
                     {!isOutdoorVenue && (
-                      <div className="pt-4 border-t border-white/10 space-y-5">
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                          <div className="space-y-3">
-                            <label className="block text-sm font-bold text-white/90">
-                              2. Is the venue on the 2nd floor or higher?
-                            </label>
-                            <div className="grid grid-cols-2 gap-2.5 sm:gap-3">
-                              <button
-                                type="button"
-                                onClick={() => setIsSecondFloorOrHigher(false)}
-                                className={`py-3 px-2.5 sm:px-4 text-xs sm:text-sm font-bold border transition-all flex items-center justify-center gap-1.5 sm:gap-2 cursor-pointer ${
-                                  !isSecondFloorOrHigher
-                                    ? "bg-gold-400 text-obsidian border-gold-400"
-                                    : "bg-white/5 text-white/70 border-white/10 hover:border-white/30"
-                                }`}
-                              >
-                                {!isSecondFloorOrHigher && <Check size={15} className="shrink-0" />}
-                                <span>No (Ground Floor)</span>
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setIsSecondFloorOrHigher(true);
-                                  if (floorLevel < 2) setFloorLevel(2);
-                                }}
-                                className={`py-3 px-2.5 sm:px-4 text-xs sm:text-sm font-bold border transition-all flex items-center justify-center gap-1.5 sm:gap-2 cursor-pointer ${
-                                  isSecondFloorOrHigher
-                                    ? "bg-gold-400 text-obsidian border-gold-400"
-                                    : "bg-white/5 text-white/70 border-white/10 hover:border-white/30"
-                                }`}
-                              >
-                                {isSecondFloorOrHigher && <Check size={15} className="shrink-0" />}
-                                <span>Yes (2nd Floor+)</span>
-                              </button>
-                            </div>
-
-                            {isSecondFloorOrHigher && (
-                              <div className="pt-2 space-y-1.5">
-                                <label className="block text-xs text-white/70 font-semibold uppercase tracking-wider">
-                                  Select Venue Floor Level
-                                </label>
-                                <select
-                                  value={floorLevel}
-                                  onChange={(e) => setFloorLevel(parseInt(e.target.value, 10) || 2)}
-                                  className="w-full bg-obsidian border border-gold-400/40 px-4 py-2.5 text-sm text-white font-semibold focus:outline-none focus:border-gold-400"
-                                >
-                                  <option value={2} className="bg-obsidian text-black dark:text-black">2nd Floor</option>
-                                  <option value={3} className="bg-obsidian text-black dark:text-black">3rd Floor</option>
-                                  <option value={4} className="bg-obsidian text-black dark:text-black">4th Floor</option>
-                                  <option value={5} className="bg-obsidian text-black dark:text-black">5th Floor</option>
-                                  <option value={6} className="bg-obsidian text-black dark:text-black">6th Floor or Higher</option>
-                                </select>
-                              </div>
-                            )}
-                          </div>
-
-                          <div className={`space-y-3 transition-all duration-200 ${!isSecondFloorOrHigher ? "opacity-35 select-none pointer-events-none" : ""}`}>
-                            <div className="flex items-center justify-between">
-                              <label className="block text-sm font-bold text-white/90">
-                                3. Is there an elevator available?
-                              </label>
-                            </div>
-                            <div className="grid grid-cols-2 gap-2.5 sm:gap-3">
-                              <button
-                                type="button"
-                                disabled={!isSecondFloorOrHigher}
-                                onClick={() => setHasElevator(true)}
-                                className={`py-3 px-2.5 sm:px-4 text-xs sm:text-sm font-bold border transition-all flex items-center justify-center gap-1.5 sm:gap-2 ${
-                                  !isSecondFloorOrHigher
-                                    ? "bg-white/[0.02] text-white/30 border-white/10 cursor-not-allowed"
-                                    : hasElevator
-                                    ? "bg-gold-400 text-obsidian border-gold-400 cursor-pointer"
-                                    : "bg-white/5 text-white/70 border-white/10 hover:border-white/30 cursor-pointer"
-                                }`}
-                              >
-                                {isSecondFloorOrHigher && hasElevator && <Check size={15} className="shrink-0" />}
-                                <span>Yes (With Elevator)</span>
-                              </button>
-                              <button
-                                type="button"
-                                disabled={!isSecondFloorOrHigher}
-                                onClick={() => setHasElevator(false)}
-                                className={`py-3 px-2.5 sm:px-4 text-xs sm:text-sm font-bold border transition-all flex items-center justify-center gap-1.5 sm:gap-2 ${
-                                  !isSecondFloorOrHigher
-                                    ? "bg-white/[0.02] text-white/30 border-white/10 cursor-not-allowed"
-                                    : !hasElevator
-                                    ? "bg-gold-400 text-obsidian border-gold-400 cursor-pointer"
-                                    : "bg-white/5 text-white/70 border-white/10 hover:border-white/30 cursor-pointer"
-                                }`}
-                              >
-                                {isSecondFloorOrHigher && !hasElevator && <Check size={15} className="shrink-0" />}
-                                <span>No (Stairs Only)</span>
-                              </button>
-                            </div>
-                            <p className="text-xs text-white/50 leading-relaxed">
-                              {!isSecondFloorOrHigher
-                                ? "Ground floor venues do not require elevator ingress/egress."
-                                : "Service or freight elevator must be accessible for catering equipment and banquet tables during ingress/egress."}
-                            </p>
-                          </div>
+                      <fieldset className="space-y-2.5">
+                        <legend className="text-sm font-bold text-white/90 mb-2.5">Which floor is the venue on?</legend>
+                        <div className="grid grid-cols-2 gap-2.5 sm:gap-3">
+                          <ChoiceCard
+                            selected={!isSecondFloorOrHigher}
+                            onClick={() => setIsSecondFloorOrHigher(false)}
+                            icon={<DoorOpen size={18} />}
+                            title="Ground floor"
+                            hint="No stairs needed"
+                          />
+                          <ChoiceCard
+                            selected={isSecondFloorOrHigher}
+                            onClick={() => {
+                              setIsSecondFloorOrHigher(true);
+                              if (floorLevel < 2) setFloorLevel(2);
+                            }}
+                            icon={<Building size={18} />}
+                            title="2nd floor +"
+                            hint="Upper level venue"
+                          />
                         </div>
+
+                        <AnimatePresence initial={false}>
+                          {isSecondFloorOrHigher && (
+                            <motion.div
+                              initial={{ opacity: 0, height: 0 }}
+                              animate={{ opacity: 1, height: "auto" }}
+                              exit={{ opacity: 0, height: 0 }}
+                              className="overflow-hidden"
+                            >
+                              <div className="pt-3 space-y-5">
+                                <div className="space-y-2">
+                                  <p className="text-xs font-semibold text-white/60">Floor level</p>
+                                  <div role="radiogroup" aria-label="Floor level" className="flex flex-wrap gap-2">
+                                    {[2, 3, 4, 5, 6].map((lvl) => {
+                                      const active = floorLevel === lvl;
+                                      return (
+                                        <button
+                                          key={lvl}
+                                          type="button"
+                                          role="radio"
+                                          aria-checked={active}
+                                          onClick={() => setFloorLevel(lvl)}
+                                          className={`min-w-12 h-10 px-3 rounded-full border text-sm font-bold transition-colors cursor-pointer ${
+                                            active
+                                              ? "bg-gold-400/15 border-gold-400 text-gold-400"
+                                              : "bg-white/5 border-white/10 text-white/70 hover:border-white/30"
+                                          }`}
+                                        >
+                                          {lvl === 6 ? "6+" : ordinalFloor(lvl)}
+                                        </button>
+                                      );
+                                    })}
+                                  </div>
+                                </div>
+
+                                <div className="space-y-2">
+                                  <p className="text-sm font-bold text-white/90">Is there an elevator?</p>
+                                  <div className="grid grid-cols-2 gap-2.5 sm:gap-3">
+                                    <ChoiceCard
+                                      selected={hasElevator}
+                                      onClick={() => setHasElevator(true)}
+                                      icon={<ArrowUpDown size={18} />}
+                                      title="Yes"
+                                      hint="Service / freight lift"
+                                    />
+                                    <ChoiceCard
+                                      selected={!hasElevator}
+                                      onClick={() => setHasElevator(false)}
+                                      icon={<Footprints size={18} />}
+                                      title="No"
+                                      hint="Stairs only"
+                                    />
+                                  </div>
+                                </div>
+                              </div>
+                            </motion.div>
+                          )}
+                        </AnimatePresence>
 
                         {requiresStairsIngress && (
-                          <div className="p-4 bg-gold-400/10 border border-gold-400/40 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                            <div className="space-y-1">
-                              <div className="flex items-center gap-2">
-                                <span className="text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 bg-amber-500/20 text-amber-300 border border-amber-400/40">
-                                  Stairs Ingress Required
-                                </span>
-                                <span className="text-sm font-bold text-gold-400">
-                                  Hauling Fee
-                                </span>
-                              </div>
-                              <p className="text-xs text-white/80">
-                                ₱150 × {floorsAboveGround} floor{floorsAboveGround > 1 ? "s" : ""} above ground (Floor {floorLevel}) × {waiterCountCalc} assigned waiter{waiterCountCalc > 1 ? "s" : ""} ({totalGuestPaxCalc || maxGuests} pax)
+                          <div className="mt-1 p-3.5 rounded-lg bg-gold-400/10 border border-gold-400/35 flex items-center justify-between gap-3">
+                            <div className="min-w-0">
+                              <p className="text-sm font-bold text-gold-400">Stairs hauling fee</p>
+                              <p className="text-[11px] text-white/60 leading-snug mt-0.5">
+                                ₱150 × {floorsAboveGround} floor{floorsAboveGround > 1 ? "s" : ""} × {waiterCountCalc} waiter{waiterCountCalc > 1 ? "s" : ""}
                               </p>
                             </div>
-                            <div className="text-left sm:text-right shrink-0">
-                              <p className="text-[10px] uppercase tracking-widest text-white/50 font-bold">
-                                Hauling Surcharge
-                              </p>
-                              <p className="text-xl font-serif font-bold text-gold-400">
-                                +₱{calculatedHaulingFee.toLocaleString()}
-                              </p>
-                            </div>
+                            <p className="text-lg font-serif font-bold text-gold-400 tabular-nums shrink-0">
+                              +₱{calculatedHaulingFee.toLocaleString()}
+                            </p>
                           </div>
                         )}
-                      </div>
+                      </fieldset>
                     )}
                   </div>
                 </div>
                 <div className="col-span-full space-y-2">
-                  <div className="flex items-center justify-between gap-2">
-                    <label className="text-base text-white/80 font-bold">
-                      Food Allergies / Dietary Restrictions <span className="text-sm font-normal text-white/50">(Optional)</span>
+                  <div className="flex items-baseline justify-between gap-3">
+                    <label htmlFor="booking-food-allergies" className="text-base text-white/80 font-bold">
+                      Dietary Notes <span className="text-sm font-normal text-white/50">(Optional)</span>
                     </label>
-                    <span className="text-[11px] font-medium text-white/45">
+                    <span className="text-[11px] font-medium text-white/45 tabular-nums shrink-0">
                       {formData.foodAllergies.length}/{MAX_ALLERGIES_LENGTH}
                     </span>
                   </div>
                   <textarea
-                    placeholder="e.g. Peanut allergy, vegetarian options needed..."
+                    id="booking-food-allergies"
+                    placeholder="Allergies or dietary needs, e.g. no peanuts, vegetarian"
                     rows={2}
                     maxLength={MAX_ALLERGIES_LENGTH}
-                    className="w-full bg-white/5 border border-white/10 px-4 sm:px-6 py-3.5 sm:py-4 text-base sm:text-lg focus:outline-none focus:border-gold-400/50 transition-all font-medium resize-none"
+                    className="w-full bg-white/5 border border-white/10 rounded-lg sm:rounded-none px-4 sm:px-6 py-3.5 sm:py-4 text-base focus:outline-none focus:border-gold-400/50 transition-all font-medium resize-none"
                     value={formData.foodAllergies}
                     onChange={(e) => {
                       setFormData({ ...formData, foodAllergies: e.target.value.slice(0, MAX_ALLERGIES_LENGTH) });
@@ -1950,10 +1988,10 @@ export default function BookingPage() {
               initial={{ opacity: 0, x: 20 }}
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: -20 }}
-              className="space-y-12"
+              className="space-y-8 sm:space-y-12"
             >
-              <div className="mb-12">
-                <h2 className="text-3xl font-serif mb-2 uppercase tracking-wide">
+              <div className="mb-4 sm:mb-12">
+                <h2 className="text-2xl sm:text-3xl font-serif mb-2 uppercase tracking-wide">
                   Menu{" "}
                   <span className="italic gold-text-gradient">Curation</span>
                 </h2>
@@ -1963,6 +2001,49 @@ export default function BookingPage() {
                     : "Select your preferred dishes from our active catalog."}
                 </p>
               </div>
+
+          {activeMenuRules && (
+            <nav
+              aria-label="Menu categories"
+              className="sm:hidden sticky top-16 z-30 -mx-4 px-4 py-2.5 bg-rich-black/95 backdrop-blur-md border-b border-white/10 flex gap-2 overflow-x-auto scrollbar-none snap-x scroll-px-4"
+            >
+              {categoryOrder.map((category) => {
+                const items = groupedMenu[category];
+                if (!items || items.length === 0) return null;
+                const limit = activeMenuRules[category];
+                if (!limit || limit.max === 0) return null;
+                const availableCount = items.filter((itemName) => {
+                  const opt = menuOptions.find((o) => o.name === itemName);
+                  return opt && opt.status !== "Not Available" && opt.status !== "Archived";
+                }).length;
+                const minNeeded = Math.min(limit.min, availableCount);
+                const count = currentMenuCounts[category] || 0;
+                const done = count >= minNeeded && count <= limit.max && count > 0;
+                return (
+                  <button
+                    key={category}
+                    type="button"
+                    onClick={() =>
+                      document
+                        .getElementById(`menu-category-${category.replace(/\s+/g, "-").toLowerCase()}`)
+                        ?.scrollIntoView({ behavior: "smooth", block: "start" })
+                    }
+                    className={`snap-start shrink-0 min-h-9 px-3 rounded-full border text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer ${
+                      done
+                        ? "bg-gold-400/15 border-gold-400/50 text-gold-400"
+                        : "bg-white/5 border-white/15 text-white/70"
+                    }`}
+                  >
+                    {done && <Check size={12} strokeWidth={3} />}
+                    {category}
+                    <span className="tabular-nums opacity-80">
+                      {count}/{limit.max}
+                    </span>
+                  </button>
+                );
+              })}
+            </nav>
+          )}
 
           {categoryOrder.map(
             (category) => {
@@ -1982,7 +2063,7 @@ export default function BookingPage() {
                   <div
                     key={category}
                     id={`menu-category-${category.replace(/\s+/g, "-").toLowerCase()}`}
-                    className="space-y-6 scroll-mt-28"
+                    className="space-y-4 sm:space-y-6 scroll-mt-36 sm:scroll-mt-28"
                   >
                     <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gold-400/20 pb-4">
                       <h3 className="text-xl tracking-wide text-gold-400 font-bold italic">
@@ -1994,7 +2075,7 @@ export default function BookingPage() {
                         </span>
                       )}
                     </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2.5 sm:gap-4">
                       {items.map((item) => {
                         const opt = menuOptions.find((o) => o.name === item);
                         const isUnavailable = opt?.status === "Not Available";
@@ -2005,7 +2086,7 @@ export default function BookingPage() {
                             key={item}
                             onClick={() => !isUnavailable && handleMenuToggle(item)}
                             disabled={isUnavailable}
-                            className={`p-4 sm:p-5 min-h-12 glass-card border flex flex-col justify-center transition-all group ${
+                            className={`px-4 py-3.5 sm:p-5 min-h-14 sm:min-h-12 rounded-lg sm:rounded-none glass-card border flex flex-col justify-center transition-all group ${
                               isUnavailable 
                                 ? "opacity-50 cursor-not-allowed border-white/5 bg-white/5"
                                 : isSelected
@@ -2014,11 +2095,11 @@ export default function BookingPage() {
                             }`}
                           >
                             <div className="flex items-center justify-between w-full">
-                              <span className="text-base tracking-wide font-bold text-left">
+                              <span className="text-[15px] sm:text-base tracking-wide font-bold text-left pr-3">
                                 {item}
                               </span>
                               <div
-                                className={`w-5 h-5 border flex items-center justify-center shrink-0 transition-all ${
+                                className={`w-6 h-6 sm:w-5 sm:h-5 rounded sm:rounded-none border flex items-center justify-center shrink-0 transition-all ${
                                   isSelected && !isUnavailable
                                     ? "bg-gold-400 border-gold-400 text-black"
                                     : "border-white/20 group-hover:border-gold-400"
@@ -2053,19 +2134,19 @@ export default function BookingPage() {
               initial={{ opacity: 0, x: 20 }}
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: -20 }}
-              className="space-y-10"
+              className="space-y-8 sm:space-y-10"
             >
-              <div className="text-center mb-10 sm:mb-12">
-                <h2 className="text-3xl sm:text-4xl md:text-5xl font-serif mb-4 uppercase tracking-wide">
+              <div className="text-center mb-4 sm:mb-12">
+                <h2 className="text-2xl sm:text-4xl md:text-5xl font-serif mb-2 sm:mb-4 uppercase tracking-wide">
                   Corkage &amp; <span className="italic gold-text-gradient">Add-ons</span>
                 </h2>
-                <p className="text-white/60 tracking-widest uppercase text-xs sm:text-sm font-medium">
+                <p className="text-white/60 tracking-wide sm:tracking-widest uppercase text-xs sm:text-sm font-medium">
                   Select additional culinary setups or bring outside food &amp; drinks
                 </p>
               </div>
 
               {/* Corkage Options Grid */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 sm:gap-6">
                 {/* 1. Lechon Table w/ Chopper Setup */}
                 <div
                   className={`p-5 sm:p-6 glass-card border transition-all rounded-xl flex flex-col justify-between relative cursor-pointer group ${
@@ -2225,6 +2306,8 @@ export default function BookingPage() {
                         </button>
                         <input
                           type="number"
+                          inputMode="numeric"
+                          pattern="[0-9]*"
                           min="0"
                           max={MAX_ALCOHOLIC_BOTTLES}
                           value={corkageState.alcoholicBeveragesCount}
@@ -2239,7 +2322,7 @@ export default function BookingPage() {
                             e.target.value = String(clamped);
                             setCorkageState((prev) => ({ ...prev, alcoholicBeveragesCount: clamped }));
                           }}
-                          className="w-16 text-center py-1.5 bg-white/5 border border-white/20 rounded font-bold text-base text-gold-400 focus:outline-none focus:border-gold-400"
+                          className="w-16 text-center h-10 sm:h-auto py-1.5 bg-white/5 border border-white/20 rounded font-bold text-base text-gold-400 focus:outline-none focus:border-gold-400"
                         />
                         <button
                           type="button"
@@ -2358,6 +2441,8 @@ export default function BookingPage() {
                         </button>
                         <input
                           type="number"
+                          inputMode="numeric"
+                          pattern="[0-9]*"
                           min="0"
                           max={MAX_OUTSIDE_FOOD_DISHES}
                           value={corkageState.outsideFoodCount}
@@ -2376,7 +2461,7 @@ export default function BookingPage() {
                               outsideFoodDisclaimerAgreed: clamped === 0 ? false : prev.outsideFoodDisclaimerAgreed,
                             }));
                           }}
-                          className="w-16 text-center py-1.5 bg-white/5 border border-white/20 rounded font-bold text-base text-gold-400 focus:outline-none focus:border-gold-400"
+                          className="w-16 text-center h-10 sm:h-auto py-1.5 bg-white/5 border border-white/20 rounded font-bold text-base text-gold-400 focus:outline-none focus:border-gold-400"
                         />
                         <button
                           type="button"
@@ -2554,7 +2639,7 @@ export default function BookingPage() {
                                   type="button"
                                   onClick={() => updateCoordinatorCount(coordinatorCount - 1)}
                                   disabled={coordinatorCount <= 1}
-                                  className="w-8 h-8 rounded flex items-center justify-center hover:bg-white/10 disabled:opacity-30 text-white transition-colors"
+                                  className="w-10 h-10 sm:w-8 sm:h-8 rounded flex items-center justify-center hover:bg-white/10 disabled:opacity-30 text-white transition-colors"
                                 >
                                   <Minus size={12} />
                                 </button>
@@ -2565,7 +2650,7 @@ export default function BookingPage() {
                                   type="button"
                                   onClick={() => updateCoordinatorCount(coordinatorCount + 1)}
                                   disabled={coordinatorCount >= 8}
-                                  className="w-8 h-8 rounded flex items-center justify-center hover:bg-white/10 disabled:opacity-30 text-white transition-colors"
+                                  className="w-10 h-10 sm:w-8 sm:h-8 rounded flex items-center justify-center hover:bg-white/10 disabled:opacity-30 text-white transition-colors"
                                 >
                                   <Plus size={12} />
                                 </button>
@@ -2577,7 +2662,7 @@ export default function BookingPage() {
                                   type="button"
                                   onClick={() => updateHours(currentHours - 1)}
                                   disabled={currentHours <= 0}
-                                  className="w-8 h-8 rounded flex items-center justify-center hover:bg-white/10 disabled:opacity-30 text-white transition-colors"
+                                  className="w-10 h-10 sm:w-8 sm:h-8 rounded flex items-center justify-center hover:bg-white/10 disabled:opacity-30 text-white transition-colors"
                                 >
                                   <Minus size={12} />
                                 </button>
@@ -2588,7 +2673,7 @@ export default function BookingPage() {
                                   type="button"
                                   onClick={() => updateHours(currentHours + 1)}
                                   disabled={currentHours >= 8}
-                                  className="w-8 h-8 rounded flex items-center justify-center hover:bg-white/10 disabled:opacity-30 text-white transition-colors"
+                                  className="w-10 h-10 sm:w-8 sm:h-8 rounded flex items-center justify-center hover:bg-white/10 disabled:opacity-30 text-white transition-colors"
                                 >
                                   <Plus size={12} />
                                 </button>
@@ -2600,7 +2685,7 @@ export default function BookingPage() {
                                 type="button"
                                 onClick={() => updateHours(currentHours - 1)}
                                 disabled={currentHours <= 0}
-                                className="w-8 h-8 rounded flex items-center justify-center hover:bg-white/10 disabled:opacity-30 text-white transition-colors"
+                                className="w-10 h-10 sm:w-8 sm:h-8 rounded flex items-center justify-center hover:bg-white/10 disabled:opacity-30 text-white transition-colors"
                               >
                                 <Minus size={14} />
                               </button>
@@ -2611,7 +2696,7 @@ export default function BookingPage() {
                                 type="button"
                                 onClick={() => updateHours(currentHours + 1)}
                                 disabled={currentHours >= 8}
-                                className="w-8 h-8 rounded flex items-center justify-center hover:bg-white/10 disabled:opacity-30 text-white transition-colors"
+                                className="w-10 h-10 sm:w-8 sm:h-8 rounded flex items-center justify-center hover:bg-white/10 disabled:opacity-30 text-white transition-colors"
                               >
                                 <Plus size={14} />
                               </button>
@@ -2650,14 +2735,14 @@ export default function BookingPage() {
               initial={{ opacity: 0, x: 20 }}
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: -20 }}
-              className="space-y-10"
+              className="space-y-8 sm:space-y-10"
             >
-              <div className="text-center mb-10 sm:mb-16">
-                <h2 className="text-3xl sm:text-4xl md:text-5xl font-serif mb-4 uppercase tracking-wide">
+              <div className="text-center mb-4 sm:mb-16">
+                <h2 className="text-2xl sm:text-4xl md:text-5xl font-serif mb-2 sm:mb-4 uppercase tracking-wide">
                   Review Your{" "}
                   <span className="italic gold-text-gradient">Request</span>
                 </h2>
-                <p className="text-base sm:text-lg text-white/80 tracking-wide font-bold">
+                <p className="text-sm sm:text-lg text-white/80 tracking-wide font-bold">
                   Double check everything before submitting.
                 </p>
               </div>
@@ -2667,10 +2752,10 @@ export default function BookingPage() {
                 <div className="lg:col-span-2 space-y-6 sm:space-y-8">
                   <div className="p-5 sm:p-8 md:p-10 glass-card border border-white/10 relative overflow-hidden">
                     <div className="absolute top-0 right-0 w-32 h-32 bg-gold-400/5 rotate-45 translate-x-16 -translate-y-16" />
-                    <h3 className="text-xl tracking-wide text-gold-400 font-bold mb-10 italic">
+                    <h3 className="text-xl tracking-wide text-gold-400 font-bold mb-6 sm:mb-10 italic">
                       1. Event Overview
                     </h3>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-y-8 gap-x-12">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-y-5 sm:gap-y-8 gap-x-12">
                       <div className="flex gap-4">
                         <Package className="text-gold-400 shrink-0" size={18} />
                         <div>
@@ -3001,11 +3086,11 @@ export default function BookingPage() {
                 </div>
               </div>
 
-              <div className="flex flex-col items-center pt-12 sm:pt-20">
+              <div className="flex flex-col items-center pt-6 sm:pt-20">
                 <button
                   onClick={handleInitiateBooking}
                   disabled={!formData.packageId}
-                  className="w-full sm:w-auto justify-center text-center gold-gradient text-black px-6 sm:px-12 md:px-20 py-4 sm:py-6 font-bold tracking-wide text-sm sm:text-lg hover:brightness-110 transition-all shadow-[0_0_40px_rgba(197,160,89,0.2)] disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-3 cursor-pointer"
+                  className="w-full sm:w-auto min-h-14 rounded-lg sm:rounded-none justify-center text-center gold-gradient text-black px-6 sm:px-12 md:px-20 py-4 sm:py-6 font-bold tracking-wide text-sm sm:text-lg hover:brightness-110 transition-all shadow-[0_0_40px_rgba(197,160,89,0.2)] disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-3 cursor-pointer"
                 >
                   Review Agreement & Proceed to Payment <ChevronRight size={18} />
                 </button>
@@ -3015,15 +3100,22 @@ export default function BookingPage() {
         </AnimatePresence>
 
         {/* Navigation Buttons */}
-        <div className="mt-12 sm:mt-20 flex flex-col items-center gap-6">
+        <div
+          className={`mt-10 sm:mt-20 flex flex-col items-center gap-6 ${
+            currentStep > 1
+              ? "sticky bottom-0 z-30 -mx-4 px-4 pt-3 pb-safe bg-rich-black/95 backdrop-blur-md border-t border-white/10 shadow-[0_-8px_24px_-12px_rgba(0,0,0,0.35)] sm:static sm:mx-0 sm:px-0 sm:pt-0 sm:pb-0 sm:bg-transparent sm:backdrop-blur-none sm:border-0 sm:shadow-none"
+              : ""
+          }`}
+        >
 
-          <div className="w-full flex flex-col-reverse sm:flex-row justify-between items-stretch sm:items-center gap-4 sm:gap-6">
+          <div className="w-full flex flex-row justify-between items-stretch sm:items-center gap-3 sm:gap-6">
             {currentStep > 1 ? (
               <button
                 onClick={prevStep}
-                className="w-full sm:w-auto flex items-center justify-center gap-3 py-3 sm:py-0 text-base sm:text-lg tracking-wide font-bold text-white/80 hover:text-gold-400 transition-colors cursor-pointer"
+                aria-label="Back to previous step"
+                className={`${currentStep < 5 ? "w-auto shrink-0 px-4" : "w-full"} sm:w-auto sm:px-0 min-h-12 flex items-center justify-center gap-2 sm:gap-3 rounded-lg sm:rounded-none border border-white/15 sm:border-0 text-sm sm:text-lg tracking-wide font-bold text-white/80 hover:text-gold-400 transition-colors cursor-pointer`}
               >
-                <ChevronLeft size={16} /> Back to Previous
+                <ChevronLeft size={16} /> <span className="sm:hidden">Back</span><span className="hidden sm:inline">Back to Previous</span>
               </button>
             ) : (
               <div className="hidden sm:block" />
@@ -3032,9 +3124,9 @@ export default function BookingPage() {
             {currentStep > 1 && currentStep < 5 && (
               <button
                 onClick={handleNextStep}
-                className="w-full sm:w-auto justify-center gold-gradient text-black px-8 sm:px-12 py-4 font-bold tracking-wide text-base sm:text-lg hover:brightness-110 transition-all flex items-center gap-3 cursor-pointer"
+                className="flex-1 sm:flex-none sm:w-auto min-h-12 justify-center gold-gradient text-black px-6 sm:px-12 py-3 sm:py-4 rounded-lg sm:rounded-none font-bold tracking-wide text-[15px] sm:text-lg hover:brightness-110 transition-all flex items-center gap-2 sm:gap-3 cursor-pointer"
               >
-                Continue to Next{" "}
+                <span className="sm:hidden">Continue</span><span className="hidden sm:inline">Continue to Next</span>{" "}
                 <ChevronRight size={14} />
               </button>
             )}
@@ -3049,13 +3141,18 @@ export default function BookingPage() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[100] bg-black/85 backdrop-blur-md flex items-center justify-center p-3 sm:p-6"
+            className="fixed inset-0 z-[100] bg-black/85 backdrop-blur-md flex items-stretch sm:items-center justify-center sm:p-6"
           >
             <motion.div
-              initial={{ scale: 0.95, opacity: 0, y: 20 }}
-              animate={{ scale: 1, opacity: 1, y: 0 }}
-              exit={{ scale: 0.95, opacity: 0, y: 20 }}
-              className="glass-card border border-white/15 max-w-4xl w-full max-h-[92dvh] flex flex-col relative overflow-hidden shadow-2xl rounded-2xl bg-[#0d0d0d]"
+              role="dialog"
+              aria-modal="true"
+              aria-label="Catering agreement and terms"
+              initial={{ opacity: 0, y: 40 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 40 }}
+              transition={{ type: "spring", stiffness: 420, damping: 38 }}
+              className="glass-card border-0 sm:border border-white/15 max-w-4xl w-full h-[100dvh] sm:h-auto sm:max-h-[92dvh] flex flex-col relative overflow-hidden shadow-2xl rounded-none sm:rounded-2xl bg-[#0d0d0d]"
+              style={{ paddingTop: "env(safe-area-inset-top, 0px)" }}
             >
               {/* Header */}
               <div className="p-4 sm:p-6 border-b border-white/10 flex items-center justify-between gap-2 bg-black/60 shrink-0">
@@ -3085,7 +3182,7 @@ export default function BookingPage() {
                     type="button"
                     aria-label="Close terms modal"
                     onClick={() => setShowTermsModal(false)}
-                    className="text-white/40 hover:text-white p-2 rounded-lg hover:bg-white/5 transition-colors cursor-pointer"
+                    className="text-white/50 hover:text-white min-w-11 min-h-11 -mr-2 flex items-center justify-center rounded-full hover:bg-white/5 transition-colors cursor-pointer"
                   >
                     <X size={20} />
                   </button>
@@ -3102,12 +3199,12 @@ export default function BookingPage() {
                       value={termsModalSearch}
                       onChange={(e) => setTermsModalSearch(e.target.value)}
                       placeholder="Search terms, fees, rules..."
-                      className="w-full bg-white/5 border border-white/10 rounded-full pl-9 pr-4 py-1.5 text-xs text-white placeholder-white/40 focus:outline-none focus:border-gold-400/50"
+                      className="w-full bg-white/5 border border-white/10 rounded-full pl-9 pr-4 py-2 sm:py-1.5 text-xs text-white placeholder-white/40 focus:outline-none focus:border-gold-400/50"
                     />
                   </div>
 
                   {/* Category Chips */}
-                  <div className="flex items-center gap-1.5 overflow-x-auto w-full sm:w-auto pb-1 sm:pb-0 scrollbar-none text-[11px]">
+                  <div className="flex items-center gap-1.5 overflow-x-auto w-full sm:w-auto pb-1 sm:pb-0 scrollbar-none text-xs sm:text-[11px] -mx-3 px-3 sm:mx-0 sm:px-0">
                     {[
                       { id: "all", label: "All (20)" },
                       { id: "payment", label: "Payment" },
@@ -3120,7 +3217,7 @@ export default function BookingPage() {
                       <button
                         key={tab.id}
                         onClick={() => setTermsModalCategory(tab.id)}
-                        className={`px-3 py-1 rounded-full whitespace-nowrap font-medium transition-all cursor-pointer ${
+                        className={`shrink-0 min-h-9 sm:min-h-0 px-3.5 sm:px-3 py-1.5 sm:py-1 rounded-full whitespace-nowrap font-medium transition-all cursor-pointer ${
                           termsModalCategory === tab.id
                             ? "bg-gold-400 text-black font-bold"
                             : "bg-white/5 border border-white/10 text-white/60 hover:text-white"
@@ -3139,7 +3236,7 @@ export default function BookingPage() {
                 noValidate
                 className="flex flex-col flex-1 min-h-0 overflow-hidden"
               >
-                <div className="p-4 sm:p-6 overflow-y-auto space-y-6 text-sm text-white/80 leading-relaxed scrollbar-thin flex-1 min-h-0">
+                <div className="p-4 sm:p-6 overflow-y-auto overscroll-contain space-y-6 text-sm text-white/80 leading-relaxed scrollbar-none flex-1 min-h-0">
                   {/* Dynamic Summary Banner */}
                   <div className="p-4 bg-gold-400/5 border border-gold-400/20 rounded-xl text-xs space-y-1.5 text-white/80">
                     <div className="flex items-center justify-between text-gold-300 font-bold uppercase tracking-wider">
@@ -3344,21 +3441,23 @@ export default function BookingPage() {
 
                       {/* Right: Signature Pad (Draw or Type) */}
                       <div className="md:col-span-7 space-y-1.5">
-                        <div className="flex items-center justify-between gap-2">
+                        <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
                           <span className="text-[11px] font-bold uppercase tracking-wider text-gold-400">
                             Client Electronic Signature *
                           </span>
-                          <div className="flex items-center gap-1.5">
+                          <div role="radiogroup" aria-label="Signature method" className="inline-flex shrink-0 p-0.5 rounded-lg bg-white/5 border border-white/10">
                             <button
                               type="button"
                               onClick={() => {
                                 setSignatureMode("drawn");
                                 if (termsFormError) setTermsFormError("");
                               }}
-                              className={`px-2.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider cursor-pointer transition-colors ${
+                              role="radio"
+                              aria-checked={signatureMode === "drawn"}
+                              className={`min-h-8 px-3.5 rounded-md text-[11px] font-bold uppercase tracking-wider whitespace-nowrap cursor-pointer transition-colors ${
                                 signatureMode === "drawn"
-                                  ? "bg-gold-400 text-black"
-                                  : "bg-white/5 text-white/60 border border-white/10 hover:text-white"
+                                  ? "bg-gold-400 text-white dark:text-black shadow-sm"
+                                  : "text-white/60 hover:text-white"
                               }`}
                             >
                               Draw
@@ -3369,28 +3468,30 @@ export default function BookingPage() {
                                 setSignatureMode("typed");
                                 if (termsFormError) setTermsFormError("");
                               }}
-                              className={`px-2.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider cursor-pointer transition-colors ${
+                              role="radio"
+                              aria-checked={signatureMode === "typed"}
+                              className={`min-h-8 px-3.5 rounded-md text-[11px] font-bold uppercase tracking-wider whitespace-nowrap cursor-pointer transition-colors ${
                                 signatureMode === "typed"
-                                  ? "bg-gold-400 text-black"
-                                  : "bg-white/5 text-white/60 border border-white/10 hover:text-white"
+                                  ? "bg-gold-400 text-white dark:text-black shadow-sm"
+                                  : "text-white/60 hover:text-white"
                               }`}
                             >
                               Type
                             </button>
-                            {signatureMode === "drawn" && hasDrawnSignature && (
-                              <button
-                                type="button"
-                                onClick={clearSignatureCanvas}
-                                className="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-red-500/15 text-red-300 border border-red-500/30 hover:bg-red-500/25 cursor-pointer"
-                              >
-                                Clear
-                              </button>
-                            )}
                           </div>
                         </div>
 
                         {signatureMode === "drawn" ? (
                           <div className="relative rounded-lg border border-gold-400/35 bg-[#faf8f3] overflow-hidden h-28">
+                            {hasDrawnSignature && (
+                              <button
+                                type="button"
+                                onClick={clearSignatureCanvas}
+                                className="absolute top-1.5 right-1.5 z-10 min-h-8 px-3 rounded-md text-[11px] font-bold uppercase tracking-wider whitespace-nowrap bg-white/90 text-red-700 border border-red-300 shadow-sm hover:bg-red-50 cursor-pointer"
+                              >
+                                Clear
+                              </button>
+                            )}
                             <canvas
                               ref={signatureCanvasRef}
                               width={520}
@@ -3449,24 +3550,24 @@ export default function BookingPage() {
                 </div>
 
                 {/* Slim Bottom Action Bar */}
-                <div className="px-4 sm:px-6 py-3.5 border-t border-white/10 bg-black/85 shrink-0 flex flex-col sm:flex-row items-center justify-between gap-3">
+                <div className="px-4 sm:px-6 pt-3 pb-safe sm:py-3.5 border-t border-white/10 bg-black/85 shrink-0 flex flex-col sm:flex-row items-center justify-between gap-2.5 sm:gap-3">
                   <div className="text-[10px] text-white/50">
                     <span>
                       Executing Contract as: <span className="text-gold-300 font-semibold">{signerFullName.trim() || userProfile?.full_name || userProfile?.name || "Client"}</span>
                     </span>
                   </div>
 
-                  <div className="flex flex-col-reverse sm:flex-row items-center gap-3 w-full sm:w-auto">
+                  <div className="flex flex-col-reverse sm:flex-row items-center gap-2.5 sm:gap-3 w-full sm:w-auto">
                     <button
                       type="button"
                       onClick={() => setShowTermsModal(false)}
-                      className="w-full sm:w-auto px-6 py-3 sm:py-2.5 border border-white/20 text-white/70 text-xs font-bold uppercase tracking-wider hover:bg-white/5 transition-colors rounded-sm cursor-pointer"
+                      className="w-full sm:w-auto min-h-12 sm:min-h-0 rounded-lg sm:rounded-sm px-6 py-3 sm:py-2.5 border border-white/20 text-white/70 text-xs font-bold uppercase tracking-wider hover:bg-white/5 transition-colors rounded-sm cursor-pointer"
                     >
                       Decline / Return
                     </button>
                     <button
                       type="submit"
-                      className="w-full sm:w-auto px-8 py-3 sm:py-2.5 gold-gradient text-black text-xs font-bold uppercase tracking-wider hover:brightness-110 transition-all rounded-sm flex items-center justify-center gap-2 cursor-pointer shadow-lg whitespace-nowrap"
+                      className="w-full sm:w-auto min-h-12 sm:min-h-0 rounded-lg sm:rounded-sm px-8 py-3 sm:py-2.5 gold-gradient text-black text-xs font-bold uppercase tracking-wider hover:brightness-110 transition-all rounded-sm flex items-center justify-center gap-2 cursor-pointer shadow-lg whitespace-nowrap"
                     >
                       Sign &amp; Proceed to Payment <ChevronRight size={14} />
                     </button>
@@ -3485,13 +3586,17 @@ export default function BookingPage() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[100] bg-black/85 backdrop-blur-md flex items-center justify-center p-3 sm:p-6"
+            className="fixed inset-0 z-[100] bg-black/85 backdrop-blur-md flex items-end sm:items-center justify-center sm:p-6"
           >
             <motion.div
-              initial={{ scale: 0.95, opacity: 0, y: 20 }}
-              animate={{ scale: 1, opacity: 1, y: 0 }}
-              exit={{ scale: 0.95, opacity: 0, y: 20 }}
-              className="glass-card border border-white/15 max-w-2xl w-full max-h-[92dvh] flex flex-col relative overflow-hidden shadow-2xl rounded-xl bg-[#0b0b0b]"
+              role="dialog"
+              aria-modal="true"
+              aria-label="Reservation payment"
+              initial={{ opacity: 0, y: 48 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 48 }}
+              transition={{ type: "spring", stiffness: 420, damping: 38 }}
+              className="glass-card border border-white/15 max-w-2xl w-full max-h-[94dvh] sm:max-h-[92dvh] flex flex-col relative overflow-hidden shadow-2xl rounded-t-2xl sm:rounded-xl bg-[#0b0b0b]"
             >
               {/* Header */}
               <div className="p-4 sm:p-6 border-b border-white/10 flex items-center justify-between gap-2 bg-black/40 shrink-0">
@@ -3512,14 +3617,14 @@ export default function BookingPage() {
                   type="button"
                   aria-label="Close payment modal"
                   onClick={() => setShowPaymentModal(false)}
-                  className="text-white/40 hover:text-white p-2 rounded-lg hover:bg-white/5 transition-colors shrink-0 cursor-pointer"
+                  className="text-white/40 hover:text-white min-w-11 min-h-11 -mr-2 flex items-center justify-center rounded-full hover:bg-white/5 transition-colors shrink-0 cursor-pointer"
                 >
                   <X size={20} />
                 </button>
               </div>
 
               {/* Scrollable Content */}
-              <div className="p-4 sm:p-8 overflow-y-auto space-y-6 scrollbar-thin flex-1">
+              <div className="p-4 sm:p-8 overflow-y-auto overscroll-contain space-y-6 scrollbar-none flex-1">
                 {paymentError && (
                   <div className="p-4 bg-red-950/90 border border-red-500/50 rounded-lg text-red-200 text-xs font-bold flex items-center gap-2">
                     <AlertTriangle size={16} className="text-red-400 shrink-0" />
@@ -3995,14 +4100,14 @@ export default function BookingPage() {
               </div>
 
               {/* Action Buttons */}
-              <div className="p-4 sm:p-6 border-t border-white/10 bg-black/60 flex flex-col-reverse sm:flex-row items-center justify-between gap-3 sm:gap-4 shrink-0">
+              <div className="px-4 pt-3 pb-safe sm:p-6 border-t border-white/10 bg-black/60 flex flex-col-reverse sm:flex-row items-center justify-between gap-2.5 sm:gap-4 shrink-0">
                 <button
                   type="button"
                   onClick={() => {
                     setShowPaymentModal(false);
                     setShowTermsModal(true);
                   }}
-                  className="w-full sm:w-auto px-6 py-3 border border-white/20 text-white/70 text-xs font-bold uppercase tracking-wider hover:bg-white/5 transition-colors rounded-sm cursor-pointer"
+                  className="w-full sm:w-auto min-h-12 sm:min-h-0 rounded-lg sm:rounded-sm px-6 py-3 border border-white/20 text-white/70 text-xs font-bold uppercase tracking-wider hover:bg-white/5 transition-colors rounded-sm cursor-pointer"
                 >
                   Back to Agreement
                 </button>
@@ -4010,7 +4115,7 @@ export default function BookingPage() {
                   type="button"
                   onClick={handleSubmitPayment}
                   disabled={isProcessingPayment || !receiptImage || Boolean(validateTransactionReference(referenceNumber, paymentMethod))}
-                  className="w-full sm:w-auto px-8 py-3 gold-gradient text-black text-xs font-bold uppercase tracking-wider hover:brightness-110 transition-all disabled:opacity-40 disabled:cursor-not-allowed rounded-sm flex items-center justify-center gap-2 shadow-lg shadow-gold-400/10 cursor-pointer"
+                  className="w-full sm:w-auto min-h-12 sm:min-h-0 rounded-lg sm:rounded-sm px-8 py-3 gold-gradient text-black text-xs font-bold uppercase tracking-wider hover:brightness-110 transition-all disabled:opacity-40 disabled:cursor-not-allowed rounded-sm flex items-center justify-center gap-2 shadow-lg shadow-gold-400/10 cursor-pointer"
                 >
                   {isProcessingPayment ? "Submitting Reservation..." : "Submit Booking & Proof of Payment"}
                   {!isProcessingPayment && <ChevronRight size={14} />}
@@ -4028,17 +4133,21 @@ export default function BookingPage() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[100] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4"
+            className="fixed inset-0 z-[100] bg-black/80 backdrop-blur-sm flex items-end sm:items-center justify-center sm:p-4"
           >
             <motion.div
-              initial={{ scale: 0.95, opacity: 0, y: 20 }}
-              animate={{ scale: 1, opacity: 1, y: 0 }}
-              exit={{ scale: 0.95, opacity: 0, y: 20 }}
-              className="glass-card border border-white/10 p-6 sm:p-10 max-w-lg w-full max-h-[92dvh] overflow-y-auto text-center relative shadow-2xl rounded-xl bg-[#0c0c0c]"
+              role="dialog"
+              aria-modal="true"
+              aria-label="Booking submitted"
+              initial={{ opacity: 0, y: 48 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 48 }}
+              transition={{ type: "spring", stiffness: 420, damping: 38 }}
+              className="glass-card border border-white/10 px-5 pt-8 pb-safe sm:p-10 max-w-lg w-full max-h-[94dvh] sm:max-h-[92dvh] overflow-y-auto overscroll-contain text-center relative shadow-2xl rounded-t-2xl sm:rounded-xl bg-[#0c0c0c]"
             >
               <div className="absolute top-0 left-0 w-full h-1 bg-gold-400" />
-              <div className="w-20 h-20 bg-gold-400/10 rounded-full flex items-center justify-center mx-auto mb-6">
-                <Check className="text-gold-400" size={40} strokeWidth={3} />
+              <div className="w-16 h-16 sm:w-20 sm:h-20 bg-gold-400/10 rounded-full flex items-center justify-center mx-auto mb-5 sm:mb-6">
+                <Check className="text-gold-400" size={36} strokeWidth={3} />
               </div>
               <h3 className="text-2xl sm:text-3xl font-serif text-white mb-3 italic">Booking & Payment <span className="gold-text-gradient">Submitted</span></h3>
               <p className="text-sm sm:text-base text-white/70 mb-4 font-medium leading-relaxed">
@@ -4055,13 +4164,13 @@ export default function BookingPage() {
               <div className="flex flex-col sm:flex-row gap-3">
                 <button
                   onClick={() => navigate("/my-inquiries")}
-                  className="flex-1 py-3.5 gold-gradient text-black font-bold tracking-wider text-xs uppercase hover:brightness-110 transition-all rounded-sm"
+                  className="flex-1 min-h-12 rounded-lg sm:rounded-sm py-3.5 gold-gradient text-black font-bold tracking-wider text-xs uppercase hover:brightness-110 transition-all rounded-sm"
                 >
                   View My Inquiries
                 </button>
                 <button
                   onClick={() => navigate("/")}
-                  className="flex-1 py-3.5 border border-white/20 text-white font-bold tracking-wider text-xs uppercase hover:bg-white/5 transition-all rounded-sm"
+                  className="flex-1 min-h-12 rounded-lg sm:rounded-sm py-3.5 border border-white/20 text-white font-bold tracking-wider text-xs uppercase hover:bg-white/5 transition-all rounded-sm"
                 >
                   Return to Home
                 </button>

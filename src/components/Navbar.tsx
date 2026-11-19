@@ -1,5 +1,23 @@
 import { motion, AnimatePresence } from "motion/react";
-import { Menu as MenuIcon, X, Bell, ChevronDown } from "lucide-react";
+import {
+  Menu as MenuIcon,
+  X,
+  Bell,
+  ChevronDown,
+  ChevronRight,
+  House,
+  UtensilsCrossed,
+  Package,
+  Info,
+  CircleHelp,
+  Phone,
+  CalendarPlus,
+  ClipboardList,
+  LogOut,
+  LogIn,
+  UserPlus,
+  type LucideIcon,
+} from "lucide-react";
 import { useState, useEffect, useRef } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { supabase } from "../utils/supabase";
@@ -21,6 +39,15 @@ export const navLinks = [
   { name: "Contact", href: "/contact" },
   { name: "Book", href: "/booking" },
 ];
+
+const mobileNavIcons: Record<string, LucideIcon> = {
+  Home: House,
+  Menu: UtensilsCrossed,
+  Packages: Package,
+  About: Info,
+  FAQs: CircleHelp,
+  Contact: Phone,
+};
 
 export default function Navbar() {
   const [isScrolled, setIsScrolled] = useState(false);
@@ -52,8 +79,10 @@ export default function Navbar() {
       const target = event.target as Node;
       const clickedDesktop = desktopNotifRef.current?.contains(target);
       const clickedMobile = mobileNotifRef.current?.contains(target);
+      // The phone bottom sheet is portaled to <body>, so check it separately
+      const clickedSheet = (target as Element)?.closest?.("[data-notif-root]");
 
-      if (!clickedDesktop && !clickedMobile) {
+      if (!clickedDesktop && !clickedMobile && !clickedSheet) {
         setIsNotifOpen(false);
       }
     };
@@ -98,9 +127,29 @@ export default function Navbar() {
     const handleScroll = () => {
       setIsScrolled(window.scrollY > 50);
     };
-    window.addEventListener("scroll", handleScroll);
+    handleScroll();
+    window.addEventListener("scroll", handleScroll, { passive: true });
     return () => window.removeEventListener("scroll", handleScroll);
   }, []);
+
+  // Close overlays whenever the route changes (e.g. browser back gesture on mobile)
+  useEffect(() => {
+    setIsMobileMenuOpen(false);
+    setIsNotifOpen(false);
+  }, [location.pathname]);
+
+  // Escape closes whichever overlay is on top
+  useEffect(() => {
+    if (!isMobileMenuOpen && !isNotifOpen && !showLogoutConfirm) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      if (showLogoutConfirm) setShowLogoutConfirm(false);
+      else if (isNotifOpen) setIsNotifOpen(false);
+      else setIsMobileMenuOpen(false);
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [isMobileMenuOpen, isNotifOpen, showLogoutConfirm]);
 
   useEffect(() => {
     document.body.style.overflow = isMobileMenuOpen ? "hidden" : "";
@@ -741,12 +790,12 @@ export default function Navbar() {
                     type="button"
                     onClick={handleNotifClick}
                     aria-label="Notifications"
-                    className="text-gold-500 dark:text-gold-400 transition-colors relative min-w-10 min-h-10 flex items-center justify-center p-2 rounded-full hover:bg-black/5 dark:hover:bg-white/5 cursor-pointer"
+                    className="text-gold-500 dark:text-gold-400 transition-colors relative min-w-11 min-h-11 flex items-center justify-center p-2 rounded-full hover:bg-black/5 dark:hover:bg-white/5 cursor-pointer"
                   >
                     <Bell size={22} />
                     {unreadCount > 0 && (
-                      <span className="absolute top-0.5 right-0.5 bg-red-500 text-white text-[10px] font-bold w-4 h-4 rounded-full flex items-center justify-center">
-                        {unreadCount}
+                      <span className="absolute top-1 right-1 bg-red-500 text-white text-[10px] leading-none font-bold min-w-4 h-4 px-1 rounded-full flex items-center justify-center ring-2 ring-[var(--bg-primary)]">
+                        {unreadCount > 9 ? "9+" : unreadCount}
                       </span>
                     )}
                   </button>
@@ -757,14 +806,20 @@ export default function Navbar() {
                     unreadCount={unreadCount} 
                     readIds={readIds}
                     onDismiss={handleDismissNotif}
+                    mobileSheet
                   />
                 </div>
               )}
               <button 
                 type="button"
-                className="text-gold-500 dark:text-gold-400 min-w-10 min-h-10 flex items-center justify-center p-2 rounded-full hover:bg-black/5 dark:hover:bg-white/5 cursor-pointer"
-                onClick={() => setIsMobileMenuOpen(true)}
+                className="text-gold-500 dark:text-gold-400 min-w-11 min-h-11 -mr-2 flex items-center justify-center p-2 rounded-full hover:bg-black/5 dark:hover:bg-white/5 cursor-pointer"
+                onClick={() => {
+                  setIsNotifOpen(false);
+                  setIsMobileMenuOpen(true);
+                }}
                 aria-label="Open menu"
+                aria-expanded={isMobileMenuOpen}
+                aria-controls="mobile-nav-drawer"
               >
                 <MenuIcon size={24} />
               </button>
@@ -775,99 +830,162 @@ export default function Navbar() {
 
       <AnimatePresence>
         {isMobileMenuOpen && (
-          <motion.div
-            initial={{ opacity: 0, x: "100%" }}
-            animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: "100%" }}
-            className="fixed inset-0 h-[100dvh] z-[60] bg-rich-black flex flex-col p-6 sm:p-8 overflow-y-auto pb-safe"
-          >
-            <div className="flex justify-between items-center w-full gap-2 shrink-0">
-              <ThemeToggle variant="segmented" />
-              <button 
-                type="button"
-                onClick={() => setIsMobileMenuOpen(false)} 
-                className="text-gold-500 dark:text-gold-400 min-w-11 min-h-11 flex items-center justify-center p-2 cursor-pointer"
-                aria-label="Close menu"
-              >
-                <X size={28} />
-              </button>
-            </div>
-            <div className="flex flex-col space-y-5 sm:space-y-7 my-auto py-8 text-center">
-              {navLinks.map((link) => {
-                if (link.name === "Book" && user) {
-                  return (
-                    <div key={link.name} className="flex flex-col space-y-3 sm:space-y-4 items-center">
-                      <Link
-                        to="/booking"
-                        aria-current={location.pathname === "/booking" ? "page" : undefined}
-                        className="text-2xl sm:text-4xl font-serif text-gold-500 dark:text-gold-400 italic py-1"
-                        onClick={() => setIsMobileMenuOpen(false)}
-                      >
-                        Book Event
-                      </Link>
-                      <Link
-                        to="/my-inquiries"
-                        aria-current={location.pathname === "/my-inquiries" ? "page" : undefined}
-                        className="text-xl sm:text-2xl font-serif text-stone-700 dark:text-white/70 hover:text-gold-500 dark:hover:text-gold-400 italic transition-colors py-1"
-                        onClick={() => setIsMobileMenuOpen(false)}
-                      >
-                        My Inquiries
-                      </Link>
-                    </div>
-                  );
-                }
-                return (
-                  <Link
-                    key={link.name}
-                    to={link.href}
-                    aria-current={location.pathname === link.href ? "page" : undefined}
-                    className="text-2xl sm:text-4xl font-serif gold-text-gradient italic py-1"
-                    onClick={() => setIsMobileMenuOpen(false)}
-                  >
-                    {link.name}
-                  </Link>
-                );
-              })}
+          <div className="lg:hidden fixed inset-0 z-[60]" role="dialog" aria-modal="true" aria-label="Site navigation">
+            <motion.div
+              key="mobile-nav-backdrop"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.2 }}
+              className="fixed inset-0 bg-black/55 backdrop-blur-[2px]"
+              onClick={() => setIsMobileMenuOpen(false)}
+            />
+            <motion.aside
+              id="mobile-nav-drawer"
+              key="mobile-nav-panel"
+              initial={{ x: "100%" }}
+              animate={{ x: 0 }}
+              exit={{ x: "100%" }}
+              transition={{ type: "spring", stiffness: 380, damping: 38 }}
+              drag="x"
+              dragDirectionLock
+              dragConstraints={{ left: 0, right: 0 }}
+              dragElastic={{ left: 0, right: 0.5 }}
+              onDragEnd={(_, info) => {
+                if (info.offset.x > 80 || info.velocity.x > 500) setIsMobileMenuOpen(false);
+              }}
+              className="fixed top-0 right-0 bottom-0 w-[min(86vw,360px)] bg-rich-black border-l border-[#CFC3AE] dark:border-white/10 shadow-2xl flex flex-col overscroll-contain"
+              style={{ paddingTop: "env(safe-area-inset-top, 0px)" }}
+            >
+              {/* Drawer header */}
+              <div className="flex items-center justify-between gap-2 px-5 h-16 border-b border-[#CFC3AE] dark:border-white/10 shrink-0">
+                <div className="min-w-0">
+                  <p className="text-sm font-serif tracking-[0.14em] text-gold-500 dark:text-gold-400 font-bold uppercase truncate">Roxan Policarpio</p>
+                  <p className="text-xs text-stone-600 dark:text-white/60 font-semibold truncate">
+                    {user?.email ? user.email : "Events & Catering"}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsMobileMenuOpen(false)}
+                  className="text-stone-700 dark:text-white/80 min-w-11 min-h-11 -mr-2 flex items-center justify-center rounded-full hover:bg-black/5 dark:hover:bg-white/5 cursor-pointer"
+                  aria-label="Close menu"
+                >
+                  <X size={22} />
+                </button>
+              </div>
 
-              {user ? (
-                <>
-                  <button
-                    type="button"
-                    onClick={handleLogoutClick}
-                    className="text-2xl sm:text-4xl font-serif text-stone-700 dark:text-white/70 hover:text-gold-500 dark:hover:text-gold-400 italic transition-colors cursor-pointer py-1"
-                  >
-                    Logout
-                  </button>
-                </>
-              ) : (
-                <>
-                  <Link
-                    to="/auth?mode=login"
-                    className={`text-2xl sm:text-4xl font-serif italic transition-colors py-1 ${
-                      isLoginActive
-                        ? "text-gold-500 dark:text-gold-400"
-                        : "text-stone-700 dark:text-white/70 hover:text-gold-500 dark:hover:text-gold-400"
-                    }`}
-                    onClick={() => setIsMobileMenuOpen(false)}
-                  >
-                    Login
-                  </Link>
-                  <Link
-                    to="/auth?mode=signup"
-                    className={`text-2xl sm:text-4xl font-serif italic transition-colors py-1 ${
-                      isSignupActive
-                        ? "text-gold-500 dark:text-gold-400"
-                        : "text-stone-700 dark:text-white/70 hover:text-gold-500 dark:hover:text-gold-400"
-                    }`}
-                    onClick={() => setIsMobileMenuOpen(false)}
-                  >
-                    Sign Up
-                  </Link>
-                </>
-              )}
-            </div>
+              {/* Links */}
+              <nav className="flex-1 overflow-y-auto overscroll-contain px-3 py-3" aria-label="Mobile">
+                <ul className="flex flex-col gap-0.5">
+                  {navLinks
+                    .filter((link) => link.name !== "Book")
+                    .map((link) => {
+                      const Icon = mobileNavIcons[link.name] || ChevronRight;
+                      const active = location.pathname === link.href;
+                      return (
+                        <li key={link.name}>
+                          <Link
+                            to={link.href}
+                            aria-current={active ? "page" : undefined}
+                            onClick={() => setIsMobileMenuOpen(false)}
+                            className={`flex items-center gap-3.5 px-3 min-h-12 rounded-xl text-[15px] font-semibold tracking-wide transition-colors ${
+                              active
+                                ? "bg-gold-400/15 text-gold-600 dark:text-gold-300"
+                                : "text-stone-800 dark:text-white/85 hover:bg-black/5 dark:hover:bg-white/5"
+                            }`}
+                          >
+                            <Icon size={19} className={active ? "text-gold-500 dark:text-gold-400" : "text-stone-500 dark:text-white/50"} />
+                            <span className="flex-1">{link.name}</span>
+                            {active && <span className="w-1.5 h-1.5 rounded-full bg-gold-500 dark:bg-gold-400" />}
+                          </Link>
+                        </li>
+                      );
+                    })}
+                </ul>
 
-          </motion.div>
+                {user && (
+                  <>
+                    <p className="px-3 pt-5 pb-2 text-xs font-bold uppercase tracking-[0.14em] text-stone-500 dark:text-white/45">My Account</p>
+                    <ul className="flex flex-col gap-0.5">
+                      <li>
+                        <Link
+                          to="/my-inquiries"
+                          aria-current={location.pathname === "/my-inquiries" ? "page" : undefined}
+                          onClick={() => setIsMobileMenuOpen(false)}
+                          className={`flex items-center gap-3.5 px-3 min-h-12 rounded-xl text-[15px] font-semibold tracking-wide transition-colors ${
+                            location.pathname === "/my-inquiries"
+                              ? "bg-gold-400/15 text-gold-600 dark:text-gold-300"
+                              : "text-stone-800 dark:text-white/85 hover:bg-black/5 dark:hover:bg-white/5"
+                          }`}
+                        >
+                          <ClipboardList size={19} className={location.pathname === "/my-inquiries" ? "text-gold-500 dark:text-gold-400" : "text-stone-500 dark:text-white/50"} />
+                          <span className="flex-1">My Inquiries</span>
+                          {unreadCount > 0 && (
+                            <span className="bg-red-500 text-white text-[11px] font-bold min-w-5 h-5 px-1.5 rounded-full flex items-center justify-center">
+                              {unreadCount > 9 ? "9+" : unreadCount}
+                            </span>
+                          )}
+                        </Link>
+                      </li>
+                      <li>
+                        <button
+                          type="button"
+                          onClick={handleLogoutClick}
+                          className="w-full flex items-center gap-3.5 px-3 min-h-12 rounded-xl text-[15px] font-semibold tracking-wide text-stone-800 dark:text-white/85 hover:bg-black/5 dark:hover:bg-white/5 transition-colors cursor-pointer text-left"
+                        >
+                          <LogOut size={19} className="text-stone-500 dark:text-white/50" />
+                          <span className="flex-1">Log Out</span>
+                        </button>
+                      </li>
+                    </ul>
+                  </>
+                )}
+
+                <p className="px-3 pt-5 pb-2 text-xs font-bold uppercase tracking-[0.14em] text-stone-500 dark:text-white/45">Appearance</p>
+                <div className="px-3">
+                  <ThemeToggle variant="segmented" />
+                </div>
+              </nav>
+
+              {/* Thumb-reachable primary actions */}
+              <div className="shrink-0 border-t border-[#CFC3AE] dark:border-white/10 px-4 pt-4 pb-safe flex flex-col gap-2.5">
+                <Link
+                  to="/booking"
+                  onClick={() => setIsMobileMenuOpen(false)}
+                  className="gold-gradient text-white dark:text-black min-h-12 rounded-xl flex items-center justify-center gap-2 text-[15px] font-bold tracking-wide shadow-md"
+                >
+                  <CalendarPlus size={18} /> Book an Event
+                </Link>
+                {!user && (
+                  <div className="grid grid-cols-2 gap-2.5">
+                    <Link
+                      to="/auth?mode=login"
+                      onClick={() => setIsMobileMenuOpen(false)}
+                      className={`min-h-12 rounded-xl flex items-center justify-center gap-2 text-sm font-bold tracking-wide border transition-colors ${
+                        isAuthPage && mode !== "signup"
+                          ? "border-gold-500 text-gold-600 dark:text-gold-300"
+                          : "border-[#CFC3AE] dark:border-white/15 text-stone-800 dark:text-white/85"
+                      }`}
+                    >
+                      <LogIn size={16} /> Log In
+                    </Link>
+                    <Link
+                      to="/auth?mode=signup"
+                      onClick={() => setIsMobileMenuOpen(false)}
+                      className={`min-h-12 rounded-xl flex items-center justify-center gap-2 text-sm font-bold tracking-wide border transition-colors ${
+                        isAuthPage && mode === "signup"
+                          ? "border-gold-500 text-gold-600 dark:text-gold-300"
+                          : "border-[#CFC3AE] dark:border-white/15 text-stone-800 dark:text-white/85"
+                      }`}
+                    >
+                      <UserPlus size={16} /> Sign Up
+                    </Link>
+                  </div>
+                )}
+              </div>
+            </motion.aside>
+          </div>
         )}
       </AnimatePresence>
 
@@ -878,31 +996,36 @@ export default function Navbar() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[100] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4"
+            className="fixed inset-0 z-[100] bg-black/70 backdrop-blur-sm flex items-end sm:items-center justify-center sm:p-4 overscroll-contain"
+            onClick={() => setShowLogoutConfirm(false)}
           >
             <motion.div
-              initial={{ scale: 0.95, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.95, opacity: 0 }}
-              className="glass-card border border-white/10 p-6 sm:p-8 max-w-sm w-full text-center relative overflow-hidden rounded-xl"
+              initial={{ y: 40, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              exit={{ y: 40, opacity: 0 }}
+              transition={{ type: "spring", stiffness: 420, damping: 36 }}
+              onClick={(e) => e.stopPropagation()}
+              role="alertdialog"
+              aria-modal="true"
+              className="glass-card bg-rich-black border border-white/10 px-6 pt-6 pb-safe sm:p-8 max-w-sm w-full text-center relative overflow-hidden rounded-t-2xl sm:rounded-xl"
             >
               <div className="absolute top-0 left-0 w-full h-1 bg-gold-400" />
-              <h3 className="text-3xl font-serif mb-2 italic">Confirm <span className="gold-text-gradient">Logout</span></h3>
-              <p className="text-sm opacity-80 mb-8 font-medium leading-relaxed">
+              <h3 className="text-2xl sm:text-3xl font-serif mb-2 italic">Confirm <span className="gold-text-gradient">Logout</span></h3>
+              <p className="text-sm opacity-80 mb-6 sm:mb-8 font-medium leading-relaxed">
                 {user?.email
                   ? `Log out ${user.email}? This will end your current session.`
                   : "Are you sure you want to log out? This will end your current session."}
               </p>
-              <div className="flex gap-4">
+              <div className="flex flex-col-reverse sm:flex-row gap-3 sm:gap-4">
                 <button
                   onClick={() => setShowLogoutConfirm(false)}
-                  className="flex-1 py-3 border border-gold-400/30 text-stone-700 dark:text-white/70 hover:text-stone-900 dark:hover:text-white hover:border-gold-400 transition-all text-sm font-bold tracking-wide rounded-md cursor-pointer"
+                  className="flex-1 min-h-12 py-3 border border-gold-400/30 text-stone-700 dark:text-white/70 hover:text-stone-900 dark:hover:text-white hover:border-gold-400 transition-all text-sm font-bold tracking-wide rounded-md cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   onClick={confirmLogout}
-                  className="flex-1 py-3 gold-gradient text-white dark:text-black font-bold tracking-wide text-sm hover:brightness-105 transition-all rounded-md cursor-pointer shadow-md"
+                  className="flex-1 min-h-12 py-3 gold-gradient text-white dark:text-black font-bold tracking-wide text-sm hover:brightness-105 transition-all rounded-md cursor-pointer shadow-md"
                 >
                   Log Out
                 </button>
