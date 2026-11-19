@@ -901,6 +901,11 @@ export default function BookingPage() {
       return;
     }
 
+    if (!referenceNumber.trim()) {
+      setPaymentError("Please enter your transaction reference number.");
+      return;
+    }
+
     setIsProcessingPayment(true);
     setPaymentError("");
 
@@ -3866,7 +3871,7 @@ export default function BookingPage() {
                 <div className="space-y-2 text-left">
                   <div className="flex items-center justify-between gap-2">
                     <label className="text-xs font-bold uppercase tracking-wider text-white/90 block">
-                      Transaction Reference Number <span className="text-white/40 font-normal">(Optional but recommended)</span>
+                      Transaction Reference Number <span className="text-red-400">*</span>
                     </label>
                     <span className="text-[10px] font-medium text-white/45">
                       {referenceNumber.length}/{MAX_REFERENCE_NUMBER_LENGTH}
@@ -3874,13 +3879,15 @@ export default function BookingPage() {
                   </div>
                   <input
                     type="text"
+                    required
                     maxLength={MAX_REFERENCE_NUMBER_LENGTH}
                     value={referenceNumber}
-                    onChange={(e) =>
+                    onChange={(e) => {
                       setReferenceNumber(
                         e.target.value.replace(/[^a-zA-Z0-9\s-]/g, "").slice(0, MAX_REFERENCE_NUMBER_LENGTH)
-                      )
-                    }
+                      );
+                      if (paymentError) setPaymentError("");
+                    }}
                     placeholder="e.g. 9012 3456 7890 or Trace ID"
                     className="w-full bg-white/5 border border-white/10 px-4 py-3 text-sm focus:outline-none focus:border-gold-400/50 rounded-lg font-medium text-white"
                   />
@@ -3902,7 +3909,7 @@ export default function BookingPage() {
                 <button
                   type="button"
                   onClick={handleSubmitPayment}
-                  disabled={isProcessingPayment || !receiptImage}
+                  disabled={isProcessingPayment || !receiptImage || !referenceNumber.trim()}
                   className="w-full sm:w-auto px-8 py-3 gold-gradient text-black text-xs font-bold uppercase tracking-wider hover:brightness-110 transition-all disabled:opacity-40 disabled:cursor-not-allowed rounded-sm flex items-center justify-center gap-2 shadow-lg shadow-gold-400/10 cursor-pointer"
                 >
                   {isProcessingPayment ? "Submitting Reservation..." : "Submit Booking & Proof of Payment"}

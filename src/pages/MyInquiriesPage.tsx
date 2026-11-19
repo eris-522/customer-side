@@ -1342,6 +1342,11 @@ export default function MyInquiriesPage() {
       return;
     }
 
+    if (!balanceRef.trim()) {
+      setBalanceError("Please enter your transaction reference number.");
+      return;
+    }
+
     setIsSubmittingBalance(true);
     setBalanceError("");
 
@@ -4883,13 +4888,25 @@ export default function MyInquiriesPage() {
 
                 {/* Reference Number */}
                 <div className="space-y-2 text-left">
-                  <label className="text-xs font-bold uppercase tracking-wider text-white/90 block">
-                    Reference Number <span className="text-white/40 font-normal">(Optional but recommended)</span>
-                  </label>
+                  <div className="flex items-center justify-between gap-2">
+                    <label className="text-xs font-bold uppercase tracking-wider text-white/90 block">
+                      Transaction Reference Number <span className="text-red-400">*</span>
+                    </label>
+                    <span className="text-[10px] font-medium text-white/45">
+                      {balanceRef.length}/50
+                    </span>
+                  </div>
                   <input
                     type="text"
+                    required
+                    maxLength={50}
                     value={balanceRef}
-                    onChange={(e) => setBalanceRef(e.target.value)}
+                    onChange={(e) => {
+                      setBalanceRef(
+                        e.target.value.replace(/[^a-zA-Z0-9\s-]/g, "").slice(0, 50)
+                      );
+                      if (balanceError) setBalanceError("");
+                    }}
                     placeholder="e.g. 9876 5432 1098"
                     className="w-full bg-white/5 border border-white/10 px-4 py-3 text-sm focus:outline-none focus:border-gold-400/50 rounded-lg font-medium text-white"
                   />
@@ -4913,7 +4930,7 @@ export default function MyInquiriesPage() {
                 <button
                   type="button"
                   onClick={handleSubmitBalancePayment}
-                  disabled={isSubmittingBalance || !balanceReceiptImage}
+                  disabled={isSubmittingBalance || !balanceReceiptImage || !balanceRef.trim()}
                   className="w-full sm:w-auto px-8 py-3 gold-gradient text-black text-xs font-bold uppercase tracking-wider hover:brightness-110 transition-all disabled:opacity-40 disabled:cursor-not-allowed rounded-sm flex items-center justify-center gap-2 shadow-lg shadow-gold-400/10 cursor-pointer"
                 >
                   {isSubmittingBalance
