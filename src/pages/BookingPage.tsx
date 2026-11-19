@@ -136,9 +136,42 @@ const MAX_ALCOHOLIC_BOTTLES = 200;
 const MAX_OUTSIDE_FOOD_DISHES = 50;
 const MAX_ALLERGIES_LENGTH = 300;
 const MAX_SIGNER_NAME_LENGTH = 70;
-const MAX_REFERENCE_NUMBER_LENGTH = 50;
+const MAX_GCASH_REF_LENGTH = 13;
+const MIN_GCASH_REF_LENGTH = 9;
+const MAX_BANK_REF_LENGTH = 20;
+const MIN_BANK_REF_LENGTH = 8;
 const SIGNER_NAME_INVALID_REGEX = /[^a-zA-ZÀ-ÿ\sñÑ.'-]/;
 const SIGNER_NAME_VALID_REGEX = /^[a-zA-ZÀ-ÿ\sñÑ.'-]+$/;
+
+const validateTransactionReference = (
+  ref: string,
+  method: "GCash" | "Bank Transfer"
+): string => {
+  const trimmed = ref.trim();
+  if (!trimmed) {
+    return "Please enter your transaction reference number.";
+  }
+  if (method === "GCash") {
+    if (!/^\d+$/.test(trimmed)) {
+      return "GCash reference number must contain digits only.";
+    }
+    if (trimmed.length < MIN_GCASH_REF_LENGTH || trimmed.length > MAX_GCASH_REF_LENGTH) {
+      return `GCash reference number must be ${MIN_GCASH_REF_LENGTH}–${MAX_GCASH_REF_LENGTH} digits.`;
+    }
+    return "";
+  }
+  // Bank Transfer (BDO / BPI / InstaPay / PESONet): 8-20 uppercase alphanumeric, digits-only or up to 4-letter bank prefix + digits
+  if (!/^[A-Z0-9]+$/.test(trimmed)) {
+    return "Bank reference number can only contain uppercase letters and digits (no spaces or hyphens).";
+  }
+  if (trimmed.length < MIN_BANK_REF_LENGTH || trimmed.length > MAX_BANK_REF_LENGTH) {
+    return `Bank reference number must be ${MIN_BANK_REF_LENGTH}–${MAX_BANK_REF_LENGTH} characters.`;
+  }
+  if (!/^([A-Z]{0,4}\d{6,20}|\d{8,20})$/.test(trimmed)) {
+    return "Enter a valid bank reference number (digits only, or up to a 4-letter bank prefix followed by digits).";
+  }
+  return "";
+};
 
 const sanitizePositiveInt = (raw: string, max: number): number | null => {
   const digits = raw.replace(/[^\d]/g, "");
@@ -246,6 +279,7 @@ export default function BookingPage() {
   const [receiptBlob, setReceiptBlob] = useState<Blob | null>(null);
   const [receiptFileName, setReceiptFileName] = useState<string>("");
   const [referenceNumber, setReferenceNumber] = useState<string>("");
+  const [referenceNumberError, setReferenceNumberError] = useState<string>("");
   const [paymentError, setPaymentError] = useState<string>("");
   const [copiedAccount, setCopiedAccount] = useState<string>("");
   const [isProcessingPayment, setIsProcessingPayment] = useState(false);
@@ -856,6 +890,7 @@ export default function BookingPage() {
     setShowTermsModal(false);
     setShowPaymentModal(true);
     setPaymentError("");
+    setReferenceNumberError("");
   };
 
   // Feature: Handles receipt upload with client-side image compression
@@ -901,13 +936,16 @@ export default function BookingPage() {
       return;
     }
 
-    if (!referenceNumber.trim()) {
-      setPaymentError("Please enter your transaction reference number.");
+    const refErr = validateTransactionReference(referenceNumber, paymentMethod);
+    if (refErr) {
+      setReferenceNumberError(refErr);
+      setPaymentError(refErr);
       return;
     }
 
     setIsProcessingPayment(true);
     setPaymentError("");
+    setReferenceNumberError("");
 
     // Attempt to upload receipt image to Supabase Storage bucket first (avoids base64 database bloat)
     let finalReceiptUrl = receiptImage;
@@ -932,7 +970,8 @@ export default function BookingPage() {
 
     const sanitizedAdditionalPax = Math.min(MAX_ADDITIONAL_PAX, Math.max(0, parseInt(formData.additionalPax, 10) || 0));
     const sanitizedAllergies = formData.foodAllergies.trim().slice(0, MAX_ALLERGIES_LENGTH);
-    const sanitizedRefNumber = referenceNumber.trim().slice(0, MAX_REFERENCE_NUMBER_LENGTH);
+    const maxRefLen = paymentMethod === "GCash" ? MAX_GCASH_REF_LENGTH : MAX_BANK_REF_LENGTH;
+    const sanitizedRefNumber = referenceNumber.trim().slice(0, maxRefLen);
     const normalizedFloorLevel = effectiveIsSecondFloorOrHigher ? floorLevel : 1;
     const normalizedHasElevator = effectiveIsSecondFloorOrHigher ? hasElevator : false;
     const sanitizedCorkagePayload = {
@@ -3645,7 +3684,12 @@ export default function BookingPage() {
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <button
                       type="button"
-                      onClick={() => setPaymentMethod("GCash")}
+                      onClick={() => {
+                        setPaymentMethod("GCash");
+                        setReferenceNumber((prev) => prev.replace(/[^\d]/g, "").slice(0, MAX_GCASH_REF_LENGTH));
+                        setReferenceNumberError("");
+                        setPaymentError("");
+                      }}
                       className={`p-4 rounded-lg border text-left transition-all flex items-center gap-3 ${
                         paymentMethod === "GCash"
                           ? "bg-gold-400/15 border-gold-400 text-white shadow-lg shadow-gold-400/10"
@@ -3662,7 +3706,12 @@ export default function BookingPage() {
 
                     <button
                       type="button"
-                      onClick={() => setPaymentMethod("Bank Transfer")}
+                      onClick={() => {
+                        setPaymentMethod("Bank Transfer");
+                        setReferenceNumber((prev) => prev.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, MAX_BANK_REF_LENGTH));
+                        setReferenceNumberError("");
+                        setPaymentError("");
+                      }}
                       className={`p-4 rounded-lg border text-left transition-all flex items-center gap-3 ${
                         paymentMethod === "Bank Transfer"
                           ? "bg-gold-400/15 border-gold-400 text-white shadow-lg shadow-gold-400/10"
@@ -3868,30 +3917,81 @@ export default function BookingPage() {
                 </div>
 
                 {/* Reference Number Input */}
-                <div className="space-y-2 text-left">
-                  <div className="flex items-center justify-between gap-2">
-                    <label className="text-xs font-bold uppercase tracking-wider text-white/90 block">
-                      Transaction Reference Number <span className="text-red-400">*</span>
-                    </label>
-                    <span className="text-[10px] font-medium text-white/45">
-                      {referenceNumber.length}/{MAX_REFERENCE_NUMBER_LENGTH}
-                    </span>
-                  </div>
-                  <input
-                    type="text"
-                    required
-                    maxLength={MAX_REFERENCE_NUMBER_LENGTH}
-                    value={referenceNumber}
-                    onChange={(e) => {
-                      setReferenceNumber(
-                        e.target.value.replace(/[^a-zA-Z0-9\s-]/g, "").slice(0, MAX_REFERENCE_NUMBER_LENGTH)
-                      );
-                      if (paymentError) setPaymentError("");
-                    }}
-                    placeholder="e.g. 9012 3456 7890 or Trace ID"
-                    className="w-full bg-white/5 border border-white/10 px-4 py-3 text-sm focus:outline-none focus:border-gold-400/50 rounded-lg font-medium text-white"
-                  />
-                </div>
+                {(() => {
+                  const maxRefLen = paymentMethod === "GCash" ? MAX_GCASH_REF_LENGTH : MAX_BANK_REF_LENGTH;
+                  return (
+                    <div className="space-y-2 text-left">
+                      <div className="flex items-center justify-between gap-2">
+                        <label
+                          htmlFor="payment-reference-number"
+                          className="text-xs font-bold uppercase tracking-wider text-white/90 block"
+                        >
+                          Transaction Reference Number <span className="text-red-400">*</span>
+                        </label>
+                        <span className="text-[10px] font-medium text-white/45">
+                          {referenceNumber.length}/{maxRefLen}
+                        </span>
+                      </div>
+                      <input
+                        id="payment-reference-number"
+                        type="text"
+                        inputMode={paymentMethod === "GCash" ? "numeric" : "text"}
+                        required
+                        autoComplete="off"
+                        spellCheck={false}
+                        maxLength={maxRefLen}
+                        value={referenceNumber}
+                        aria-invalid={Boolean(referenceNumberError)}
+                        aria-describedby="payment-ref-hint payment-ref-error"
+                        onChange={(e) => {
+                          const raw = e.target.value;
+                          if (paymentMethod === "GCash") {
+                            if (/[^\d]/.test(raw)) {
+                              setReferenceNumberError("GCash reference number must contain digits only.");
+                            } else {
+                              setReferenceNumberError("");
+                            }
+                            setReferenceNumber(raw.replace(/[^\d]/g, "").slice(0, MAX_GCASH_REF_LENGTH));
+                          } else {
+                            const upper = raw.toUpperCase();
+                            if (/[^A-Z0-9]/.test(upper)) {
+                              setReferenceNumberError("Bank reference number can only contain letters and digits (no spaces or symbols).");
+                            } else {
+                              setReferenceNumberError("");
+                            }
+                            setReferenceNumber(upper.replace(/[^A-Z0-9]/g, "").slice(0, MAX_BANK_REF_LENGTH));
+                          }
+                          if (paymentError) setPaymentError("");
+                        }}
+                        onBlur={() => {
+                          if (referenceNumber.trim()) {
+                            setReferenceNumberError(validateTransactionReference(referenceNumber, paymentMethod));
+                          }
+                        }}
+                        placeholder={
+                          paymentMethod === "GCash"
+                            ? "e.g. 9012345678901 (13-digit GCash Ref. No.)"
+                            : "e.g. 20261119001234 or BPI1234567890"
+                        }
+                        className={`w-full bg-white/5 border px-4 py-3 text-sm focus:outline-none rounded-lg font-medium text-white ${
+                          referenceNumberError
+                            ? "border-red-500/70 focus:border-red-400"
+                            : "border-white/10 focus:border-gold-400/50"
+                        }`}
+                      />
+                      <p id="payment-ref-hint" className="text-[11px] text-white/50">
+                        {paymentMethod === "GCash"
+                          ? "Enter the 9–13 digit numeric reference number shown on your GCash receipt."
+                          : "Enter the 8–20 character bank/InstaPay/PESONet reference number (no spaces or hyphens)."}
+                      </p>
+                      {referenceNumberError && (
+                        <p id="payment-ref-error" role="alert" className="text-xs text-red-400 font-semibold">
+                          {referenceNumberError}
+                        </p>
+                      )}
+                    </div>
+                  );
+                })()}
               </div>
 
               {/* Action Buttons */}
@@ -3909,7 +4009,7 @@ export default function BookingPage() {
                 <button
                   type="button"
                   onClick={handleSubmitPayment}
-                  disabled={isProcessingPayment || !receiptImage || !referenceNumber.trim()}
+                  disabled={isProcessingPayment || !receiptImage || Boolean(validateTransactionReference(referenceNumber, paymentMethod))}
                   className="w-full sm:w-auto px-8 py-3 gold-gradient text-black text-xs font-bold uppercase tracking-wider hover:brightness-110 transition-all disabled:opacity-40 disabled:cursor-not-allowed rounded-sm flex items-center justify-center gap-2 shadow-lg shadow-gold-400/10 cursor-pointer"
                 >
                   {isProcessingPayment ? "Submitting Reservation..." : "Submit Booking & Proof of Payment"}
