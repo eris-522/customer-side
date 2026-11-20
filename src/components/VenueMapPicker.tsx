@@ -146,6 +146,9 @@ export default function VenueMapPicker({
   const mapInstanceRef = useRef<L.Map | null>(null);
   const markerRef = useRef<L.Marker | null>(null);
   const tileLayerRef = useRef<L.TileLayer | null>(null);
+  const useFallbackTilesRef = useRef<boolean>(false);
+  const mapModeRef = useRef<"roadmap" | "hybrid">(mapMode);
+  mapModeRef.current = mapMode;
   const dropdownWrapperRef = useRef<HTMLDivElement | null>(null);
 
   const isUserTypingVenueRef = useRef<boolean>(false);
@@ -245,6 +248,25 @@ export default function VenueMapPicker({
     }
   };
 
+  const getTileConfig = (mode: "roadmap" | "hybrid", useFallback: boolean) => {
+    if (useFallback) {
+      return mode === "hybrid"
+        ? {
+            url: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+            options: { maxZoom: 19 },
+          }
+        : {
+            url: "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
+            options: { maxZoom: 19, subdomains: ["a", "b", "c"] },
+          };
+    }
+    const lyrs = mode === "hybrid" ? "y" : "m";
+    return {
+      url: `https://mt{s}.google.com/vt/lyrs=${lyrs}&x={x}&y={y}&z={z}`,
+      options: { maxZoom: 20, subdomains: ["0", "1", "2", "3"] },
+    };
+  };
+
   // Initialize interactive Google Maps view via Leaflet
   useEffect(() => {
     if (!mapContainerRef.current || mapInstanceRef.current) return;
@@ -258,12 +280,32 @@ export default function VenueMapPicker({
 
     L.control.zoom({ position: "bottomright" }).addTo(map);
 
-    const tileLayer = L.tileLayer(
-      "https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}",
-      {
-        maxZoom: 20,
+    useFallbackTilesRef.current = false;
+    let consecutiveTileErrors = 0;
+
+    const attachTileLayer = (mode: "roadmap" | "hybrid", useFallback: boolean) => {
+      if (tileLayerRef.current) {
+        map.removeLayer(tileLayerRef.current);
       }
-    ).addTo(map);
+      const { url, options } = getTileConfig(mode, useFallback);
+      const layer = L.tileLayer(url, options);
+      if (!useFallback) {
+        layer.on("tileload", () => {
+          consecutiveTileErrors = 0;
+        });
+        layer.on("tileerror", () => {
+          consecutiveTileErrors += 1;
+          if (consecutiveTileErrors >= 3 && !useFallbackTilesRef.current) {
+            useFallbackTilesRef.current = true;
+            attachTileLayer(mapModeRef.current, true);
+          }
+        });
+      }
+      layer.addTo(map);
+      tileLayerRef.current = layer;
+    };
+
+    attachTileLayer(mapModeRef.current, false);
 
     const marker = L.marker([coords.lat, coords.lng], {
       draggable: true,
@@ -290,14 +332,24 @@ export default function VenueMapPicker({
 
     mapInstanceRef.current = map;
     markerRef.current = marker;
-    tileLayerRef.current = tileLayer;
 
     const resizeTimer = setTimeout(() => {
       map.invalidateSize();
     }, 350);
 
+    const resizeObserver =
+      typeof ResizeObserver !== "undefined"
+        ? new ResizeObserver(() => {
+            map.invalidateSize();
+          })
+        : null;
+    if (resizeObserver && mapContainerRef.current) {
+      resizeObserver.observe(mapContainerRef.current);
+    }
+
     return () => {
       clearTimeout(resizeTimer);
+      resizeObserver?.disconnect();
       map.remove();
       mapInstanceRef.current = null;
       markerRef.current = null;
@@ -305,13 +357,27 @@ export default function VenueMapPicker({
     };
   }, []);
 
-  // Switch between Google Road Map (lyrs=m) and Google Satellite Hybrid (lyrs=y)
+  // Switch between Road Map and Satellite Hybrid
   useEffect(() => {
-    if (!tileLayerRef.current) return;
-    const lyrs = mapMode === "hybrid" ? "y" : "m";
-    tileLayerRef.current.setUrl(
-      `https://mt1.google.com/vt/lyrs=${lyrs}&x={x}&y={y}&z={z}`
-    );
+    const map = mapInstanceRef.current;
+    if (!map || !tileLayerRef.current) return;
+    map.removeLayer(tileLayerRef.current);
+    const { url, options } = getTileConfig(mapMode, useFallbackTilesRef.current);
+    const nextLayer = L.tileLayer(url, options);
+    if (!useFallbackTilesRef.current) {
+      let errors = 0;
+      nextLayer.on("tileerror", () => {
+        errors += 1;
+        if (errors >= 3 && !useFallbackTilesRef.current) {
+          useFallbackTilesRef.current = true;
+          map.removeLayer(nextLayer);
+          const fb = getTileConfig(mapModeRef.current, true);
+          tileLayerRef.current = L.tileLayer(fb.url, fb.options).addTo(map);
+        }
+      });
+    }
+    nextLayer.addTo(map);
+    tileLayerRef.current = nextLayer;
   }, [mapMode]);
 
   // Helper to move map & pin programmatically
