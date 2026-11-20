@@ -1,6 +1,7 @@
 import { Link } from "react-router-dom";
 import { Facebook, Instagram, MessageCircle, Phone, Mail, CalendarPlus, type LucideIcon } from "lucide-react";
 import { useCMS } from "../context/CMSContext";
+import { sanitizeSafeHref } from "../utils/urlSafety";
 
 type FooterLinkItem = { name: string; url: string };
 
@@ -18,15 +19,16 @@ const isBookingLink = (link: FooterLinkItem) =>
   link.url === "/booking" || /inquire|book/i.test(link.name);
 
 function FooterTextLink({ link, className }: { link: FooterLinkItem; className: string }) {
-  if (isExternal(link.url)) {
+  const safeUrl = sanitizeSafeHref(link.url, "/");
+  if (isExternal(safeUrl)) {
     return (
-      <a href={link.url} target="_blank" rel="noreferrer" className={className}>
+      <a href={safeUrl} target="_blank" rel="noopener noreferrer" className={className}>
         {link.name}
       </a>
     );
   }
   return (
-    <Link to={link.url} className={className}>
+    <Link to={safeUrl} className={className}>
       {link.name}
     </Link>
   );
@@ -73,7 +75,7 @@ export default function Footer() {
               <div className="flex flex-col items-center md:items-start gap-1">
                 {contact?.phone && (
                   <a
-                    href={phoneHref}
+                    href={sanitizeSafeHref(phoneHref, "#")}
                     className="inline-flex items-center gap-2 min-h-10 text-sm font-medium text-[#3D3227] dark:text-white/70 hover:text-gold-500 dark:hover:text-gold-400 transition-colors"
                   >
                     <Phone size={15} className="text-gold-500 dark:text-gold-400" aria-hidden="true" />
@@ -82,7 +84,7 @@ export default function Footer() {
                 )}
                 {contact?.email && (
                   <a
-                    href={`mailto:${contact.email}`}
+                    href={sanitizeSafeHref(`mailto:${contact.email}`, "#")}
                     className="inline-flex items-center gap-2 min-h-10 text-sm font-medium text-[#3D3227] dark:text-white/70 hover:text-gold-500 dark:hover:text-gold-400 transition-colors"
                   >
                     <Mail size={15} className="text-gold-500 dark:text-gold-400" aria-hidden="true" />
@@ -97,7 +99,7 @@ export default function Footer() {
           <div className="flex flex-col items-center md:items-end gap-5">
             {bookingLink && (
               <Link
-                to={bookingLink.url}
+                to={sanitizeSafeHref(bookingLink.url, "/booking")}
                 className="gold-gradient text-white dark:text-black w-full max-w-xs md:w-auto min-h-12 px-8 rounded-lg inline-flex items-center justify-center gap-2 text-sm font-bold tracking-wide shadow-md hover:brightness-105 transition-all"
               >
                 <CalendarPlus size={17} aria-hidden="true" />
@@ -112,9 +114,9 @@ export default function Footer() {
                   return (
                     <a
                       key={link.name}
-                      href={link.url}
+                      href={sanitizeSafeHref(link.url, "https://facebook.com")}
                       target="_blank"
-                      rel="noreferrer"
+                      rel="noopener noreferrer"
                       aria-label={link.name}
                       title={link.name}
                       className="w-11 h-11 rounded-full border border-[#B9A88B] dark:border-white/15 flex items-center justify-center text-[#3D3227] dark:text-white/70 hover:text-gold-500 dark:hover:text-gold-400 hover:border-gold-500 dark:hover:border-gold-400 transition-colors"

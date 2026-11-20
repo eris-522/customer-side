@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { useCMS } from "../context/CMSContext";
 import { Sparkles, ArrowRight, X } from "lucide-react";
+import { sanitizeSafeHref } from "../utils/urlSafety";
 
 export function AnnouncementBanner() {
   const { cms } = useCMS();
@@ -24,7 +25,7 @@ export function AnnouncementBanner() {
           <span className="font-bold text-xs tracking-wide">{announcement.message}</span>
           {announcement.linkText && announcement.linkUrl && (
             <Link
-              to={announcement.linkUrl}
+              to={sanitizeSafeHref(announcement.linkUrl, "/")}
               className="underline underline-offset-2 flex items-center gap-1 hover:opacity-80 transition-opacity uppercase text-[10px] tracking-widest font-black ml-1 sm:ml-2 text-black bg-white/20 px-2 py-0.5 rounded"
             >
               <span>{announcement.linkText}</span>

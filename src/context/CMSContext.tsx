@@ -743,34 +743,6 @@ export function CMSProvider({ children }: { children: ReactNode }) {
     window.addEventListener("focus", handleVisibilityOrFocus);
     document.addEventListener("visibilitychange", handleVisibilityOrFocus);
 
-    // Instant broadcast events across any domain (local, VS Code tunnel, Vercel) — zero Postgres WAL overhead
-    const channel = supabase
-      .channel(CMS_SYNC_CHANNEL_NAME, {
-        config: { broadcast: { self: true } },
-      })
-      .on("broadcast", { event: "cms_update" }, (payload: any) => {
-        const section = payload?.payload?.section as keyof FullCMSData | undefined;
-        const rawData = payload?.payload?.data;
-        if (section && rawData && (DEFAULT_CMS_DATA as any)[section] !== undefined) {
-          const normalized = mergeSectionWithDefaults(section, rawData);
-          setCms((prev) => {
-            const updated = {
-              ...prev,
-              [section]: normalized,
-            };
-            try {
-              localStorage.setItem(
-                LOCAL_STORAGE_CMS_KEY,
-                JSON.stringify(updated)
-              );
-              localStorage.setItem(LOCAL_STORAGE_CMS_TIME_KEY, String(Date.now()));
-            } catch (err) {}
-            return updated;
-          });
-        }
-      })
-      .subscribe();
-
     return () => {
       if (realtimeDebounceRef.current) {
         clearTimeout(realtimeDebounceRef.current);
@@ -778,7 +750,6 @@ export function CMSProvider({ children }: { children: ReactNode }) {
       window.removeEventListener("cms_section_updated", handleLocalUpdate);
       window.removeEventListener("focus", handleVisibilityOrFocus);
       document.removeEventListener("visibilitychange", handleVisibilityOrFocus);
-      supabase.removeChannel(channel);
     };
   }, []);
 

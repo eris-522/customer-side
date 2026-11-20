@@ -133,12 +133,11 @@ export default function AuthPage() {
   // Security question fields
   const [securityAnswer, setSecurityAnswer] = useState("");
 
-  // Forgot password flow
+  // Forgot password flow (generic non-enumerating email OTP recovery)
   const [forgotPasswordStep, setForgotPasswordStep] = useState<
-    "none" | "email" | "question" | "otp" | "reset"
+    "none" | "email" | "otp" | "reset"
   >("none");
   const [recoveryEmail, setRecoveryEmail] = useState("");
-  const [recoveryAnswer, setRecoveryAnswer] = useState("");
   const [recoveryOtp, setRecoveryOtp] = useState("");
   const [resendingRecoveryOtp, setResendingRecoveryOtp] = useState(false);
   const [newPassword, setNewPassword] = useState("");
@@ -168,7 +167,7 @@ export default function AuthPage() {
         type: "signup",
         email: cleanEmail,
         options: {
-          emailRedirectTo: "https://rpcatering.vercel.app/auth?confirmed=true",
+          emailRedirectTo: `${window.location.origin}/auth?confirmed=true`,
         },
       });
       if (resendErr) {
@@ -292,7 +291,7 @@ export default function AuthPage() {
     } else if (mode === "forgot") {
       setIsLogin(true);
       setForgotPasswordStep((prev) =>
-        prev === "question" || prev === "otp" || prev === "reset" ? prev : "email"
+        prev === "otp" || prev === "reset" ? prev : "email"
       );
     } else {
       setIsLogin(mode !== "signup");
@@ -370,124 +369,26 @@ export default function AuthPage() {
           return;
         }
 
-        // 1. Verify if the account exists and whether its email has been confirmed
-        const checkConfirmPromise = supabase.rpc("check_user_email_confirmed", {
-          lookup_email: currentRecoveryEmail,
-        });
-
-        const confirmTimeoutPromise = new Promise<{ data: any; error: any }>((_, reject) =>
-          setTimeout(
-            () => reject(new Error("Request timed out. Please check your internet connection and try again.")),
-            10000
-          )
-        );
-
-        const { data: confirmStatus, error: confirmErr } = await Promise.race([
-          checkConfirmPromise,
-          confirmTimeoutPromise,
-        ]);
-
-        if (!confirmErr && confirmStatus) {
-          if (!confirmStatus.exists) {
-            setError("Account not found. Please check your email address.");
-            return;
-          }
-          if (!confirmStatus.confirmed) {
-            setError(
-              <span>
-                Your account has not been confirmed yet. You cannot reset your password until your email address is verified.{" "}
-                <button
-                  type="button"
-                  onClick={() => handleResendConfirmation(currentRecoveryEmail)}
-                  className="underline font-bold text-gold-400 hover:text-white transition-colors cursor-pointer ml-1 inline-block"
-                >
-                  {resendingConfirm ? "Resending..." : "Resend Confirmation Email"}
-                </button>
-              </span>
-            );
-            return;
-          }
-        }
-
-        // 2. Account is confirmed — check a security question is set up.
-        // The answer itself never leaves the database (checked server-side by verify_security_answer).
-        const queryPromise = supabase.rpc("customer_account_status", {
-          p_email: currentRecoveryEmail,
-        });
-
+        // Send recovery OTP directly without querying account existence/security-answer oracles
+        const resetPromise = supabase.auth.resetPasswordForEmail(currentRecoveryEmail);
         const timeoutPromise = new Promise<{ data: any; error: any }>((_, reject) =>
           setTimeout(
-            () => reject(new Error("Request timed out. Please check your internet connection and try again.")),
-            10000
+            () => reject(new Error("Request timed out sending OTP email. Please try again.")),
+            12000
           )
         );
 
-        const { data: accountStatus, error } = await Promise.race([queryPromise, timeoutPromise]);
-
-        if (error || !accountStatus || accountStatus === "not_found") {
-          setError("Account not found. Please check your email address.");
-        } else if (accountStatus === "no_question") {
-          setError("No security question set up for this account. Please contact the administrator.");
-        } else {
-          setForgotPasswordStep("question");
-        }
-      } else if (forgotPasswordStep === "question") {
-        const { data: answerOk, error: answerErr } = await supabase.rpc("verify_security_answer", {
-          p_email: recoveryEmail.trim().toLowerCase(),
-          p_answer: recoveryAnswer,
-        });
-        if (answerErr) {
-          setError("Could not verify your answer right now. Please try again.");
+        const { error: resetErr } = await Promise.race([resetPromise, timeoutPromise]);
+        if (resetErr && (resetErr.status === 429 || resetErr.message?.toLowerCase().includes("rate"))) {
+          setError("Too many recovery requests. Please wait a minute and try again.");
           return;
         }
-        if (answerOk === true) {
-          // Double-check confirmation status before dispatching recovery OTP email
-          const { data: confirmStatus } = await supabase.rpc("check_user_email_confirmed", {
-            lookup_email: recoveryEmail.trim().toLowerCase(),
-          });
 
-          if (confirmStatus && !confirmStatus.confirmed) {
-            setError(
-              <span>
-                Your account has not been confirmed yet. You cannot reset your password until your email address is verified.{" "}
-                <button
-                  type="button"
-                  onClick={() => handleResendConfirmation(recoveryEmail.trim())}
-                  className="underline font-bold text-gold-400 hover:text-white transition-colors cursor-pointer ml-1 inline-block"
-                >
-                  {resendingConfirm ? "Resending..." : "Resend Confirmation Email"}
-                </button>
-              </span>
-            );
-            return;
-          }
-
-          // Send the recovery OTP email via Supabase Auth
-          const resetPromise = supabase.auth.resetPasswordForEmail(
-            recoveryEmail.trim().toLowerCase(),
-          );
-
-          const timeoutPromise = new Promise<{ data: any; error: any }>((_, reject) =>
-            setTimeout(
-              () => reject(new Error("Request timed out sending OTP email. Please try again.")),
-              12000
-            )
-          );
-
-          const { error } = await Promise.race([resetPromise, timeoutPromise]);
-
-          if (error) {
-            setError(`Failed to send OTP email: ${error.message}`);
-          } else {
-            setRecoveryOtp("");
-            setForgotPasswordStep("otp");
-            setMessage(
-              `Security answer verified! We've sent a verification OTP code to ${recoveryEmail.trim().toLowerCase()}. Please enter the code below.`
-            );
-          }
-        } else {
-          setError("Incorrect answer. Please check your spelling and try again.");
-        }
+        setRecoveryOtp("");
+        setForgotPasswordStep("otp");
+        setMessage(
+          `If an account exists for ${currentRecoveryEmail}, a 6-digit password reset OTP has been sent. Please check your inbox and spam folder.`
+        );
       } else if (forgotPasswordStep === "otp") {
         const cleanOtp = recoveryOtp.replace(/\D/g, "").trim();
         if (!cleanOtp || cleanOtp.length < 6) {
@@ -573,7 +474,6 @@ export default function AuthPage() {
           setIsLogin(true);
           setSearchParams({ mode: "login" });
           setRecoveryEmail("");
-          setRecoveryAnswer("");
           setRecoveryOtp("");
           setNewPassword("");
           setConfirmNewPassword("");
@@ -767,25 +667,12 @@ export default function AuthPage() {
           return;
         }
 
-        // Check if the email is already registered as a customer (RPC: profiles aren't readable before login)
-        const { data: existingStatus } = await supabase.rpc("customer_account_status", {
-          p_email: currentEmail,
-        });
-
-        if (existingStatus && existingStatus !== "not_found") {
-          setError(
-            "This email is already in use. Please sign in or use a different email.",
-          );
-          setEmailError("This email is already in use.");
-          return;
-        }
-
         const { data: authData, error: authError } = await supabase.auth.signUp(
           {
             email: currentEmail,
             password: password,
             options: {
-              emailRedirectTo: "https://rpcatering.vercel.app/auth?confirmed=true",
+              emailRedirectTo: `${window.location.origin}/auth?confirmed=true`,
               // Copied into public.profiles by the handle_new_user() trigger (the security answer is
               // then stripped from auth metadata). The client can't write profiles before login.
               data: {
@@ -1192,34 +1079,6 @@ export default function AuthPage() {
                   </div>
                 )}
 
-                {forgotPasswordStep === "question" && (
-                  <div className="space-y-2">
-                    <label className="text-base text-white/80 font-bold ml-1 flex flex-col gap-1">
-                      <span>
-                        Security Question: What is your favorite color?
-                      </span>
-                      <span className="text-sm text-gold-400/90 normal-case tracking-normal">
-                        Hint: Your answer includes a number and special
-                        character.
-                      </span>
-                    </label>
-                    <div className="relative group">
-                      <ShieldQuestion
-                        className="absolute left-4 top-1/2 -translate-y-1/2 text-white/20 group-focus-within:text-gold-400 transition-colors"
-                        size={16}
-                      />
-                      <input
-                        type="text"
-                        placeholder="Your Answer"
-                        value={recoveryAnswer}
-                        onChange={(e) => setRecoveryAnswer(e.target.value)}
-                        required
-                        className="w-full bg-white/5 border border-white/10 px-12 py-4 text-lg focus:outline-none focus:border-gold-400/50 transition-all placeholder:text-white/40"
-                      />
-                    </div>
-                  </div>
-                )}
-
                 {forgotPasswordStep === "otp" && (
                   <div className="space-y-2">
                     <div className="flex items-center justify-between px-1">
@@ -1393,7 +1252,7 @@ export default function AuthPage() {
                 >
                   {loading
                     ? "Processing..."
-                    : forgotPasswordStep === "question"
+                    : forgotPasswordStep === "email"
                       ? "Send OTP to Email"
                       : forgotPasswordStep === "otp"
                         ? "Verify OTP"

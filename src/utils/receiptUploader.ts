@@ -1,19 +1,38 @@
 import { supabase } from "./supabase";
 
+export const MAX_UPLOAD_FILE_BYTES = 10 * 1024 * 1024; // 10 MB
+export const ALLOWED_UPLOAD_MIME_TYPES = new Set([
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+]);
+
 export interface CompressedImageResult {
   dataUrl: string;
   blob: Blob;
 }
 
 /**
- * Compresses an image file client-side using an HTML Canvas.
- * Returns both a base64 Data URL (for instant UI preview) and a lightweight Blob (for Storage upload).
+ * Validates and compresses an image file client-side using an HTML Canvas.
+ * Blocks oversized files and SVGs, and returns both a JPEG Data URL preview
+ * and a lightweight JPEG Blob for private Storage upload.
  */
 export async function compressReceiptImage(
   file: File,
   maxDimension = 900,
   quality = 0.7
 ): Promise<CompressedImageResult> {
+  if (!file || typeof file.size !== "number") {
+    throw new Error("Invalid file selected.");
+  }
+  if (file.size > MAX_UPLOAD_FILE_BYTES) {
+    throw new Error("Image file exceeds the 10 MB maximum size limit.");
+  }
+  const mime = (file.type || "").toLowerCase();
+  if (!mime || mime === "image/svg+xml" || !ALLOWED_UPLOAD_MIME_TYPES.has(mime)) {
+    throw new Error("Please upload a valid JPG, PNG, or WebP image.");
+  }
+
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.readAsDataURL(file);
@@ -36,19 +55,15 @@ export async function compressReceiptImage(
         }
 
         const canvas = document.createElement("canvas");
-        canvas.width = width;
-        canvas.height = height;
+        canvas.width = Math.max(1, width);
+        canvas.height = Math.max(1, height);
         const ctx = canvas.getContext("2d");
         if (!ctx) {
-          // Fallback if 2d context not available
-          fetch(event.target?.result as string)
-            .then((res) => res.blob())
-            .then((blob) => resolve({ dataUrl: event.target?.result as string, blob }))
-            .catch(reject);
+          reject(new Error("Browser image processor is unavailable."));
           return;
         }
 
-        ctx.drawImage(img, 0, 0, width, height);
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
         const dataUrl = canvas.toDataURL("image/jpeg", quality);
 
         canvas.toBlob(
@@ -56,110 +71,88 @@ export async function compressReceiptImage(
             if (blob) {
               resolve({ dataUrl, blob });
             } else {
-              // Fallback blob generation
-              fetch(dataUrl)
-                .then((res) => res.blob())
-                .then((b) => resolve({ dataUrl, blob: b }))
-                .catch(reject);
+              reject(new Error("Failed to encode receipt image."));
             }
           },
           "image/jpeg",
           quality
         );
       };
-      img.onerror = (err) => reject(err);
+      img.onerror = () => reject(new Error("Failed to decode image file."));
     };
-    reader.onerror = (err) => reject(err);
+    reader.onerror = () => reject(new Error("Failed to read image file."));
   });
 }
 
 /**
- * Uploads a receipt image blob to Supabase Storage.
- * Attempts standard buckets ('receipts', 'public', 'images', 'cms').
- * Returns the public URL, or null if storage is unavailable (allowing fallback to Data URL).
+ * Uploads a receipt or complaint image blob strictly to the private 'receipts' bucket.
+ * Returns a canonical `receipts://<path>` reference on success, or throws on failure.
  */
 export async function uploadReceiptImage(
   blob: Blob,
-  userId?: string
-): Promise<string | null> {
-  try {
-    const timestamp = Date.now();
-    const randomSuffix = Math.random().toString(36).substring(2, 8);
-    const sanitizedUser = userId ? userId.replace(/[^a-zA-Z0-9_-]/g, "") : "guest";
-    const filePath = `receipts/${sanitizedUser}/${timestamp}_${randomSuffix}.jpg`;
-
-    // Candidate storage buckets in order of preference
-    const candidateBuckets = ["receipts", "public", "images", "cms"];
-
-    for (const bucket of candidateBuckets) {
-      try {
-        const { data, error } = await supabase.storage.from(bucket).upload(filePath, blob, {
-          contentType: "image/jpeg",
-          cacheControl: "31536000", // 1 year CDN cache
-          upsert: true,
-        });
-
-        if (!error && data) {
-          const { data: pubData } = supabase.storage.from(bucket).getPublicUrl(data.path);
-          if (pubData?.publicUrl) {
-            console.log(`Receipt successfully uploaded to bucket '${bucket}':`, pubData.publicUrl);
-            return pubData.publicUrl;
-          }
-        }
-      } catch (bucketErr) {
-        // Continue to try next candidate bucket
-      }
-    }
-  } catch (err) {
-    console.warn("Storage upload failed, falling back to data URL:", err);
+  userId: string,
+  folder: "receipts" | "complaints" = "receipts"
+): Promise<string> {
+  const sanitizedUser = (userId || "").replace(/[^a-zA-Z0-9_-]/g, "");
+  if (!sanitizedUser) {
+    throw new Error("Authenticated user session required to upload payment proof.");
+  }
+  if (!blob || blob.size > MAX_UPLOAD_FILE_BYTES) {
+    throw new Error("Compressed receipt exceeds upload size limit.");
   }
 
-  return null;
+  const timestamp = Date.now();
+  const randomSuffix = Math.random().toString(36).substring(2, 8);
+  const filePath = `${folder}/${sanitizedUser}/${timestamp}_${randomSuffix}.jpg`;
+
+  const { data, error } = await supabase.storage.from("receipts").upload(filePath, blob, {
+    contentType: "image/jpeg",
+    cacheControl: "31536000",
+    upsert: false,
+  });
+
+  if (error || !data?.path) {
+    throw new Error(error?.message || "Could not upload receipt image to secure storage.");
+  }
+
+  return `receipts://${data.path}`;
 }
 
 /**
- * Uploads an e-signature PNG Data URL to Supabase Storage with 1-year CDN cache headers.
- * Returns the public URL on success, or falls back to the original Data URL if storage is unavailable.
+ * Uploads a client e-signature PNG Data URL strictly to the private 'receipts' bucket.
+ * Returns a canonical `receipts://signatures/...` reference on success, or throws on failure.
  */
 export async function uploadSignatureDataUrl(
   dataUrl: string,
-  userId?: string
+  userId: string
 ): Promise<string> {
-  if (!dataUrl || !dataUrl.startsWith("data:image/")) {
-    return dataUrl;
+  if (!dataUrl || !dataUrl.toLowerCase().startsWith("data:image/png;base64,")) {
+    throw new Error("Invalid contract signature format.");
+  }
+  const sanitizedUser = (userId || "").replace(/[^a-zA-Z0-9_-]/g, "");
+  if (!sanitizedUser) {
+    throw new Error("Authenticated user session required to store contract signature.");
   }
 
-  try {
-    const res = await fetch(dataUrl);
-    const blob = await res.blob();
-    const timestamp = Date.now();
-    const randomSuffix = Math.random().toString(36).substring(2, 8);
-    const sanitizedUser = userId ? userId.replace(/[^a-zA-Z0-9_-]/g, "") : "guest";
-    const filePath = `signatures/${sanitizedUser}/${timestamp}_${randomSuffix}.png`;
-    const candidateBuckets = ["receipts", "public", "images", "cms"];
-
-    for (const bucket of candidateBuckets) {
-      try {
-        const { data, error } = await supabase.storage.from(bucket).upload(filePath, blob, {
-          contentType: "image/png",
-          cacheControl: "31536000",
-          upsert: true,
-        });
-
-        if (!error && data) {
-          const { data: pubData } = supabase.storage.from(bucket).getPublicUrl(data.path);
-          if (pubData?.publicUrl) {
-            return pubData.publicUrl;
-          }
-        }
-      } catch {
-        // Continue to next bucket
-      }
-    }
-  } catch (err) {
-    console.warn("Signature storage upload failed, falling back to data URL:", err);
+  const res = await fetch(dataUrl);
+  const blob = await res.blob();
+  if (!blob || blob.size > MAX_UPLOAD_FILE_BYTES) {
+    throw new Error("Signature image exceeds maximum allowed size.");
   }
 
-  return dataUrl;
+  const timestamp = Date.now();
+  const randomSuffix = Math.random().toString(36).substring(2, 8);
+  const filePath = `signatures/${sanitizedUser}/${timestamp}_${randomSuffix}.png`;
+
+  const { data, error } = await supabase.storage.from("receipts").upload(filePath, blob, {
+    contentType: "image/png",
+    cacheControl: "31536000",
+    upsert: false,
+  });
+
+  if (error || !data?.path) {
+    throw new Error(error?.message || "Could not upload e-signature to secure storage.");
+  }
+
+  return `receipts://${data.path}`;
 }
-

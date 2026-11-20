@@ -2,6 +2,10 @@ import { motion } from "motion/react";
 import { Phone, Mail, MapPin, Clock, Facebook, Instagram, MessageCircle } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useCMS } from "../context/CMSContext";
+import { sanitizeGoogleMapsEmbedUrl, sanitizeSafeHref } from "../utils/urlSafety";
+
+const DEFAULT_GOOGLE_MAPS_EMBED =
+  "https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d4163.146547807375!2d121.13233027542846!3d14.57230958591067!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x3397c74983e4457f%3A0xa8fd45edcc38ed17!2sRoxan%20Policarpio%20Events%20and%20Catering!5e1!3m2!1sen!2sph!4v1776733590376!5m2!1sen!2sph";
 
 export default function ContactPage() {
   const { cms } = useCMS();
@@ -43,9 +47,9 @@ export default function ContactPage() {
       ];
 
   const socials = [
-    { name: "Facebook", icon: Facebook, href: contact.facebookUrl || "https://facebook.com" },
-    { name: "Instagram", icon: Instagram, href: contact.instagramUrl || "https://instagram.com" },
-    { name: "Messenger", icon: MessageCircle, href: contact.messengerUrl || "https://messenger.com" }
+    { name: "Facebook", icon: Facebook, href: sanitizeSafeHref(contact.facebookUrl, "https://facebook.com") },
+    { name: "Instagram", icon: Instagram, href: sanitizeSafeHref(contact.instagramUrl, "https://instagram.com") },
+    { name: "Messenger", icon: MessageCircle, href: sanitizeSafeHref(contact.messengerUrl, "https://messenger.com") }
   ];
 
   return (
@@ -86,7 +90,7 @@ export default function ContactPage() {
               </div>
               <h3 className="text-[10px] uppercase tracking-[0.3em] font-bold text-white/40 mb-2">{info.title}</h3>
               {info.action ? (
-                <a href={info.action} className="text-sm font-serif text-white hover:text-gold-400 transition-colors break-all">
+                <a href={sanitizeSafeHref(info.action, "#")} className="text-sm font-serif text-white hover:text-gold-400 transition-colors break-all">
                   {info.detail}
                 </a>
               ) : (
@@ -101,7 +105,9 @@ export default function ContactPage() {
       <section className="px-4 sm:px-6 md:px-10 pb-12 sm:pb-20">
         <div className="max-w-7xl mx-auto h-[340px] sm:h-[450px] border border-white/10 relative overflow-hidden grayscale-0 md:grayscale md:hover:grayscale-0 transition-all duration-1000">
           <iframe 
-            src={contact.mapEmbedUrl || "https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d4163.146547807375!2d121.13233027542846!3d14.57230958591067!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x3397c74983e4457f%3A0xa8fd45edcc38ed17!2sRoxan%20Policarpio%20Events%20and%20Catering!5e1!3m2!1sen!2sph!4v1776733590376!5m2!1sen!2sph"}
+            title="Roxan Policarpio Events & Catering Location Map"
+            src={sanitizeGoogleMapsEmbedUrl(contact.mapEmbedUrl, DEFAULT_GOOGLE_MAPS_EMBED)}
+            sandbox="allow-scripts allow-same-origin"
             width="100%" 
             height="100%" 
             style={{ border: 0 }} 
@@ -168,7 +174,7 @@ export default function ContactPage() {
               key={social.name}
               href={social.href}
               target="_blank"
-              rel="noreferrer"
+              rel="noopener noreferrer"
               whileHover={{ y: -5 }}
               className="group flex flex-col items-center gap-3"
             >

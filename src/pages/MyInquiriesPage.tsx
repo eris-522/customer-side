@@ -36,7 +36,13 @@ import {
 } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
 
-import { compressReceiptImage, uploadReceiptImage } from "../utils/receiptUploader";
+import {
+  compressReceiptImage,
+  uploadReceiptImage,
+  MAX_UPLOAD_FILE_BYTES,
+  ALLOWED_UPLOAD_MIME_TYPES,
+} from "../utils/receiptUploader";
+import { SignedStorageImage } from "../components/SignedStorageImage";
 import { calculateServiceWindow, OVERTIME_SERVICE_RATES } from "../utils/overtimeBilling";
 import { restoreBookingInventoryOnCancellation } from "../utils/inventoryReturn";
 import { catalogCache } from "../utils/catalogCache";
@@ -776,6 +782,7 @@ export default function MyInquiriesPage() {
 
     const travelFee = Number(currentLogistics?.travelFee) || 0;
     const haulingFee = Number(currentLogistics?.haulingFee) || 0;
+    const rainLaundryFee = Number(currentLogistics?.rainLaundryFee) || 0;
     const corkageData = modifyingBooking.corkage_info || currentLogistics?.corkage || null;
     const corkageFee =
       Number(corkageData?.totalCorkageFee) ||
@@ -790,7 +797,7 @@ export default function MyInquiriesPage() {
     const dayOfOTFee = Number(dayOfOT?.total_day_of_fee) || 0;
     const totalOTFee = Number(modifyingBooking.overtime_info?.total_overtime_fee) || (prebookedOTFee + dayOfOTFee);
 
-    const newTotalBudget = basePrice + extraPax * addPrice + travelFee + haulingFee + corkageFee + totalOTFee;
+    const newTotalBudget = basePrice + extraPax * addPrice + travelFee + haulingFee + rainLaundryFee + corkageFee + totalOTFee;
     const paymentScheme =
       modifyingBooking.payment_scheme || embeddedMeta?.scheme || "Standard 50%";
     const is50Percent = paymentScheme === "Standard 50%";
@@ -1098,8 +1105,13 @@ export default function MyInquiriesPage() {
   ) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (!file.type.startsWith("image/")) {
-      setComplaintFieldError(bookingKey, "form", "Please select a valid image file (JPG, PNG, WEBP).");
+    const mime = (file.type || "").toLowerCase();
+    if (!mime || mime === "image/svg+xml" || !ALLOWED_UPLOAD_MIME_TYPES.has(mime)) {
+      setComplaintFieldError(bookingKey, "form", "Please select a valid JPG, PNG, or WebP image.");
+      return;
+    }
+    if (file.size > MAX_UPLOAD_FILE_BYTES) {
+      setComplaintFieldError(bookingKey, "form", "Photo exceeds the 10 MB size limit. Please upload a smaller image.");
       return;
     }
     try {
@@ -1110,8 +1122,8 @@ export default function MyInquiriesPage() {
         photoBlob: blob,
         photoName: file.name,
       });
-    } catch {
-      setComplaintFieldError(bookingKey, "form", "Could not process image. Please try another photo.");
+    } catch (err: any) {
+      setComplaintFieldError(bookingKey, "form", err?.message || "Could not process image. Please try another photo.");
     }
   };
 
@@ -1194,10 +1206,11 @@ export default function MyInquiriesPage() {
     setComplaintErrorsByBooking((prev) => ({ ...prev, [bookingKey]: {} }));
 
     try {
-      let uploadedPhotoUrl = draft.photoDataUrl || "";
+      let uploadedPhotoUrl = "";
       if (draft.photoBlob) {
-        const remoteUrl = await uploadReceiptImage(draft.photoBlob, currentUser.id);
-        if (remoteUrl) uploadedPhotoUrl = remoteUrl;
+        uploadedPhotoUrl = await uploadReceiptImage(draft.photoBlob, currentUser.id, "complaints");
+      } else if (draft.photoDataUrl && !draft.photoDataUrl.toLowerCase().startsWith("data:")) {
+        uploadedPhotoUrl = draft.photoDataUrl;
       }
 
       const submittedAt = new Date().toISOString();
@@ -1327,8 +1340,13 @@ export default function MyInquiriesPage() {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    if (!file.type.startsWith("image/")) {
-      setBalanceError("Please upload an image file (JPG, PNG, WEBP).");
+    const mime = (file.type || "").toLowerCase();
+    if (!mime || mime === "image/svg+xml" || !ALLOWED_UPLOAD_MIME_TYPES.has(mime)) {
+      setBalanceError("Please upload a valid JPG, PNG, or WebP image.");
+      return;
+    }
+    if (file.size > MAX_UPLOAD_FILE_BYTES) {
+      setBalanceError("Receipt image exceeds the 10 MB size limit. Please upload a smaller image.");
       return;
     }
 
@@ -1338,9 +1356,9 @@ export default function MyInquiriesPage() {
       setBalanceReceiptImage(dataUrl);
       setBalanceReceiptBlob(blob);
       setBalanceReceiptName(file.name);
-    } catch (err) {
+    } catch (err: any) {
       console.error("Receipt compression error:", err);
-      setBalanceError("Failed to process image. Please try another image file.");
+      setBalanceError(err?.message || "Failed to process image. Please try another image file.");
     }
   };
 
@@ -1360,13 +1378,18 @@ export default function MyInquiriesPage() {
     setBalanceError("");
 
     try {
-      // Attempt to upload receipt image to Supabase Storage bucket first (avoids base64 database bloat)
-      let finalReceiptUrl = balanceReceiptImage;
+      // Upload receipt image strictly to private 'receipts' Storage (never store raw Base64 in DB)
+      let finalReceiptUrl = "";
       if (balanceReceiptBlob) {
-        const uploadedUrl = await uploadReceiptImage(balanceReceiptBlob, payingBalanceBooking.user_id);
-        if (uploadedUrl) {
-          finalReceiptUrl = uploadedUrl;
-        }
+        finalReceiptUrl = await uploadReceiptImage(
+          balanceReceiptBlob,
+          payingBalanceBooking.user_id,
+          "receipts"
+        );
+      } else if (balanceReceiptImage && !balanceReceiptImage.toLowerCase().startsWith("data:")) {
+        finalReceiptUrl = balanceReceiptImage;
+      } else {
+        throw new Error("Please re-upload your payment receipt image.");
       }
 
       if (payingDamageInvoice !== null) {
@@ -4688,13 +4711,15 @@ export default function MyInquiriesPage() {
                 </button>
               </div>
               <div className="max-h-[70dvh] sm:max-h-[65vh] overflow-auto overscroll-contain flex items-center justify-center bg-black/50 rounded-lg p-2 border border-white/5">
-                <img
+                <SignedStorageImage
                   src={viewingReceiptUrl}
                   alt="Proof of Payment"
                   className="max-h-[66dvh] sm:max-h-[60vh] w-auto object-contain rounded"
-                  onError={(e) => {
-                    (e.target as HTMLImageElement).src = "https://images.unsplash.com/photo-1554415707-9e4c07d3882d?auto=format&fit=crop&q=80&w=800";
-                  }}
+                  fallback={
+                    <div className="py-12 px-6 text-center text-xs text-white/60">
+                      Unable to load payment proof preview.
+                    </div>
+                  }
                 />
               </div>
               <div className="mt-4 flex justify-end">
@@ -4958,13 +4983,10 @@ export default function MyInquiriesPage() {
                   {balanceReceiptImage ? (
                     <div className="p-4 bg-white/5 border border-gold-400/40 rounded-xl flex items-center justify-between gap-4">
                       <div className="flex items-center gap-4 min-w-0">
-                        <img
+                        <SignedStorageImage
                           src={balanceReceiptImage}
                           alt="Receipt Preview"
                           className="w-16 h-16 object-cover rounded border border-white/20 shrink-0"
-                          onError={(e) => {
-                            (e.target as HTMLImageElement).src = "https://images.unsplash.com/photo-1554415707-9e4c07d3882d?auto=format&fit=crop&q=80&w=800";
-                          }}
                         />
                         <div className="min-w-0">
                           <p className="text-sm font-bold text-white truncate">

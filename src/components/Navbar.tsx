@@ -29,6 +29,7 @@ import {
 import { NotificationCenter } from "./NotificationCenter";
 import { AnnouncementBanner } from "./AnnouncementBanner";
 import { ThemeToggle } from "./ThemeToggle";
+import { clearSignedUrlCache } from "../utils/storageMedia";
 
 export const navLinks = [
   { name: "Home", href: "/" },
@@ -56,14 +57,23 @@ export default function Navbar() {
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const [notifications, setNotifications] = useState<any[]>([]);
   const [isNotifOpen, setIsNotifOpen] = useState(false);
-  const [readIds, setReadIds] = useState<string[]>(() => {
+  const [readIds, setReadIds] = useState<string[]>([]);
+
+  useEffect(() => {
     try {
-      const parsed = JSON.parse(localStorage.getItem('read_notifs') || '[]');
-      return Array.isArray(parsed) ? parsed.map(String) : [];
-    } catch {
-      return [];
+      localStorage.removeItem('read_notifs');
+    } catch {}
+    if (!user?.id) {
+      setReadIds([]);
+      return;
     }
-  });
+    try {
+      const parsed = JSON.parse(localStorage.getItem(`read_notifs_${user.id}`) || '[]');
+      setReadIds(Array.isArray(parsed) ? parsed.map(String) : []);
+    } catch {
+      setReadIds([]);
+    }
+  }, [user?.id]);
   const location = useLocation();
   const navigate = useNavigate();
 
@@ -192,6 +202,9 @@ export default function Navbar() {
         }
         if (event === "SIGNED_OUT") {
           clearSessionGuardCache();
+          clearSignedUrlCache();
+          setNotifications([]);
+          setReadIds([]);
         } else if (event === "SIGNED_IN" && session?.user) {
           // Defer async database calls to avoid Supabase Auth mutex deadlock
           setTimeout(async () => {
@@ -626,6 +639,9 @@ export default function Navbar() {
 
   const confirmLogout = async () => {
     setShowLogoutConfirm(false);
+    clearSignedUrlCache();
+    setNotifications([]);
+    setReadIds([]);
     await supabase.auth.signOut();
     navigate("/");
   };
@@ -642,7 +658,11 @@ export default function Navbar() {
     setReadIds(prev => {
       if (prev.includes(id)) return prev;
       const newIds = [...prev, id];
-      localStorage.setItem('read_notifs', JSON.stringify(newIds));
+      if (user?.id) {
+        try {
+          localStorage.setItem(`read_notifs_${user.id}`, JSON.stringify(newIds));
+        } catch {}
+      }
       return newIds;
     });
   };

@@ -1,6 +1,109 @@
 const USER_AGENT =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
 
+const UPSTREAM_TIMEOUT_MS = 5000;
+const RATE_LIMIT_WINDOW_MS = 60_000;
+const RATE_LIMIT_MAX_REQUESTS = 30;
+const MAX_RATE_BUCKET_ENTRIES = 1000;
+const rateBuckets = new Map();
+
+const ALLOWED_MODES = new Set(["search", "reverse", "details"]);
+const DEFAULT_ALLOWED_ORIGINS = new Set([
+  "https://rpcatering.vercel.app",
+  "http://localhost:3000",
+  "http://127.0.0.1:3000",
+  "http://localhost:3001",
+  "http://127.0.0.1:3001",
+  "http://localhost:5173",
+  "http://127.0.0.1:5173",
+]);
+
+function getAllowedOrigins() {
+  const allowed = new Set(DEFAULT_ALLOWED_ORIGINS);
+  const envOrigins = String(process.env.ALLOWED_ORIGINS || "");
+  for (const part of envOrigins.split(",")) {
+    const trimmed = part.trim().replace(/\/+$/, "");
+    if (trimmed) allowed.add(trimmed);
+  }
+  return allowed;
+}
+
+function isOriginAuthorized(req) {
+  const hostHeader = String(req.headers?.host || "").toLowerCase();
+  const originHeader = String(req.headers?.origin || "").trim();
+  const refererHeader = String(req.headers?.referer || "").trim();
+  const allowed = getAllowedOrigins();
+
+  const checkUrlOrigin = (rawUrl) => {
+    try {
+      const parsed = new URL(rawUrl);
+      const origin = `${parsed.protocol}//${parsed.host}`.toLowerCase();
+      if (allowed.has(origin)) return true;
+      if (hostHeader && parsed.host.toLowerCase() === hostHeader) return true;
+      if (
+        (parsed.hostname === "localhost" || parsed.hostname === "127.0.0.1") &&
+        (parsed.protocol === "http:" || parsed.protocol === "https:")
+      ) {
+        return true;
+      }
+    } catch {
+      return false;
+    }
+    return false;
+  };
+
+  if (originHeader) return checkUrlOrigin(originHeader);
+  if (refererHeader) return checkUrlOrigin(refererHeader);
+
+  // Direct same-origin browser/dev-middleware fetches without Origin/Referer
+  return Boolean(hostHeader && (hostHeader.startsWith("localhost:") || hostHeader.startsWith("127.0.0.1:")));
+}
+
+function getClientIp(req) {
+  const xff = String(req.headers?.["x-forwarded-for"] || "");
+  if (xff) return xff.split(",")[0].trim();
+  return req.socket?.remoteAddress || "unknown";
+}
+
+function isRateLimited(ip) {
+  const now = Date.now();
+  if (rateBuckets.size > MAX_RATE_BUCKET_ENTRIES) {
+    for (const [key, entry] of rateBuckets.entries()) {
+      if (entry.resetAt <= now) rateBuckets.delete(key);
+    }
+    if (rateBuckets.size > MAX_RATE_BUCKET_ENTRIES) {
+      rateBuckets.clear();
+    }
+  }
+
+  const current = rateBuckets.get(ip);
+  if (!current || current.resetAt <= now) {
+    rateBuckets.set(ip, { count: 1, resetAt: now + RATE_LIMIT_WINDOW_MS });
+    return false;
+  }
+  current.count += 1;
+  return current.count > RATE_LIMIT_MAX_REQUESTS;
+}
+
+async function fetchWithTimeout(url, options = {}, timeoutMs = UPSTREAM_TIMEOUT_MS) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...options, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function parseFiniteCoord(raw, min, max) {
+  if (raw === null || raw === undefined) return null;
+  const trimmed = String(raw).trim();
+  if (!trimmed) return null;
+  const num = Number(trimmed);
+  if (!Number.isFinite(num) || num < min || num > max) return null;
+  return num;
+}
+
 function isInsidePhilippines(lat, lng) {
   return lat >= 4.5 && lat <= 21.5 && lng >= 116.5 && lng <= 127.0;
 }
@@ -14,7 +117,6 @@ function cleanGoogleAddress(address, placeName = "") {
   ) {
     cleaned = cleaned.slice(placeName.length + 1).trim();
   }
-  // Strip leading Plus Code if followed by a comma/street address (e.g., "H598+R3G, Cabrera Rd...")
   cleaned = cleaned.replace(
     /^[23456789CFGHJMPQRVWX]{4,8}\+[23456789CFGHJMPQRVWX]{2,5}(?:,|\s+)\s*/i,
     ""
@@ -24,11 +126,11 @@ function cleanGoogleAddress(address, placeName = "") {
 
 export async function getGoogleMapsEmbedPlace(query) {
   const q = String(query || "").trim();
-  if (!q) return null;
+  if (q.length < 2 || q.length > 150) return null;
 
   try {
     const embedUrl = `https://www.google.com/maps?q=${encodeURIComponent(q)}&hl=en&gl=ph&output=embed`;
-    const res = await fetch(embedUrl, {
+    const res = await fetchWithTimeout(embedUrl, {
       headers: {
         "User-Agent": USER_AGENT,
         "Accept-Language": "en-PH,en;q=0.9",
@@ -84,10 +186,12 @@ export async function getGoogleMapsEmbedPlace(query) {
 export async function searchGoogleMapsPlaces(
   query,
   biasLat = 14.58,
-  biasLng = 121.13
+  biasLng = 121.13,
+  options = {}
 ) {
   const q = String(query || "").trim();
-  if (!q) return [];
+  if (q.length < 2 || q.length > 150) return [];
+  const skipEmbed = Boolean(options?.skipEmbed);
 
   const suggestPb = `!2i10!4m12!1m3!1d45000!2d${biasLng}!3d${biasLat}!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!7i10`;
   const suggestUrl = `https://www.google.com/s?tbm=map&gs_ri=maps&suggest=p&authuser=0&hl=en&gl=ph&pb=${suggestPb}&q=${encodeURIComponent(q)}`;
@@ -96,19 +200,19 @@ export async function searchGoogleMapsPlaces(
   const searchUrl = `https://www.google.com/search?tbm=map&authuser=0&hl=en&gl=ph&pb=${searchPb}&q=${encodeURIComponent(q)}`;
 
   const [suggestRes, searchRes, embedPlaceRes] = await Promise.allSettled([
-    fetch(suggestUrl, {
+    fetchWithTimeout(suggestUrl, {
       headers: {
         "User-Agent": USER_AGENT,
         "Accept-Language": "en-PH,en;q=0.9",
       },
     }).then((r) => (r.ok ? r.text() : "")),
-    fetch(searchUrl, {
+    fetchWithTimeout(searchUrl, {
       headers: {
         "User-Agent": USER_AGENT,
         "Accept-Language": "en-PH,en;q=0.9",
       },
     }).then((r) => (r.ok ? r.text() : "")),
-    getGoogleMapsEmbedPlace(q),
+    skipEmbed ? Promise.resolve(null) : getGoogleMapsEmbedPlace(q),
   ]);
 
   const rawItems = [];
@@ -121,7 +225,6 @@ export async function searchGoogleMapsPlaces(
     rawItems.push(ep);
   }
 
-  // 1. Parse Google Maps Full Search (`tbm=map`) for rich address & category metadata
   if (searchRes.status === "fulfilled" && searchRes.value) {
     try {
       const clean = searchRes.value.replace(/^\)\]\}'\s*/, "");
@@ -185,7 +288,6 @@ export async function searchGoogleMapsPlaces(
     }
   }
 
-  // 2. Parse Google Maps Autocomplete Suggest (`s?tbm=map`) and merge/enrich with detailed search
   const suggestItems = [];
   if (suggestRes.status === "fulfilled" && suggestRes.value) {
     try {
@@ -226,7 +328,6 @@ export async function searchGoogleMapsPlaces(
     }
   }
 
-  // Combine embed spotlit result + suggest items + full search items
   const allCandidates = [
     ...(embedPlaceRes.status === "fulfilled" && embedPlaceRes.value
       ? [embedPlaceRes.value]
@@ -245,7 +346,6 @@ export async function searchGoogleMapsPlaces(
     }
   }
 
-  // Sort Philippine results first
   deduped.sort((a, b) => {
     const aPh = isInsidePhilippines(a.lat, a.lng) ? 0 : 1;
     const bPh = isInsidePhilippines(b.lat, b.lng) ? 0 : 1;
@@ -256,9 +356,9 @@ export async function searchGoogleMapsPlaces(
 }
 
 export async function reverseGeocodeGoogleMaps(lat, lng) {
-  const numLat = Number(lat);
-  const numLng = Number(lng);
-  if (isNaN(numLat) || isNaN(numLng)) {
+  const numLat = parseFiniteCoord(lat, -90, 90);
+  const numLng = parseFiniteCoord(lng, -180, 180);
+  if (numLat === null || numLng === null) {
     return null;
   }
 
@@ -266,7 +366,7 @@ export async function reverseGeocodeGoogleMaps(lat, lng) {
   const revealUrl = `https://www.google.com/maps/preview/reveal?authuser=0&hl=en&gl=ph&pb=${encodeURIComponent(pb)}`;
 
   try {
-    const res = await fetch(revealUrl, {
+    const res = await fetchWithTimeout(revealUrl, {
       headers: {
         "User-Agent": USER_AGENT,
         "Accept-Language": "en-PH,en;q=0.9",
@@ -313,44 +413,90 @@ export async function reverseGeocodeGoogleMaps(lat, lng) {
 }
 
 export default async function handler(req, res) {
+  res.setHeader("Content-Type", "application/json; charset=utf-8");
+  res.setHeader("Cache-Control", "no-store");
+
+  if (req.method !== "GET") {
+    res.statusCode = 405;
+    res.setHeader("Allow", "GET");
+    res.end(JSON.stringify({ error: "Method not allowed.", results: [] }));
+    return;
+  }
+
+  if (!isOriginAuthorized(req)) {
+    res.statusCode = 403;
+    res.end(JSON.stringify({ error: "Forbidden origin.", results: [] }));
+    return;
+  }
+
+  if (isRateLimited(getClientIp(req))) {
+    res.statusCode = 429;
+    res.setHeader("Retry-After", "60");
+    res.end(JSON.stringify({ error: "Rate limit exceeded. Please wait a moment.", results: [] }));
+    return;
+  }
+
   try {
     const urlObj = new URL(req.url, `http://${req.headers.host || "localhost"}`);
     const mode = urlObj.searchParams.get("mode") || "search";
 
-    res.setHeader("Content-Type", "application/json; charset=utf-8");
-    res.setHeader("Cache-Control", "public, max-age=3600, s-maxage=86400, stale-while-revalidate=604800");
-
-    if (mode === "reverse") {
-      const lat = urlObj.searchParams.get("lat");
-      const lng = urlObj.searchParams.get("lng");
-      const result = await reverseGeocodeGoogleMaps(lat, lng);
-      res.statusCode = 200;
-      res.end(JSON.stringify({ result }));
+    if (!ALLOWED_MODES.has(mode)) {
+      res.statusCode = 400;
+      res.end(JSON.stringify({ error: "Invalid lookup mode.", results: [] }));
       return;
     }
 
-    if (mode === "details") {
-      const q = urlObj.searchParams.get("q") || "";
-      let result = await getGoogleMapsEmbedPlace(q);
-      if (!result) {
-        const list = await searchGoogleMapsPlaces(q);
-        result = list[0] || null;
+    if (mode === "reverse") {
+      const lat = parseFiniteCoord(urlObj.searchParams.get("lat"), -90, 90);
+      const lng = parseFiniteCoord(urlObj.searchParams.get("lng"), -180, 180);
+      if (lat === null || lng === null) {
+        res.statusCode = 400;
+        res.end(JSON.stringify({ error: "Valid lat and lng query parameters are required.", result: null }));
+        return;
+      }
+
+      const result = await reverseGeocodeGoogleMaps(lat, lng);
+      if (result) {
+        res.setHeader("Cache-Control", "public, max-age=300, s-maxage=3600, stale-while-revalidate=86400");
       }
       res.statusCode = 200;
       res.end(JSON.stringify({ result }));
       return;
     }
 
-    const q = urlObj.searchParams.get("q") || "";
-    const lat = parseFloat(urlObj.searchParams.get("lat") || "14.58") || 14.58;
-    const lng = parseFloat(urlObj.searchParams.get("lng") || "121.13") || 121.13;
+    const q = String(urlObj.searchParams.get("q") || "").trim();
+    if (q.length < 2 || q.length > 150) {
+      res.statusCode = 400;
+      res.end(JSON.stringify({ error: "Query parameter 'q' must be between 2 and 150 characters.", results: [] }));
+      return;
+    }
+
+    if (mode === "details") {
+      let result = await getGoogleMapsEmbedPlace(q);
+      if (!result) {
+        const list = await searchGoogleMapsPlaces(q, 14.58, 121.13, { skipEmbed: true });
+        result = list[0] || null;
+      }
+      if (result) {
+        res.setHeader("Cache-Control", "public, max-age=300, s-maxage=3600, stale-while-revalidate=86400");
+      }
+      res.statusCode = 200;
+      res.end(JSON.stringify({ result }));
+      return;
+    }
+
+    const lat = parseFiniteCoord(urlObj.searchParams.get("lat"), -90, 90) ?? 14.58;
+    const lng = parseFiniteCoord(urlObj.searchParams.get("lng"), -180, 180) ?? 121.13;
     const results = await searchGoogleMapsPlaces(q, lat, lng);
 
+    if (results.length > 0) {
+      res.setHeader("Cache-Control", "public, max-age=300, s-maxage=3600, stale-while-revalidate=86400");
+    }
     res.statusCode = 200;
     res.end(JSON.stringify({ results }));
-  } catch (err) {
+  } catch {
     res.statusCode = 500;
-    res.end(JSON.stringify({ error: err?.message || "Internal error", results: [] }));
+    res.setHeader("Cache-Control", "no-store");
+    res.end(JSON.stringify({ error: "Location lookup temporarily unavailable.", results: [] }));
   }
 }
-

@@ -4,6 +4,7 @@ import { Link } from "react-router-dom";
 import { useState, useEffect } from "react";
 import { useCMS } from "../context/CMSContext";
 import { catalogCache } from "../utils/catalogCache";
+import { sanitizeSafeHref } from "../utils/urlSafety";
 
 export interface CateringPackage {
   id: string;
@@ -130,13 +131,13 @@ export default function HomePage() {
             className="flex flex-col sm:flex-row gap-4 sm:gap-6 justify-center"
           >
             <Link
-              to={hero.primaryBtnLink || "/booking"}
+              to={sanitizeSafeHref(hero.primaryBtnLink, "/booking")}
               className="w-full sm:w-auto gold-gradient text-white dark:text-black px-8 sm:px-10 py-3.5 sm:py-3 font-bold tracking-widest uppercase text-xs hover:brightness-110 transition-all inline-block text-center focus:outline-none shadow-md rounded-xs"
             >
               {hero.primaryBtnText || "Inquire Now"}
             </Link>
             <Link
-              to={hero.secondaryBtnLink || "/menu"}
+              to={sanitizeSafeHref(hero.secondaryBtnLink, "/menu")}
               className="w-full sm:w-auto border border-[#7A4B1F] dark:border-white/80 bg-[#EAE0D0] dark:bg-black/30 text-[#4A2D11] dark:text-white px-8 sm:px-10 py-3.5 sm:py-3 font-bold tracking-widest uppercase text-xs hover:bg-[#DBCDB7] dark:hover:bg-white hover:text-[#2E1B0A] dark:hover:text-black transition-all inline-block text-center rounded-xs shadow-md"
             >
               {hero.secondaryBtnText || "View Menu"}
@@ -492,7 +493,7 @@ export default function HomePage() {
           </div>
           <div className="flex flex-col gap-4 sm:gap-6 items-start md:items-end w-full md:w-auto">
             <a
-              href={`mailto:${contact.email || "rpcatering@gmail.com"}`}
+              href={sanitizeSafeHref(`mailto:${contact.email || "rpcatering@gmail.com"}`, "mailto:rpcatering@gmail.com")}
               className="text-lg sm:text-2xl md:text-4xl font-serif text-gold-400 hover:text-white transition-colors italic break-all"
             >
               {contact.email || "rpcatering@gmail.com"}

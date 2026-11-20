@@ -42,7 +42,13 @@ import {
 } from "lucide-react";
 import { supabase } from "../utils/supabase";
 import { CATERING_CONTRACT_TERMS } from "../data/cateringContractTerms";
-import { compressReceiptImage, uploadReceiptImage, uploadSignatureDataUrl } from "../utils/receiptUploader";
+import {
+  compressReceiptImage,
+  uploadReceiptImage,
+  uploadSignatureDataUrl,
+  MAX_UPLOAD_FILE_BYTES,
+  ALLOWED_UPLOAD_MIME_TYPES,
+} from "../utils/receiptUploader";
 import { catalogCache } from "../utils/catalogCache";
 import {
   getSessionUser,
@@ -951,8 +957,14 @@ export default function BookingPage() {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    if (!file.type.startsWith("image/")) {
-      setPaymentError("Please upload an image file (JPG, PNG, WEBP).");
+    const mime = (file.type || "").toLowerCase();
+    if (!mime || mime === "image/svg+xml" || !ALLOWED_UPLOAD_MIME_TYPES.has(mime)) {
+      setPaymentError("Please upload a valid JPG, PNG, or WebP image.");
+      return;
+    }
+
+    if (file.size > MAX_UPLOAD_FILE_BYTES) {
+      setPaymentError("Receipt image exceeds the 10 MB size limit. Please upload a smaller image.");
       return;
     }
 
@@ -962,9 +974,9 @@ export default function BookingPage() {
       setReceiptImage(dataUrl);
       setReceiptBlob(blob);
       setReceiptFileName(file.name);
-    } catch (err) {
+    } catch (err: any) {
       console.error("Receipt compression error:", err);
-      setPaymentError("Failed to process image. Please try another image file.");
+      setPaymentError(err?.message || "Failed to process image. Please try another image file.");
     }
   };
 
@@ -1000,19 +1012,25 @@ export default function BookingPage() {
     setPaymentError("");
     setReferenceNumberError("");
 
-    // Attempt to upload receipt image to Supabase Storage bucket first (avoids base64 database bloat)
-    let finalReceiptUrl = receiptImage;
-    if (receiptBlob) {
-      const uploadedUrl = await uploadReceiptImage(receiptBlob, sessionUser.id);
-      if (uploadedUrl) {
-        finalReceiptUrl = uploadedUrl;
-      }
-    }
-
-    // Attempt to upload client e-signature PNG to Supabase Storage bucket
+    // Upload receipt image & e-signature strictly to private 'receipts' Storage (never store raw Base64 in DB)
+    let finalReceiptUrl = "";
     let finalSignatureUrl = capturedSignatureDataUrl || "";
-    if (finalSignatureUrl.startsWith("data:image/")) {
-      finalSignatureUrl = await uploadSignatureDataUrl(finalSignatureUrl, sessionUser.id);
+    try {
+      if (receiptBlob) {
+        finalReceiptUrl = await uploadReceiptImage(receiptBlob, sessionUser.id, "receipts");
+      } else if (receiptImage && !receiptImage.toLowerCase().startsWith("data:")) {
+        finalReceiptUrl = receiptImage;
+      } else {
+        throw new Error("Please re-upload your payment receipt image.");
+      }
+
+      if (finalSignatureUrl.startsWith("data:image/")) {
+        finalSignatureUrl = await uploadSignatureDataUrl(finalSignatureUrl, sessionUser.id);
+      }
+    } catch (uploadErr: any) {
+      setIsProcessingPayment(false);
+      setPaymentError(uploadErr?.message || "Failed to upload payment proof to secure storage. Please try again.");
+      return;
     }
 
     // Clean up any selected menu items that were archived or made unavailable before submission
