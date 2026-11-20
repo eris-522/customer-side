@@ -489,7 +489,6 @@ export const DEFAULT_CMS_DATA: FullCMSData = {
 
 const LOCAL_STORAGE_CMS_KEY = "rp_cms_content_cache";
 const LOCAL_STORAGE_CMS_TIME_KEY = "rp_cms_content_timestamp";
-export const CMS_SYNC_CHANNEL_NAME = "cms-live-sync";
 
 /**
  * Deeply merges a section's incoming data with DEFAULT_CMS_DATA[sectionKey],
@@ -624,7 +623,6 @@ export function CMSProvider({ children }: { children: ReactNode }) {
   });
   const [isLoading] = useState(false);
   const inFlightFetchRef = React.useRef<Promise<void> | null>(null);
-  const realtimeDebounceRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const fetchContent = async (forceRefresh = false) => {
     if (!forceRefresh) {
@@ -645,7 +643,9 @@ export function CMSProvider({ children }: { children: ReactNode }) {
 
       // 1. Always query primary table `cms_content` so remote/port-forwarded/Vercel deployments stay in sync
       try {
-        const { data, error } = await supabase.from("cms_content").select("*");
+        const { data, error } = await supabase
+          .from("cms_content")
+          .select("id, section, data, updated_at");
         if (!error && data && data.length > 0) {
           data.forEach((row: any) => {
             const sectionKey = (row.id || row.section) as keyof FullCMSData;
@@ -744,9 +744,6 @@ export function CMSProvider({ children }: { children: ReactNode }) {
     document.addEventListener("visibilitychange", handleVisibilityOrFocus);
 
     return () => {
-      if (realtimeDebounceRef.current) {
-        clearTimeout(realtimeDebounceRef.current);
-      }
       window.removeEventListener("cms_section_updated", handleLocalUpdate);
       window.removeEventListener("focus", handleVisibilityOrFocus);
       document.removeEventListener("visibilitychange", handleVisibilityOrFocus);

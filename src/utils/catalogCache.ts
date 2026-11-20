@@ -1,20 +1,17 @@
 /**
- * Client cache & multiplexed Realtime sync for public catalog data
+ * Client cache & TTL revalidation for public catalog data
  * (packages, menu items, inclusions).
  *
  * - Persists to `sessionStorage` + in-memory with a 10-minute TTL so route
  *   navigation and page reloads do not re-query PostgreSQL unnecessarily.
  * - Deduplicates concurrent in-flight fetches.
- * - Shares ONE single Supabase Realtime WebSocket channel across the entire
- *   app instead of opening separate channels on HomePage, MenuPage,
- *   PackagesPage, BookingPage, and MyInquiriesPage.
+ * - Uses visibility/focus cooldown checks instead of opening public Realtime WebSockets.
  */
 
 import { supabase } from "./supabase";
 
 const DEFAULT_TTL = 10 * 60 * 1000; // 10 minutes
-const REALTIME_DEBOUNCE_MS = 300;
-export const LIVE_SYNC_CHANNEL_NAME = "rpc-live-broadcast-v1";
+const FOCUS_REVALIDATE_COOLDOWN_MS = 5 * 60 * 1000; // 5 minutes
 
 export type CatalogKey = "packages" | "menu" | "inclusions";
 type CatalogListener = (changedKey: CatalogKey) => void;
@@ -64,14 +61,31 @@ let inFlightMenu: Promise<any[]> | null = null;
 let inFlightInclusions: Promise<Record<string, string[]>> | null = null;
 
 const listeners = new Set<CatalogListener>();
-let sharedChannel: ReturnType<typeof supabase.channel> | null = null;
-const debounceTimers: Partial<Record<CatalogKey, ReturnType<typeof setTimeout>>> = {};
+let lastFocusCheckAt = 0;
+let visibilityHandlersAttached = false;
 
-function notifyCatalogChange(key: CatalogKey) {
-  if (debounceTimers[key]) {
-    clearTimeout(debounceTimers[key]);
+function handleFocusOrVisibility() {
+  if (typeof document !== "undefined" && document.visibilityState !== "visible") {
+    return;
   }
-  debounceTimers[key] = setTimeout(() => {
+  const now = Date.now();
+  if (now - lastFocusCheckAt < FOCUS_REVALIDATE_COOLDOWN_MS) {
+    return;
+  }
+  lastFocusCheckAt = now;
+
+  const expiredKeys: CatalogKey[] = [];
+  if (!packagesCache || now - packagesCache.timestamp >= DEFAULT_TTL) {
+    expiredKeys.push("packages");
+  }
+  if (!menuCache || now - menuCache.timestamp >= DEFAULT_TTL) {
+    expiredKeys.push("menu");
+  }
+  if (!inclusionsCache || now - inclusionsCache.timestamp >= DEFAULT_TTL) {
+    expiredKeys.push("inclusions");
+  }
+
+  for (const key of expiredKeys) {
     catalogCache.invalidate(key);
     listeners.forEach((fn) => {
       try {
@@ -80,26 +94,21 @@ function notifyCatalogChange(key: CatalogKey) {
         console.error("Catalog listener error:", err);
       }
     });
-  }, REALTIME_DEBOUNCE_MS);
+  }
 }
 
-export function ensureSharedBroadcastChannel() {
-  if (sharedChannel) return sharedChannel;
+function attachVisibilityHandlers() {
+  if (visibilityHandlersAttached || typeof window === "undefined") return;
+  window.addEventListener("focus", handleFocusOrVisibility);
+  document.addEventListener("visibilitychange", handleFocusOrVisibility);
+  visibilityHandlersAttached = true;
+}
 
-  // Uses Supabase Realtime Broadcast (Elixir cluster, 0 PostgreSQL WAL decoding!)
-  sharedChannel = supabase
-    .channel(LIVE_SYNC_CHANNEL_NAME, {
-      config: { broadcast: { self: true } },
-    })
-    .on("broadcast", { event: "catalog_change" }, (msg: any) => {
-      const key = msg?.payload?.key as CatalogKey | undefined;
-      if (key === "packages" || key === "menu" || key === "inclusions") {
-        notifyCatalogChange(key);
-      }
-    })
-    .subscribe();
-
-  return sharedChannel;
+function detachVisibilityHandlers() {
+  if (!visibilityHandlersAttached || typeof window === "undefined") return;
+  window.removeEventListener("focus", handleFocusOrVisibility);
+  document.removeEventListener("visibilitychange", handleFocusOrVisibility);
+  visibilityHandlersAttached = false;
 }
 
 export const catalogCache = {
@@ -283,14 +292,17 @@ export const catalogCache = {
   },
 
   /**
-   * Subscribes to live catalog updates (`packages`, `menu`, `inclusions`)
-   * using one shared Realtime channel across the entire browser tab.
+   * Subscribes to TTL expiration checks on tab focus/visibility (`packages`, `menu`, `inclusions`)
+   * without opening anonymous Realtime WebSocket connections.
    */
   subscribe(listener: CatalogListener): () => void {
     listeners.add(listener);
-    ensureSharedBroadcastChannel();
+    attachVisibilityHandlers();
     return () => {
       listeners.delete(listener);
+      if (listeners.size === 0) {
+        detachVisibilityHandlers();
+      }
     };
   },
 };

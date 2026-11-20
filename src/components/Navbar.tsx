@@ -238,7 +238,9 @@ export default function Navbar() {
       const { data } = await supabase
         .from('bookings')
         .select('id, status, cancelled_by, cancellation_reason, event_date, created_at, logistics_info, overtime_info, food_allergies, dish_substitutions, modification_requests, final_balance_status')
-        .eq('user_id', user.id);
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false })
+        .limit(50);
       
       if (data) {
         // Filter out bookings cancelled by the customer so they don't receive a notification for their own action
@@ -650,7 +652,7 @@ export default function Navbar() {
     const nextState = !isNotifOpen;
     setIsNotifOpen(nextState);
     if (nextState && fetchNotifsRef.current) {
-      fetchNotifsRef.current(true);
+      fetchNotifsRef.current(false);
     }
   };
 

@@ -44,7 +44,6 @@ import {
 } from "../utils/receiptUploader";
 import { SignedStorageImage } from "../components/SignedStorageImage";
 import { calculateServiceWindow, OVERTIME_SERVICE_RATES } from "../utils/overtimeBilling";
-import { restoreBookingInventoryOnCancellation } from "../utils/inventoryReturn";
 import { catalogCache } from "../utils/catalogCache";
 import {
   getSessionUser,
@@ -52,6 +51,39 @@ import {
   checkAccountStatus,
   clearSessionGuardCache,
 } from "../utils/sessionGuard";
+import {
+  MAX_GCASH_REF_LENGTH,
+  MAX_BANK_REF_LENGTH,
+  validateTransactionReference,
+  sanitizeTransactionReferenceInput,
+  parseAdditionalPaxPrice,
+  addCalendarDays,
+  diffCalendarDaysFromManilaToday,
+} from "../utils/validation";
+
+const INQUIRIES_PAGE_SIZE = 15;
+
+const isBookingBalanceSettled = (booking: any): boolean => {
+  if (!booking) return false;
+  if (
+    booking.final_balance_status === "Verified" ||
+    booking.final_balance_status === "Paid"
+  ) {
+    return true;
+  }
+  const schedule = Array.isArray(booking.installment_schedule)
+    ? booking.installment_schedule
+    : [];
+  if (
+    schedule.length > 0 &&
+    schedule.every(
+      (inst: any) => inst.status === "Verified" || inst.status === "Paid"
+    )
+  ) {
+    return true;
+  }
+  return false;
+};
 
 // Helper to check if event is within 14 days
 const getRuleCategory = (dbCategory: string, itemName: string) => {
@@ -266,24 +298,28 @@ export default function MyInquiriesPage() {
   const [copiedBalanceAccount, setCopiedBalanceAccount] = useState<string>("");
 
   const latestFetchIdRef = useRef(0);
+  const loadedCountRef = useRef(INQUIRIES_PAGE_SIZE);
+  const [totalInquiriesCount, setTotalInquiriesCount] = useState(0);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const loadMoreFnRef = useRef<(() => Promise<void>) | null>(null);
 
   useEffect(() => {
     let isMounted = true;
-    let customDishesChannel: ReturnType<typeof supabase.channel> | null = null;
-    let customDishesDebounce: ReturnType<typeof setTimeout> | null = null;
     const FOCUS_COOLDOWN_MS = 60_000;
     let lastFetchTimestamp = 0;
     let inFlightSilent = false;
 
-    const fetchInquiries = async (silent = false) => {
+    const fetchInquiries = async (silent = false, append = false) => {
       if (silent && inFlightSilent) return null;
       if (silent) inFlightSilent = true;
       const reqId = ++latestFetchIdRef.current;
       try {
-        if (!silent) setLoading(true);
+        if (!silent && !append) setLoading(true);
+        if (append) setLoadingMore(true);
         const authUser = await getSessionUser();
         if (!authUser) {
           if (isMounted && !silent) setLoading(false);
+          if (isMounted && append) setLoadingMore(false);
           return null;
         }
 
@@ -301,14 +337,21 @@ export default function MyInquiriesPage() {
         }
 
         lastFetchTimestamp = Date.now();
+        const fromIdx = append ? loadedCountRef.current : 0;
+        const toIdx = append
+          ? loadedCountRef.current + INQUIRIES_PAGE_SIZE - 1
+          : Math.max(INQUIRIES_PAGE_SIZE, loadedCountRef.current) - 1;
 
         const [bookingsRes, cachedOrFreshMenu, profileData] = await Promise.all([
           supabase
             .from("bookings")
             .select(
               "id, user_id, package_id, event_date, event_time, event_location, guest_count, additional_pax, food_allergies, selected_menu_items, selected_add_ons, status, cancelled_by, cancellation_reason, payment_method, payment_scheme, downpayment_amount, payment_status, receipt_url, reference_number, terms_accepted, final_balance_amount, final_balance_status, final_balance_method, final_balance_reference, final_balance_receipt, installment_schedule, logistics_info, corkage_info, overtime_info, dish_substitutions, modification_requests, created_at, packages (id, name, price, additional_pax_price, category_limits, inclusions)",
+              { count: "exact" },
             )
-            .eq("user_id", authUser.id),
+            .eq("user_id", authUser.id)
+            .order("created_at", { ascending: false })
+            .range(fromIdx, toIdx),
           catalogCache.fetchMenuItems(),
           fetchUserProfile(authUser.id).catch(() => null),
         ]);
@@ -321,34 +364,59 @@ export default function MyInquiriesPage() {
           name: profileData?.full_name || profileData?.name || authUser.user_metadata?.full_name || "Client",
         });
 
-        const { data: bookingsData, error } = bookingsRes;
+        const { data: bookingsData, count, error } = bookingsRes;
         if (error) throw error;
+
+        if (typeof count === "number") {
+          setTotalInquiriesCount(count);
+        }
 
         if (cachedOrFreshMenu) {
           setMenuItems(cachedOrFreshMenu);
         }
 
-        if (bookingsData && bookingsData.length > 0) {
-          const bookingIds = bookingsData.map((b: any) => b.id);
+        const pageRows = bookingsData || [];
+        if (pageRows.length > 0) {
+          const bookingIds = pageRows.map((b: any) => b.id);
           const { data: customData } = await supabase
             .from("booking_custom_dishes")
             .select("id, booking_id, name, category, replaces_dish")
             .in("booking_id", bookingIds);
           if (!isMounted || reqId !== latestFetchIdRef.current) return authUser;
-          setCustomDishes(customData || []);
 
-          const sorted = [...bookingsData].sort((a, b) => {
-            const dateA = new Date(a.created_at || a.event_date || 0).getTime();
-            const dateB = new Date(b.created_at || b.event_date || 0).getTime();
-            return (isNaN(dateB) ? 0 : dateB) - (isNaN(dateA) ? 0 : dateA);
-          });
-          setBookings(sorted);
-          setModifyingBooking((prev: any) => {
-            if (!prev) return null;
-            const refreshed = sorted.find((b: any) => String(b.id) === String(prev.id));
-            return refreshed ? { ...refreshed, packages: refreshed.packages || prev.packages } : prev;
-          });
-        } else {
+          if (append) {
+            loadedCountRef.current += pageRows.length;
+            setCustomDishes((prev) => {
+              const seenIds = new Set(prev.map((d: any) => String(d.id)));
+              const merged = [...prev];
+              for (const row of customData || []) {
+                if (!seenIds.has(String(row.id))) merged.push(row);
+              }
+              return merged;
+            });
+            setBookings((prev) => {
+              const seenIds = new Set(prev.map((b: any) => String(b.id)));
+              const merged = [...prev];
+              for (const row of pageRows) {
+                if (!seenIds.has(String(row.id))) merged.push(row);
+              }
+              return merged;
+            });
+          } else {
+            setCustomDishes(customData || []);
+            const sorted = [...pageRows].sort((a, b) => {
+              const dateA = new Date(a.created_at || a.event_date || 0).getTime();
+              const dateB = new Date(b.created_at || b.event_date || 0).getTime();
+              return (isNaN(dateB) ? 0 : dateB) - (isNaN(dateA) ? 0 : dateA);
+            });
+            setBookings(sorted);
+            setModifyingBooking((prev: any) => {
+              if (!prev) return null;
+              const refreshed = sorted.find((b: any) => String(b.id) === String(prev.id));
+              return refreshed ? { ...refreshed, packages: refreshed.packages || prev.packages } : prev;
+            });
+          }
+        } else if (!append) {
           setBookings([]);
           setCustomDishes([]);
         }
@@ -364,8 +432,13 @@ export default function MyInquiriesPage() {
         return null;
       } finally {
         if (silent) inFlightSilent = false;
-        if (isMounted && !silent) setLoading(false);
+        if (isMounted && !silent && !append) setLoading(false);
+        if (isMounted && append) setLoadingMore(false);
       }
+    };
+
+    loadMoreFnRef.current = async () => {
+      await fetchInquiries(false, true);
     };
 
     // Instant refresh when Navbar's user-bookings Realtime channel detects an update
@@ -387,7 +460,7 @@ export default function MyInquiriesPage() {
     window.addEventListener("focus", handleFocusOrVisibility);
     document.addEventListener("visibilitychange", handleFocusOrVisibility);
 
-    // Subscribe to shared catalog cache for live menu item updates
+    // Subscribe to shared catalog cache for TTL revalidation on menu items
     const unsubscribeCatalog = catalogCache.subscribe((changedKey) => {
       if (changedKey === "menu") {
         catalogCache.fetchMenuItems(true).then((items) => {
@@ -396,33 +469,16 @@ export default function MyInquiriesPage() {
       }
     });
 
-    fetchInquiries(false).then((authUser) => {
-      if (!isMounted || !authUser) return;
-
-      // Only subscribe to `booking_custom_dishes` here (bookings & menu are already covered globally)
-      customDishesChannel = supabase
-        .channel(`my-inquiries-dishes-${authUser.id}-${Date.now()}-${Math.random().toString(36).slice(2)}`)
-        .on(
-          "postgres_changes",
-          { event: "*", schema: "public", table: "booking_custom_dishes" },
-          () => {
-            if (customDishesDebounce) clearTimeout(customDishesDebounce);
-            customDishesDebounce = setTimeout(() => {
-              fetchInquiries(true);
-            }, 300);
-          },
-        )
-        .subscribe();
-    });
+    // All booking & custom dish updates arrive via Navbar's user-filtered bookings Realtime channel
+    fetchInquiries(false);
 
     return () => {
       isMounted = false;
-      if (customDishesDebounce) clearTimeout(customDishesDebounce);
+      loadMoreFnRef.current = null;
       unsubscribeCatalog();
       window.removeEventListener("bookingsRealtimeUpdated", handleRealtimeBookingUpdate);
       window.removeEventListener("focus", handleFocusOrVisibility);
       document.removeEventListener("visibilitychange", handleFocusOrVisibility);
-      if (customDishesChannel) supabase.removeChannel(customDishesChannel);
     };
   }, []);
 
@@ -454,55 +510,28 @@ export default function MyInquiriesPage() {
   const confirmCancelBooking = async () => {
     if (!cancelModalId) return;
 
-    if (!cancelReason.trim()) {
+    const trimmedReason = cancelReason.trim().slice(0, 500);
+    if (!trimmedReason) {
       setCancelReasonError("Please provide a reason for cancellation.");
+      return;
+    }
+    if (trimmedReason.length < 5) {
+      setCancelReasonError("Please provide at least 5 characters explaining your cancellation.");
       return;
     }
 
     setCancellingId(cancelModalId);
-    const finalReason = cancelReason.trim();
-
-    const targetBooking = bookings.find((b) => b.id === cancelModalId);
-    const wasConfirmed =
-      targetBooking &&
-      ["accepted", "approved", "confirmed"].includes(
-        String(targetBooking.status || "")
-          .toLowerCase()
-          .trim(),
-      );
-    const formattedReason = wasConfirmed
-      ? `[⚠️ LATE CANCELLATION - PREVIOUSLY CONFIRMED] ${finalReason}`
-      : finalReason;
 
     try {
-      const { error } = await supabase
-        .from("bookings")
-        .update({
-          status: "Cancelled",
-          cancellation_reason: formattedReason,
-          cancelled_by: "Customer",
-        })
-        .eq("id", cancelModalId);
+      const { data: cancelRes, error } = await supabase.rpc("cancel_customer_booking", {
+        p_booking_id: cancelModalId,
+        p_reason: trimmedReason,
+      });
 
       if (error) throw error;
 
-      // If the event was previously confirmed, automatically return the allocated equipment to equipment monitoring
-      if (wasConfirmed) {
-        const clientName =
-          targetBooking?.customer_name ||
-          targetBooking?.profiles?.name ||
-          targetBooking?.profiles?.full_name ||
-          "Client";
-        try {
-          await restoreBookingInventoryOnCancellation(
-            cancelModalId,
-            clientName,
-            formattedReason
-          );
-        } catch (invErr) {
-          console.error("Error returning inventory on customer cancellation:", invErr);
-        }
-      }
+      const updatedReason =
+        (cancelRes as any)?.cancellation_reason || trimmedReason;
 
       setBookings((prev) =>
         prev.map((b) =>
@@ -510,7 +539,7 @@ export default function MyInquiriesPage() {
             ? {
                 ...b,
                 status: "Cancelled",
-                cancellation_reason: formattedReason,
+                cancellation_reason: updatedReason,
                 cancelled_by: "Customer",
               }
             : b,
@@ -529,12 +558,9 @@ export default function MyInquiriesPage() {
   };
 
   const handleOpenModifyModal = async (booking: any) => {
-    const eventDateObj = new Date(`${booking.event_date}T00:00:00`);
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const diffDays = Math.ceil((eventDateObj.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-    
-    if (diffDays <= 14) {
+    const diffDays = diffCalendarDaysFromManilaToday(booking.event_date);
+
+    if (diffDays === null || diffDays < 14) {
       triggerModErrorToast("Modifications locked: All changes require 14 days prior notice per contract.");
       return;
     }
@@ -667,12 +693,9 @@ export default function MyInquiriesPage() {
   const handleSubmitModification = async () => {
     if (!modifyingBooking) return;
 
-    const eventDateObj = new Date(`${modifyingBooking.event_date}T00:00:00`);
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const diffDays = Math.ceil((eventDateObj.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+    const diffDays = diffCalendarDaysFromManilaToday(modifyingBooking.event_date);
 
-    if (diffDays <= 14) {
+    if (diffDays === null || diffDays < 14) {
       triggerModErrorToast("Modifications locked: All changes require 14 days prior notice per contract.");
       return;
     }
@@ -725,13 +748,20 @@ export default function MyInquiriesPage() {
 
     const basePax = Number(modifyingBooking.guest_count) || 50;
     const prevAdditionalPax = Number(modifyingBooking.additional_pax) || 0;
-    const extraPax = Math.max(0, Number(modAdditionalPax) || 0);
+    const extraPax = Math.min(500, Math.max(0, Number(modAdditionalPax) || 0));
+    const balanceLocked = isBookingBalanceSettled(modifyingBooking);
+
+    if (balanceLocked && extraPax !== prevAdditionalPax) {
+      triggerModErrorToast("Headcount cannot be modified after your final balance is verified. Please contact us for adjustments.");
+      return;
+    }
+
     const prevMenuItems: string[] = Array.isArray(modifyingBooking.selected_menu_items)
       ? modifyingBooking.selected_menu_items
       : [];
     const addedDishes = modSelectedDishes.filter((d) => !prevMenuItems.includes(d));
     const removedDishes = prevMenuItems.filter((d) => !modSelectedDishes.includes(d));
-    const trimmedNotes = modNotes.trim();
+    const trimmedNotes = modNotes.trim().slice(0, 500);
     const prevNotes = String(modifyingBooking.logistics_info?.client_special_instructions || "").trim();
 
     if (
@@ -756,10 +786,7 @@ export default function MyInquiriesPage() {
       pkg && pkg.price
         ? parseFloat(String(pkg.price).replace(/[^0-9.-]+/g, "")) || 0
         : 0;
-    const addPrice =
-      pkg && pkg.additional_pax_price
-        ? parseFloat(String(pkg.additional_pax_price).replace(/[^0-9.-]+/g, "")) || 500
-        : 500;
+    const addPrice = parseAdditionalPaxPrice(pkg?.additional_pax_price, 500);
 
     let currentLogistics: any =
       modifyingBooking.logistics_info && typeof modifyingBooking.logistics_info === "object"
@@ -1244,8 +1271,8 @@ export default function MyInquiriesPage() {
         id: `cmp-${Date.now()}`,
         booking_id: booking.id,
         category: draft.category,
-        subject: draft.subject.trim(),
-        details: draft.details.trim(),
+        subject: draft.subject.trim().slice(0, 120),
+        details: draft.details.trim().slice(0, 1500),
         photo_url: uploadedPhotoUrl || null,
         submitted_at: submittedAt,
         completed_at_reference: completedAtIso,
@@ -1253,7 +1280,7 @@ export default function MyInquiriesPage() {
         within_24h_window: true,
         submitter_user_id: currentUser.id,
         submitter_email: currentUser.email,
-        submitter_name: draft.signerName.trim(),
+        submitter_name: draft.signerName.trim().slice(0, 70),
         recorded_contract_signer: defaultSignerName,
         is_verified_signer: true,
         dispute_clause_acknowledged: true,
@@ -1369,10 +1396,13 @@ export default function MyInquiriesPage() {
       return;
     }
 
-    if (!balanceRef.trim()) {
-      setBalanceError("Please enter your transaction reference number.");
+    const refErr = validateTransactionReference(balanceRef, balancePaymentMethod);
+    if (refErr) {
+      setBalanceError(refErr);
       return;
     }
+
+    const cleanBalanceRef = balanceRef.trim();
 
     setIsSubmittingBalance(true);
     setBalanceError("");
@@ -1585,7 +1615,7 @@ export default function MyInquiriesPage() {
               ...item,
               status: "Pending Verification",
               payment_method: balancePaymentMethod,
-              reference_number: balanceRef.trim(),
+              reference_number: cleanBalanceRef,
               receipt_url: finalReceiptUrl,
               submitted_at: new Date().toISOString(),
             };
@@ -1593,47 +1623,12 @@ export default function MyInquiriesPage() {
           return item;
         });
 
-        // Prepare fallback metadata only when already present on this booking
-        let baseAllergies = payingBalanceBooking.food_allergies || "";
-        const hasPaymentMetadata = baseAllergies.includes("__PAYMENT_METADATA__:");
-        let currentMeta: any = {};
-        if (hasPaymentMetadata) {
-          const parts = baseAllergies.split("__PAYMENT_METADATA__:");
-          baseAllergies = parts[0].trim();
-          try {
-            currentMeta = JSON.parse(parts[1]);
-          } catch (e) {}
-        }
-        currentMeta.installments = updatedSchedule;
-        const updatedAllergies = `${baseAllergies ? baseAllergies + "\n" : ""}__PAYMENT_METADATA__:${JSON.stringify(currentMeta)}`;
-
-        const updatePayload: any = {
-          installment_schedule: updatedSchedule,
-        };
-        if (hasPaymentMetadata) {
-          updatePayload.food_allergies = updatedAllergies;
-        }
-
-        // Single primary UPDATE query (syncs food_allergies metadata in the same round-trip when present)
-        let { error } = await supabase
+        const { error } = await supabase
           .from("bookings")
-          .update(updatePayload)
+          .update({
+            installment_schedule: updatedSchedule,
+          })
           .eq("id", payingBalanceBooking.id);
-
-        let syncedAllergies = hasPaymentMetadata
-          ? updatedAllergies
-          : payingBalanceBooking.food_allergies || "";
-
-        if (error && error.message.toLowerCase().includes("column")) {
-          const fb = await supabase
-            .from("bookings")
-            .update({ food_allergies: updatedAllergies })
-            .eq("id", payingBalanceBooking.id);
-          error = fb.error;
-          if (!fb.error) {
-            syncedAllergies = updatedAllergies;
-          }
-        }
 
         if (error) throw error;
 
@@ -1644,7 +1639,6 @@ export default function MyInquiriesPage() {
               ? {
                   ...b,
                   installment_schedule: updatedSchedule,
-                  food_allergies: syncedAllergies,
                 }
               : b,
           ),
@@ -1680,7 +1674,7 @@ export default function MyInquiriesPage() {
             ...item,
             status: "Pending Verification",
             payment_method: balancePaymentMethod,
-            reference_number: balanceRef.trim(),
+            reference_number: cleanBalanceRef,
             receipt_url: finalReceiptUrl,
             submitted_at: new Date().toISOString(),
           };
@@ -1689,45 +1683,17 @@ export default function MyInquiriesPage() {
         const updatePayload: any = {
           final_balance_status: "Pending Verification",
           final_balance_method: balancePaymentMethod,
-          final_balance_reference: balanceRef.trim(),
+          final_balance_reference: cleanBalanceRef,
           final_balance_receipt: finalReceiptUrl,
         };
         if (updatedSchedule.length > 0) {
           updatePayload.installment_schedule = updatedSchedule;
         }
 
-        let { error } = await supabase
+        const { error } = await supabase
           .from("bookings")
           .update(updatePayload)
           .eq("id", payingBalanceBooking.id);
-
-        // Resilient fallback if columns not yet in DB
-        if (error && error.message.toLowerCase().includes("column")) {
-          console.warn("Direct balance columns not yet in DB. Using fallback metadata sync.", error.message);
-          let currentMeta: any = {};
-          let baseAllergies = payingBalanceBooking.food_allergies || "";
-          if (baseAllergies.includes("__PAYMENT_METADATA__:")) {
-            const parts = baseAllergies.split("__PAYMENT_METADATA__:");
-            baseAllergies = parts[0].trim();
-            try {
-              currentMeta = JSON.parse(parts[1]);
-            } catch (e) {}
-          }
-          currentMeta.finalBalanceStatus = "Pending Verification";
-          currentMeta.finalBalanceMethod = balancePaymentMethod;
-          currentMeta.finalBalanceRef = balanceRef.trim();
-          currentMeta.finalBalanceReceipt = finalReceiptUrl;
-          if (updatedSchedule.length > 0) {
-            currentMeta.installments = updatedSchedule;
-          }
-          const updatedAllergies = `${baseAllergies ? baseAllergies + "\n" : ""}__PAYMENT_METADATA__:${JSON.stringify(currentMeta)}`;
-
-          const fb = await supabase
-            .from("bookings")
-            .update({ food_allergies: updatedAllergies })
-            .eq("id", payingBalanceBooking.id);
-          error = fb.error;
-        }
 
         if (error) throw error;
 
@@ -1739,27 +1705,9 @@ export default function MyInquiriesPage() {
                   ...b,
                   final_balance_status: "Pending Verification",
                   final_balance_method: balancePaymentMethod,
-                  final_balance_reference: balanceRef.trim(),
+                  final_balance_reference: cleanBalanceRef,
                   final_balance_receipt: finalReceiptUrl,
                   installment_schedule: updatedSchedule.length > 0 ? updatedSchedule : b.installment_schedule,
-                  food_allergies:
-                    b.food_allergies && b.food_allergies.includes("__PAYMENT_METADATA__:")
-                      ? (() => {
-                          const parts = b.food_allergies.split("__PAYMENT_METADATA__:");
-                          let m: any = {};
-                          try {
-                            m = JSON.parse(parts[1]);
-                          } catch (e) {}
-                          m.finalBalanceStatus = "Pending Verification";
-                          m.finalBalanceMethod = balancePaymentMethod;
-                          m.finalBalanceRef = balanceRef.trim();
-                          m.finalBalanceReceipt = finalReceiptUrl;
-                          if (updatedSchedule.length > 0) {
-                            m.installments = updatedSchedule;
-                          }
-                          return `${parts[0].trim() ? parts[0].trim() + "\n" : ""}__PAYMENT_METADATA__:${JSON.stringify(m)}`;
-                        })()
-                      : b.food_allergies,
                 }
               : b,
           ),
@@ -2011,7 +1959,7 @@ export default function MyInquiriesPage() {
               // Compute complete financial breakdown upfront so payment tracker and breakdown cards reconcile identically
               const pkg = booking.packages;
               const basePrice = pkg && pkg.price ? parseFloat(String(pkg.price).replace(/[^0-9.-]+/g, "")) || 0 : 0;
-              const addPrice = pkg && pkg.additional_pax_price ? parseFloat(String(pkg.additional_pax_price).replace(/[^0-9.-]+/g, "")) || 0 : 0;
+              const addPrice = parseAdditionalPaxPrice(pkg?.additional_pax_price, 500);
               const extraPax = parseInt(booking.additional_pax) || 0;
               const additionalPaxTotal = addPrice * extraPax;
 
@@ -2218,34 +2166,25 @@ export default function MyInquiriesPage() {
               const packageTitle = booking.packages?.name || "Custom Package";
               const totalGuests = (Number(booking.guest_count) || 0) + extraPax;
 
-              const rawDatePart = booking.event_date ? String(booking.event_date).split("T")[0] : "";
-              const eventDateObj = rawDatePart ? new Date(`${rawDatePart}T00:00:00`) : new Date(NaN);
-              const isValidEventDate = !isNaN(eventDateObj.getTime());
-              const formattedEventDate = isValidEventDate
-                ? eventDateObj.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
-                : booking.event_date || "Date TBD";
+              const eventDateObj = addCalendarDays(booking.event_date, 0);
+              const isValidEventDate = Boolean(eventDateObj && !isNaN(eventDateObj.getTime()));
+              const formattedEventDate =
+                isValidEventDate && eventDateObj
+                  ? eventDateObj.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
+                  : booking.event_date || "Date TBD";
 
-              const today = new Date();
-              today.setHours(0, 0, 0, 0);
-              const daysUntilEvent = isValidEventDate
-                ? Math.ceil((eventDateObj.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
-                : 0;
+              const daysUntilEventRaw = diffCalendarDaysFromManilaToday(booking.event_date);
+              const daysUntilEvent = daysUntilEventRaw !== null ? daysUntilEventRaw : 0;
 
-              const finalDeadline = isValidEventDate
-                ? new Date(eventDateObj.getTime() - 15 * 24 * 60 * 60 * 1000)
-                : null;
-              const daysUntilDeadline = finalDeadline
-                ? Math.ceil((finalDeadline.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
-                : null;
+              const finalDeadline = isValidEventDate ? addCalendarDays(booking.event_date, -15) : null;
+              const daysUntilDeadline = daysUntilEventRaw !== null ? daysUntilEventRaw - 15 : null;
               const formattedDeadline = finalDeadline
                 ? finalDeadline.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
                 : "";
 
-              const isModificationLocked = daysUntilEvent <= 14;
+              const isModificationLocked = daysUntilEvent < 14;
               const daysLeftToModify = Math.max(0, daysUntilEvent - 14);
-              const cutoffDate = isValidEventDate
-                ? new Date(eventDateObj.getTime() - 14 * 24 * 60 * 60 * 1000)
-                : null;
+              const cutoffDate = isValidEventDate ? addCalendarDays(booking.event_date, -14) : null;
               const formattedCutoffDate = cutoffDate
                 ? cutoffDate.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
                 : "";
@@ -4284,6 +4223,7 @@ export default function MyInquiriesPage() {
                                     name="signerName"
                                     type="text"
                                     required
+                                    maxLength={70}
                                     value={draft.signerName}
                                     aria-invalid={Boolean(fieldErrs.signerName)}
                                     aria-describedby={`cmp-signer-help-${bookingKey}${fieldErrs.signerName ? ` cmp-signer-err-${bookingKey}` : ""}`}
@@ -4371,6 +4311,7 @@ export default function MyInquiriesPage() {
                                   name="subject"
                                   type="text"
                                   required
+                                  maxLength={120}
                                   placeholder="Brief summary of feedback or incident"
                                   value={draft.subject}
                                   aria-invalid={Boolean(fieldErrs.subject)}
@@ -4419,6 +4360,7 @@ export default function MyInquiriesPage() {
                                   name="details"
                                   rows={3}
                                   required
+                                  maxLength={1500}
                                   placeholder="Provide full details of what occurred during the event so Management can investigate and resolve directly..."
                                   value={draft.details}
                                   aria-invalid={Boolean(fieldErrs.details)}
@@ -4576,6 +4518,20 @@ export default function MyInquiriesPage() {
                 </motion.article>
               );
             })}
+            {bookings.length < totalInquiriesCount && (
+              <div className="pt-2 flex flex-col items-center gap-2">
+                <button
+                  type="button"
+                  disabled={loadingMore}
+                  onClick={() => loadMoreFnRef.current?.()}
+                  className="px-6 py-2.5 border border-gold-400/40 bg-gold-400/10 hover:bg-gold-400/20 text-gold-300 text-xs font-bold uppercase tracking-wider rounded-lg transition-all cursor-pointer disabled:opacity-50"
+                >
+                  {loadingMore
+                    ? "Loading Older Bookings..."
+                    : `Load Older Bookings (${bookings.length} of ${totalInquiriesCount} shown)`}
+                </button>
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -4633,6 +4589,7 @@ export default function MyInquiriesPage() {
                   aria-describedby={cancelReasonError ? "cancel-reason-error" : undefined}
                   className={`w-full bg-white/5 border ${cancelReasonError ? "border-red-500/50" : "border-white/10"} p-4 text-sm focus:outline-none focus:border-red-500/50 transition-all resize-none placeholder:text-white/30`}
                   rows={3}
+                  maxLength={500}
                   placeholder="Tell us why you are cancelling..."
                   value={cancelReason}
                   onChange={(e) => {
@@ -4844,7 +4801,11 @@ export default function MyInquiriesPage() {
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <button
                       type="button"
-                      onClick={() => setBalancePaymentMethod("GCash")}
+                      onClick={() => {
+                        setBalancePaymentMethod("GCash");
+                        setBalanceRef((prev) => sanitizeTransactionReferenceInput(prev, "GCash"));
+                        setBalanceError("");
+                      }}
                       className={`p-4 rounded-lg border text-left transition-all flex items-center gap-3 ${
                         balancePaymentMethod === "GCash"
                           ? "bg-gold-400/15 border-gold-400 text-white shadow-lg shadow-gold-400/10"
@@ -4862,7 +4823,11 @@ export default function MyInquiriesPage() {
 
                     <button
                       type="button"
-                      onClick={() => setBalancePaymentMethod("Bank Transfer")}
+                      onClick={() => {
+                        setBalancePaymentMethod("Bank Transfer");
+                        setBalanceRef((prev) => sanitizeTransactionReferenceInput(prev, "Bank Transfer"));
+                        setBalanceError("");
+                      }}
                       className={`p-4 rounded-lg border text-left transition-all flex items-center gap-3 ${
                         balancePaymentMethod === "Bank Transfer"
                           ? "bg-gold-400/15 border-gold-400 text-white shadow-lg shadow-gold-400/10"
@@ -5031,21 +4996,33 @@ export default function MyInquiriesPage() {
                       Transaction Reference Number <span className="text-red-400">*</span>
                     </label>
                     <span className="text-[10px] font-medium text-white/45">
-                      {balanceRef.length}/50
+                      {balanceRef.length}/
+                      {balancePaymentMethod === "GCash"
+                        ? MAX_GCASH_REF_LENGTH
+                        : MAX_BANK_REF_LENGTH}
                     </span>
                   </div>
                   <input
                     type="text"
                     required
-                    maxLength={50}
+                    inputMode={balancePaymentMethod === "GCash" ? "numeric" : "text"}
+                    maxLength={
+                      balancePaymentMethod === "GCash"
+                        ? MAX_GCASH_REF_LENGTH
+                        : MAX_BANK_REF_LENGTH
+                    }
                     value={balanceRef}
                     onChange={(e) => {
                       setBalanceRef(
-                        e.target.value.replace(/[^a-zA-Z0-9\s-]/g, "").slice(0, 50)
+                        sanitizeTransactionReferenceInput(e.target.value, balancePaymentMethod)
                       );
                       if (balanceError) setBalanceError("");
                     }}
-                    placeholder="e.g. 9876 5432 1098"
+                    placeholder={
+                      balancePaymentMethod === "GCash"
+                        ? "e.g. 9012345678901 (9–13 digits)"
+                        : "e.g. BPI1234567890 (8–20 alphanumeric)"
+                    }
                     className="w-full bg-white/5 border border-white/10 px-4 py-3 text-sm focus:outline-none focus:border-gold-400/50 rounded-lg font-medium text-white"
                   />
                 </div>
@@ -5144,10 +5121,11 @@ export default function MyInquiriesPage() {
 
                 {/* Section 1: Headcount Adjustment */}
                 {(() => {
-                  const modalAddPaxRate =
-                    modifyingBooking?.packages?.additional_pax_price
-                      ? parseFloat(String(modifyingBooking.packages.additional_pax_price).replace(/[^0-9.-]+/g, "")) || 500
-                      : 500;
+                  const modalAddPaxRate = parseAdditionalPaxPrice(
+                    modifyingBooking?.packages?.additional_pax_price,
+                    500
+                  );
+                  const isHeadcountLocked = isBookingBalanceSettled(modifyingBooking);
                   return (
                     <div className="space-y-3 bg-white/[0.02] border border-white/5 p-4 rounded-lg">
                       <h4 className="text-xs font-bold uppercase tracking-wider text-gold-400 flex items-center gap-1.5">
@@ -5167,11 +5145,21 @@ export default function MyInquiriesPage() {
                               type="number"
                               min="0"
                               max="500"
+                              disabled={isHeadcountLocked}
                               value={modAdditionalPax}
-                              onChange={(e) => setModAdditionalPax(Math.max(0, parseInt(e.target.value) || 0))}
-                              className="w-full bg-white/5 border border-white/10 px-3 py-2 text-sm text-white rounded focus:border-gold-400/60 focus:outline-none"
+                              onChange={(e) =>
+                                setModAdditionalPax(
+                                  Math.min(500, Math.max(0, parseInt(e.target.value, 10) || 0))
+                                )
+                              }
+                              className="w-full bg-white/5 border border-white/10 px-3 py-2 text-sm text-white rounded focus:border-gold-400/60 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed"
                             />
                           </div>
+                          {isHeadcountLocked && (
+                            <p className="text-[11px] text-amber-300 mt-1">
+                              Final balance is verified — please contact us for headcount adjustments. Menu swaps &amp; notes remain available.
+                            </p>
+                          )}
                         </div>
                       </div>
                       <div className="text-xs text-white/70 pt-2 border-t border-white/5 flex items-center justify-between">
@@ -5333,6 +5321,7 @@ export default function MyInquiriesPage() {
                   </label>
                   <textarea
                     rows={2}
+                    maxLength={500}
                     value={modNotes}
                     onChange={(e) => setModNotes(e.target.value)}
                     placeholder="e.g. Additional guests confirmed; swapping pasta dish for vegetarian option..."

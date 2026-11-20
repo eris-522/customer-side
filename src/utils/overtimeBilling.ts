@@ -88,20 +88,26 @@ export const DEFAULT_PREBOOKED_OVERTIME: PrebookedOvertimeState = {
   mobileBar: 0,
 };
 
+const clampInt = (val: unknown, min: number, max: number, fallback = 0): number => {
+  const num = Number(val);
+  if (!Number.isFinite(num)) return fallback;
+  return Math.min(max, Math.max(min, Math.floor(num)));
+};
+
 export const calculatePrebookedOvertimeFee = (
   ot: PrebookedOvertimeState | null | undefined
 ): number => {
   if (!ot) return 0;
   return (
-    (Number(ot.catering) || 0) * 4000 +
-    (Number(ot.soundsLights) || 0) * 1500 +
-    (Number(ot.photoBooth) || 0) * 1000 +
-    (Number(ot.emcee) || 0) * 500 +
-    ((Number(ot.coordinators?.hours) || 0) *
-      (Number(ot.coordinators?.count) || 2) *
-      300) +
-    (Number(ot.photoVideo) || 0) * 2500 +
-    (Number(ot.mobileBar) || 0) * 1500
+    clampInt(ot.catering, 0, 12, 0) * 4000 +
+    clampInt(ot.soundsLights, 0, 12, 0) * 1500 +
+    clampInt(ot.photoBooth, 0, 12, 0) * 1000 +
+    clampInt(ot.emcee, 0, 12, 0) * 500 +
+    clampInt(ot.coordinators?.hours, 0, 12, 0) *
+      clampInt(ot.coordinators?.count, 1, 20, 2) *
+      300 +
+    clampInt(ot.photoVideo, 0, 12, 0) * 2500 +
+    clampInt(ot.mobileBar, 0, 12, 0) * 1500
   );
 };
 
@@ -161,11 +167,12 @@ export const calculateServiceWindow = (
   startTimeStr: string,
   extraCateringHours: number = 0
 ) => {
+  const safeExtraHours = clampInt(extraCateringHours, 0, 12, 0);
   const hasSelectedTime = Boolean(startTimeStr && startTimeStr.trim());
   const effectiveStart = hasSelectedTime ? startTimeStr.trim() : "07:00 PM";
   const startMins = timeStringToMinutes(effectiveStart);
   const standardEndMins = startMins + 4 * 60;
-  const extendedEndMins = standardEndMins + (extraCateringHours || 0) * 60;
+  const extendedEndMins = standardEndMins + safeExtraHours * 60;
 
   const startFormatted = minutesTo12h(startMins);
   const standardEndFormatted = minutesTo12h(standardEndMins);
@@ -178,11 +185,31 @@ export const calculateServiceWindow = (
     extendedEndTimeLabel: extendedEndFormatted,
     standardWindowText: `${startFormatted} – ${standardEndFormatted}`,
     extendedWindowText: `${startFormatted} – ${extendedEndFormatted}`,
-    hasExtraHours: (extraCateringHours || 0) > 0,
-    extraCateringHours: extraCateringHours || 0,
-    totalDurationHours: 4 + (extraCateringHours || 0),
+    hasExtraHours: safeExtraHours > 0,
+    extraCateringHours: safeExtraHours,
+    totalDurationHours: 4 + safeExtraHours,
   };
 };
+
+export interface BilledOvertimeService {
+  id: string;
+  name: string;
+  rate: number;
+  perPerson: boolean;
+  count: number;
+  hours: number;
+  subtotal: number;
+}
+
+export interface DayOfOvertimeResult {
+  valid: boolean;
+  minutesOver: number;
+  billableOtHours: number;
+  servicesBilled: BilledOvertimeService[];
+  totalFee: number;
+  isOvertime: boolean;
+  error?: string;
+}
 
 /**
  * Contract Rule: "1 minute equals 1 hour OT"
@@ -193,7 +220,7 @@ export const calculateDayOfOvertime = (
   actualEndStr: string,
   selectedServiceIds: string[] = ["catering"],
   coordinatorCount: number = 2
-) => {
+): DayOfOvertimeResult => {
   if (!scheduledEndStr || !actualEndStr || !actualEndStr.trim()) {
     return {
       valid: false,
@@ -237,9 +264,30 @@ export const calculateDayOfOvertime = (
   const actMins = actVal.minutes;
 
   let minutesOver = actMins - schedMins;
-  // Handle cross-midnight events (e.g., scheduled 11:00 PM = 1380m, actual 01:15 AM = 75m)
-  if (minutesOver < 0 && actMins < 12 * 60 && schedMins >= 12 * 60) {
+  // Handle genuine cross-midnight overtime (evening end >= 6:00 PM finishing <= 5:00 AM within 8h)
+  if (
+    minutesOver < 0 &&
+    schedMins >= 18 * 60 &&
+    actMins <= 5 * 60 &&
+    actMins + 24 * 60 - schedMins <= 8 * 60
+  ) {
     minutesOver += 24 * 60;
+  } else if (minutesOver > 12 * 60 && schedMins < 4 * 60 && actMins >= 20 * 60) {
+    // Scheduled end after midnight (12:00 AM–3:59 AM) that wrapped up early before midnight
+    minutesOver -= 24 * 60;
+  }
+
+  if (minutesOver < -6 * 60) {
+    return {
+      valid: false,
+      minutesOver: 0,
+      billableOtHours: 0,
+      servicesBilled: [],
+      totalFee: 0,
+      isOvertime: false,
+      error:
+        "Actual end time appears to be an AM/PM mismatch compared to the scheduled end time. Please double-check AM/PM.",
+    };
   }
 
   // Prevent unrealistic overtime (> 12 hours)
@@ -272,27 +320,19 @@ export const calculateDayOfOvertime = (
     .map((id) => {
       const rateItem = OVERTIME_SERVICE_RATES.find((r) => r.id === id);
       if (!rateItem) return null;
-      const count = rateItem.perPerson ? Math.max(1, coordinatorCount) : 1;
+      const count = rateItem.perPerson ? clampInt(coordinatorCount, 1, 20, 2) : 1;
       const subtotal = billableOtHours * rateItem.rate * count;
       return {
         id: rateItem.id,
         name: rateItem.name,
         rate: rateItem.rate,
-        perPerson: rateItem.perPerson,
+        perPerson: Boolean(rateItem.perPerson),
         count,
         hours: billableOtHours,
         subtotal,
       };
     })
-    .filter(Boolean) as Array<{
-    id: string;
-    name: string;
-    rate: number;
-    perPerson: boolean;
-    count: number;
-    hours: number;
-    subtotal: number;
-  }>;
+    .filter(Boolean) as BilledOvertimeService[];
 
   const totalFee = servicesBilled.reduce((sum, s) => sum + s.subtotal, 0);
 
@@ -330,8 +370,23 @@ export const isServiceIncludedInPackage = (serviceId: string, pkg: any): boolean
       return hasInclusion(["emcee", "host", "dj/emcee", "dj / emcee", "master of ceremonies"]);
     case "coordinators":
       return hasInclusion(["coordinator", "coordination", "planner"]);
-    case "photoVideo":
-      return hasInclusion(["photo", "video", "coverage", "photographer", "videographer"]);
+    case "photoVideo": {
+      const withoutPhotoBooth = inclusions.map((inc: string) =>
+        inc.replace(/photo[\s-]*booth/gi, "").trim()
+      );
+      return [
+        "photo & video",
+        "photo and video",
+        "photo/video",
+        "photography",
+        "photographer",
+        "videographer",
+        "videography",
+        "video coverage",
+        "photo coverage",
+        "sde",
+      ].some((p: string) => withoutPhotoBooth.some((inc: string) => inc.includes(p)));
+    }
     case "mobileBar":
       return hasInclusion(["mobile bar", "bar service", "bartender", "cocktail bar"]);
     default:

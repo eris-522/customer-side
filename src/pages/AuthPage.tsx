@@ -24,84 +24,15 @@ import {
   checkAccountStatus,
   clearSessionGuardCache,
 } from "../utils/sessionGuard";
-
-// Helper function to calculate edit distance between two strings
-const getLevenshteinDistance = (a: string, b: string): number => {
-  if (!a.length) return b.length;
-  if (!b.length) return a.length;
-  const arr = [];
-  for (let i = 0; i <= b.length; i++) {
-    arr[i] = [i];
-    for (let j = 1; j <= a.length; j++) {
-      arr[i][j] =
-        i === 0
-          ? j
-          : Math.min(
-              arr[i - 1][j] + 1,
-              arr[i][j - 1] + 1,
-              arr[i - 1][j - 1] + (a[j - 1] === b[i - 1] ? 0 : 1),
-            );
-    }
-  }
-  return arr[b.length][a.length];
-};
+import { useCMS } from "../context/CMSContext";
+import {
+  validateEmailAddress,
+  validateFullName,
+} from "../utils/validation";
 
 const validateEmailFormat = (email: string): string => {
-  const trimmed = email.trim();
-  if (!trimmed) return "";
-
-  // Enforce common, valid Top-Level Domains (TLDs) to block joke/invalid ones
-  const emailRegex =
-    /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.(com|net|org|edu|gov|ph|co|uk|us|ca|au|nz|sg|in|io|me|tv|app|dev|tech)$/i;
-  if (!emailRegex.test(trimmed)) {
-    return "Please enter a valid email address (e.g., name@gmail.com, name@yahoo.com).";
-  }
-
-  const [localPart, rawDomain] = trimmed.split("@");
-  if (
-    !localPart ||
-    localPart.length < 3 ||
-    !/[a-zA-Z]/.test(localPart) ||
-    /^[._+-]|[._+-]$/.test(localPart) ||
-    localPart.includes("..")
-  ) {
-    return "Please enter a valid email address (username before '@' must be at least 3 characters and contain letters).";
-  }
-
-  // Smart typo detection for major email providers using Levenshtein distance
-  const domain = rawDomain?.toLowerCase();
-  if (domain) {
-    // Whitelist valid domains that are intentionally spelled similarly to major ones to prevent false positives
-    const exactMatches = [
-      "gmail.com",
-      "yahoo.com",
-      "hotmail.com",
-      "outlook.com",
-      "ymail.com",
-      "mail.com",
-      "email.com",
-      "live.com",
-      "icloud.com",
-      "yahoo.com.ph",
-    ];
-    const providersToCheck = [
-      "gmail.com",
-      "yahoo.com",
-      "hotmail.com",
-      "outlook.com",
-    ];
-
-    if (!exactMatches.includes(domain)) {
-      for (const provider of providersToCheck) {
-        // If the distance is 2 or less, it's highly likely a typo (e.g., "gemail.cum" -> "gmail.com" is distance 2)
-        if (getLevenshteinDistance(domain, provider) <= 2) {
-          return `Did you mean @${provider}? Please check your email domain for typos.`;
-        }
-      }
-    }
-  }
-
-  return "";
+  if (!email.trim()) return "";
+  return validateEmailAddress(email);
 };
 
 const validatePhoneFormat = (phone: string): string => {
@@ -145,9 +76,14 @@ export default function AuthPage() {
   const [showNewPassword, setShowNewPassword] = useState(false);
   const [showConfirmNewPassword, setShowConfirmNewPassword] = useState(false);
 
+  const { cms } = useCMS();
+  const supportEmail = (cms.contact?.email || "rpcatering@gmail.com").trim();
+  const supportPhone = (cms.contact?.phone || "").trim();
+
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState<React.ReactNode>("");
+  const [accountStatusNotice, setAccountStatusNotice] = useState<"inactive" | "archived" | null>(null);
   const [emailError, setEmailError] = useState("");
   const [phoneError, setPhoneError] = useState("");
   const [emailConfirmed, setEmailConfirmed] = useState(false);
@@ -241,30 +177,14 @@ export default function AuthPage() {
         if (statusLower === "inactive") {
           clearSessionGuardCache(sessionUser.id);
           await supabase.auth.signOut();
-          setError(
-            <span>
-              Your account has been deactivated. Please contact the administrator at{" "}
-              <a href="mailto:roxanpolicarpio.events@gmail.com" className="underline hover:text-gold-400 transition-colors">
-                roxanpolicarpio.events@gmail.com
-              </a>{" "}
-              or +63 921 469 7142 to reactivate your account.
-            </span>
-          );
+          setAccountStatusNotice("inactive");
           return;
         }
 
         if (statusLower === "archived") {
           clearSessionGuardCache(sessionUser.id);
           await supabase.auth.signOut();
-          setError(
-            <span>
-              Your account has been archived. Please contact support at{" "}
-              <a href="mailto:roxanpolicarpio.events@gmail.com" className="underline hover:text-red-300 transition-colors">
-                roxanpolicarpio.events@gmail.com
-              </a>{" "}
-              or +63 921 469 7142.
-            </span>
-          );
+          setAccountStatusNotice("archived");
           return;
         }
 
@@ -309,28 +229,13 @@ export default function AuthPage() {
     setPhoneError("");
     setRecoveryEmailError("");
     setError("");
+    setAccountStatusNotice(null);
     setMessage("");
 
     if (searchParams.get("deactivated") === "true") {
-      setError(
-        <span>
-          Your account has been deactivated. Please contact the administrator at{" "}
-          <a href="mailto:roxanpolicarpio.events@gmail.com" className="underline hover:text-gold-400 transition-colors">
-            roxanpolicarpio.events@gmail.com
-          </a>{" "}
-          or +63 921 469 7142 to reactivate your account.
-        </span>
-      );
+      setAccountStatusNotice("inactive");
     } else if (searchParams.get("archived") === "true") {
-      setError(
-        <span>
-          Your account has been archived. Please contact support at{" "}
-          <a href="mailto:roxanpolicarpio.events@gmail.com" className="underline hover:text-red-300 transition-colors">
-            roxanpolicarpio.events@gmail.com
-          </a>{" "}
-          or +63 921 469 7142.
-        </span>
-      );
+      setAccountStatusNotice("archived");
     }
   }, [searchParams]);
 
@@ -437,8 +342,16 @@ export default function AuthPage() {
         setForgotPasswordStep("reset");
         setMessage("OTP verified! Please enter your new password below.");
       } else if (forgotPasswordStep === "reset") {
-        if (!newPassword || newPassword.length < 6) {
-          setError("Password must be at least 6 characters long.");
+        if (
+          !newPassword ||
+          newPassword.trim().length < 6 ||
+          newPassword !== newPassword.trim()
+        ) {
+          setError("Password must be at least 6 characters long and cannot start or end with spaces.");
+          return;
+        }
+        if (newPassword.length > 128) {
+          setError("Password must not exceed 128 characters.");
           return;
         }
         if (confirmNewPassword !== newPassword) {
@@ -490,6 +403,7 @@ export default function AuthPage() {
     e.preventDefault();
     setLoading(true);
     setError("");
+    setAccountStatusNotice(null);
     setMessage("");
 
     const currentEmail = email.trim();
@@ -533,30 +447,14 @@ export default function AuthPage() {
           if (statusLower === "inactive") {
             clearSessionGuardCache(authData.user.id);
             await supabase.auth.signOut();
-            setError(
-              <span>
-                Your account has been deactivated. Please contact the administrator at{" "}
-                <a href="mailto:roxanpolicarpio.events@gmail.com" className="underline hover:text-gold-400 transition-colors">
-                  roxanpolicarpio.events@gmail.com
-                </a>{" "}
-                or +63 921 469 7142 to reactivate your account.
-              </span>
-            );
+            setAccountStatusNotice("inactive");
             return;
           }
 
           if (statusLower === "archived") {
             clearSessionGuardCache(authData.user.id);
             await supabase.auth.signOut();
-            setError(
-              <span>
-                Your account has been archived. Please contact support at{" "}
-                <a href="mailto:roxanpolicarpio.events@gmail.com" className="underline hover:text-red-300 transition-colors">
-                  roxanpolicarpio.events@gmail.com
-                </a>{" "}
-                or +63 921 469 7142.
-              </span>
-            );
+            setAccountStatusNotice("archived");
             return;
           }
 
@@ -566,13 +464,10 @@ export default function AuthPage() {
           navigate("/booking");
         }
       } else {
-        if (!fullName.trim()) {
-          setError("Full name is required.");
-          return;
-        }
-
-        if (!/^[a-zA-Z\s]+$/.test(fullName)) {
-          setError("Full name must not contain special characters or numbers.");
+        const trimmedName = fullName.trim();
+        const nameErr = validateFullName(trimmedName);
+        if (nameErr) {
+          setError(nameErr);
           return;
         }
 
@@ -583,8 +478,12 @@ export default function AuthPage() {
           return;
         }
 
-        if (password.length < 6) {
-          setError("Password must be at least 6 characters long.");
+        if (password.trim().length < 6 || password !== password.trim()) {
+          setError("Password must be at least 6 characters long and cannot start or end with spaces.");
+          return;
+        }
+        if (password.length > 128) {
+          setError("Password must not exceed 128 characters.");
           return;
         }
 
@@ -676,9 +575,12 @@ export default function AuthPage() {
               // Copied into public.profiles by the handle_new_user() trigger (the security answer is
               // then stripped from auth metadata). The client can't write profiles before login.
               data: {
-                name: fullName,
-                full_name: fullName,
-                phone_number: phoneNumber ? `+63${phoneNumber}` : "",
+                name: trimmedName,
+                full_name: trimmedName,
+                phone_number: (() => {
+                  const cleanDigits = phoneNumber.replace(/\D/g, "");
+                  return cleanDigits ? `+63${cleanDigits}` : "";
+                })(),
                 security_answer: securityAnswer.toLowerCase().trim(),
               },
             },
@@ -829,6 +731,7 @@ export default function AuthPage() {
                           type="text"
                           placeholder="Your Name"
                           value={fullName}
+                          maxLength={100}
                           onChange={(e) => setFullName(e.target.value)}
                           required={!isLogin}
                           className="w-full bg-white/5 border border-white/10 px-12 py-4 text-lg focus:outline-none focus:border-gold-400/50 transition-all placeholder:text-white/40"
@@ -853,6 +756,7 @@ export default function AuthPage() {
                           type="tel"
                           placeholder="917 123 4567"
                           value={phoneNumber}
+                          maxLength={16}
                           onChange={(e) => {
                             let val = e.target.value.replace(/\D/g, "");
                             if (val.startsWith("639") && val.length > 10) {
@@ -901,6 +805,7 @@ export default function AuthPage() {
                       type="email"
                       placeholder="you@email.com"
                       value={email}
+                      maxLength={254}
                       onChange={(e) => {
                         setEmail(e.target.value);
                         if (emailError) {
@@ -963,6 +868,7 @@ export default function AuthPage() {
                       type={showPassword ? "text" : "password"}
                       placeholder="••••••••"
                       value={password}
+                      maxLength={128}
                       onChange={(e) => setPassword(e.target.value)}
                       required
                       className="w-full bg-white/5 border border-white/10 pl-12 pr-12 py-4 text-lg focus:outline-none focus:border-gold-400/50 transition-all placeholder:text-white/40"
@@ -999,11 +905,40 @@ export default function AuthPage() {
                         type="text"
                         placeholder="Your Answer"
                         value={securityAnswer}
+                        maxLength={64}
                         onChange={(e) => setSecurityAnswer(e.target.value)}
                         required={!isLogin}
                         className="w-full bg-white/5 border border-white/10 px-12 py-4 text-lg focus:outline-none focus:border-gold-400/50 transition-all placeholder:text-white/40"
                       />
                     </div>
+                  </div>
+                )}
+
+                {accountStatusNotice && (
+                  <div className="p-3 bg-red-500/10 border border-red-500/20 text-red-400 text-base text-center font-medium">
+                    {accountStatusNotice === "inactive" ? (
+                      <span>
+                        Your account has been deactivated. Please contact the administrator at{" "}
+                        <a
+                          href={`mailto:${supportEmail}`}
+                          className="underline hover:text-gold-400 transition-colors"
+                        >
+                          {supportEmail}
+                        </a>
+                        {supportPhone ? ` or ${supportPhone}` : ""} to reactivate your account.
+                      </span>
+                    ) : (
+                      <span>
+                        Your account has been archived. Please contact support at{" "}
+                        <a
+                          href={`mailto:${supportEmail}`}
+                          className="underline hover:text-red-300 transition-colors"
+                        >
+                          {supportEmail}
+                        </a>
+                        {supportPhone ? ` or ${supportPhone}` : ""}.
+                      </span>
+                    )}
                   </div>
                 )}
 
@@ -1051,6 +986,7 @@ export default function AuthPage() {
                         type="email"
                         placeholder="Enter your email"
                         value={recoveryEmail}
+                        maxLength={254}
                         onChange={(e) => {
                           setRecoveryEmail(e.target.value);
                           if (recoveryEmailError) {
@@ -1162,6 +1098,7 @@ export default function AuthPage() {
                           type={showNewPassword ? "text" : "password"}
                           autoComplete="new-password"
                           minLength={6}
+                          maxLength={128}
                           placeholder="Enter new password"
                           value={newPassword}
                           aria-describedby="customer-new-password-hint"
@@ -1199,6 +1136,7 @@ export default function AuthPage() {
                           type={showConfirmNewPassword ? "text" : "password"}
                           autoComplete="new-password"
                           minLength={6}
+                          maxLength={128}
                           placeholder="Confirm new password"
                           value={confirmNewPassword}
                           onChange={(e) => setConfirmNewPassword(e.target.value)}
@@ -1297,6 +1235,7 @@ export default function AuthPage() {
                     setEmailConfirmed(false);
                     setSearchParams({ mode: isLogin ? "signup" : "login" });
                     setError("");
+                    setAccountStatusNotice(null);
                     setMessage("");
                     setEmailError("");
                     setPhoneError("");

@@ -64,6 +64,17 @@ import {
   calculateServiceWindow,
   isServiceIncludedInPackage,
 } from "../utils/overtimeBilling";
+import {
+  MAX_GCASH_REF_LENGTH,
+  MAX_BANK_REF_LENGTH,
+  validateTransactionReference,
+  sanitizeTransactionReferenceInput,
+  parseAdditionalPaxPrice,
+  addCalendarDays,
+  getManilaTodayParts,
+  getManilaTodayYMD,
+  addDaysToYMD,
+} from "../utils/validation";
 import VenueMapPicker from "../components/VenueMapPicker";
 
 interface FormData {
@@ -147,42 +158,8 @@ const MAX_ALCOHOLIC_BOTTLES = 200;
 const MAX_OUTSIDE_FOOD_DISHES = 50;
 const MAX_ALLERGIES_LENGTH = 300;
 const MAX_SIGNER_NAME_LENGTH = 70;
-const MAX_GCASH_REF_LENGTH = 13;
-const MIN_GCASH_REF_LENGTH = 9;
-const MAX_BANK_REF_LENGTH = 20;
-const MIN_BANK_REF_LENGTH = 8;
 const SIGNER_NAME_INVALID_REGEX = /[^a-zA-ZÀ-ÿ\sñÑ.'-]/;
 const SIGNER_NAME_VALID_REGEX = /^[a-zA-ZÀ-ÿ\sñÑ.'-]+$/;
-
-const validateTransactionReference = (
-  ref: string,
-  method: "GCash" | "Bank Transfer"
-): string => {
-  const trimmed = ref.trim();
-  if (!trimmed) {
-    return "Please enter your transaction reference number.";
-  }
-  if (method === "GCash") {
-    if (!/^\d+$/.test(trimmed)) {
-      return "GCash reference number must contain digits only.";
-    }
-    if (trimmed.length < MIN_GCASH_REF_LENGTH || trimmed.length > MAX_GCASH_REF_LENGTH) {
-      return `GCash reference number must be ${MIN_GCASH_REF_LENGTH}–${MAX_GCASH_REF_LENGTH} digits.`;
-    }
-    return "";
-  }
-  // Bank Transfer (BDO / BPI / InstaPay / PESONet): 8-20 uppercase alphanumeric, digits-only or up to 4-letter bank prefix + digits
-  if (!/^[A-Z0-9]+$/.test(trimmed)) {
-    return "Bank reference number can only contain uppercase letters and digits (no spaces or hyphens).";
-  }
-  if (trimmed.length < MIN_BANK_REF_LENGTH || trimmed.length > MAX_BANK_REF_LENGTH) {
-    return `Bank reference number must be ${MIN_BANK_REF_LENGTH}–${MAX_BANK_REF_LENGTH} characters.`;
-  }
-  if (!/^([A-Z]{0,4}\d{6,20}|\d{8,20})$/.test(trimmed)) {
-    return "Enter a valid bank reference number (digits only, or up to a 4-letter bank prefix followed by digits).";
-  }
-  return "";
-};
 
 const sanitizePositiveInt = (raw: string, max: number): number | null => {
   const digits = raw.replace(/[^\d]/g, "");
@@ -269,21 +246,10 @@ const categoryOrder = [
 ];
 
 export default function BookingPage() {
-  // Feature: Minimum selectable date (30 days from today to accommodate the 15-day billing balance schedule and event prep)
-  const minSelectableDate = (() => {
-    const d = new Date();
-    d.setDate(d.getDate() + 30);
-    const yyyy = d.getFullYear();
-    const mm = String(d.getMonth() + 1).padStart(2, "0");
-    const dd = String(d.getDate()).padStart(2, "0");
-    return `${yyyy}-${mm}-${dd}`;
-  })();
+  // Feature: Minimum selectable date (30 days from Manila today to match DB & 15-day billing schedule)
+  const minSelectableDate = addDaysToYMD(getManilaTodayYMD(), 30);
   // Feature: Maximum selectable date (End of the year, 2 years from today)
-  const maxSelectableDate = (() => {
-    const d = new Date();
-    const yyyy = d.getFullYear() + 2;
-    return `${yyyy}-12-31`;
-  })();
+  const maxSelectableDate = `${getManilaTodayParts().year + 2}-12-31`;
   const navigate = useNavigate();
   // Feature: State for tracking the current view in the multi-step form
   const [currentStep, setCurrentStep] = useState(1);
@@ -291,6 +257,7 @@ export default function BookingPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState("");
   const [showSuccessModal, setShowSuccessModal] = useState(false);
+  const [isSlotConflictError, setIsSlotConflictError] = useState(false);
   // Feature: State to hold validation error messages for the current step
   const [stepError, setStepError] = useState("");
   const [menuToastError, setMenuToastError] = useState("");
@@ -451,6 +418,43 @@ export default function BookingPage() {
     }
   }, [selectedPkgForMenu?.id]);
 
+  const refreshBookedSlots = async (): Promise<any[]> => {
+    const todayStr = getManilaTodayYMD();
+    const { data, error } = await supabase.rpc("get_booked_slots", { p_from: todayStr });
+    if (error) {
+      console.error("Failed to fetch booked slots:", error.message);
+      return existingBookings;
+    }
+
+    const validBookings = (data || []).filter(
+      (b: any) => !["Cancelled", "Rejected", "Declined", "Archived"].includes(b.status)
+    );
+    setExistingBookings(validBookings);
+
+    const fullyBooked: string[] = [];
+    const uniqueDates = [...new Set(validBookings.map((b: any) => b.event_date))];
+    const allSlots = [
+      "08:00 AM", "09:00 AM", "10:00 AM", "11:00 AM", "12:00 PM",
+      "01:00 PM", "02:00 PM", "03:00 PM", "04:00 PM", "05:00 PM",
+      "06:00 PM", "07:00 PM", "08:00 PM"
+    ];
+
+    uniqueDates.forEach((date) => {
+      const dayBookings = validBookings.filter((b: any) => b.event_date === date);
+      if (dayBookings.length >= 2) {
+        fullyBooked.push(date as string);
+        return;
+      }
+      const hasAvailableSlot = allSlots.some((slot) => {
+        const slotVal = parseTime(slot);
+        return !dayBookings.some((b: any) => Math.abs(slotVal - parseTime(b.event_time)) < 5);
+      });
+      if (!hasAvailableSlot) fullyBooked.push(date as string);
+    });
+    setBookedDates(fullyBooked);
+    return validBookings;
+  };
+
   // Feature: Fetches required dynamic data (packages, menu, services) from Supabase on mount
   useEffect(() => {
     let isMounted = true;
@@ -481,13 +485,9 @@ export default function BookingPage() {
       setUserProfile(profile);
       setSignerFullName((prev) => prev || profile?.full_name || profile?.name || "");
 
-      const todayStr = new Date().toISOString().split("T")[0];
-
       // Fetch active slot conflicts alongside deduplicated catalog cache
-      const [bookingsRes, sortedPackages, menuItemsData, groupedInclusions] = await Promise.all([
-        // Active booked slots from today onwards (date/time/status only — no other customers' data).
-        // Served by the get_booked_slots() RPC because customers can't read other customers' bookings under RLS.
-        supabase.rpc("get_booked_slots", { p_from: todayStr }),
+      const [validBookings, sortedPackages, menuItemsData, groupedInclusions] = await Promise.all([
+        refreshBookedSlots(),
         catalogCache.fetchPackages(),
         catalogCache.fetchMenuItems(),
         catalogCache.fetchInclusions(),
@@ -498,39 +498,7 @@ export default function BookingPage() {
       setAvailablePackages(sortedPackages);
       setMenuOptions(menuItemsData);
       setInclusionCategories(groupedInclusions);
-
-      if (bookingsRes.data) {
-        // Keep only active bookings to calculate gaps against
-        const validBookings = bookingsRes.data.filter(
-          (b: any) => !["Cancelled", "Rejected", "Declined", "Archived"].includes(b.status)
-        );
-        setExistingBookings(validBookings);
-
-        const fullyBooked: string[] = [];
-        const uniqueDates = [...new Set(validBookings.map((b: any) => b.event_date))];
-        const allSlots = [
-          "08:00 AM", "09:00 AM", "10:00 AM", "11:00 AM", "12:00 PM",
-          "01:00 PM", "02:00 PM", "03:00 PM", "04:00 PM", "05:00 PM",
-          "06:00 PM", "07:00 PM", "08:00 PM"
-        ];
-
-        // Mark a date fully booked if there are 2 or more events, OR if no timeslot has a 5-hour gap from existing events
-        uniqueDates.forEach((date) => {
-          const dayBookings = validBookings.filter((b: any) => b.event_date === date);
-
-          if (dayBookings.length >= 2) {
-            fullyBooked.push(date as string);
-            return;
-          }
-
-          const hasAvailableSlot = allSlots.some((slot) => {
-            const slotVal = parseTime(slot);
-            return !dayBookings.some((b: any) => Math.abs(slotVal - parseTime(b.event_time)) < 5);
-          });
-          if (!hasAvailableSlot) fullyBooked.push(date as string);
-        });
-        setBookedDates(fullyBooked);
-      }
+      void validBookings;
 
       setLoadingData(false);
     };
@@ -736,13 +704,14 @@ export default function BookingPage() {
   // Helper to calculate monthly installment breakdown for the 20% scheme
   const calculateInstallmentMilestones = (eventDateStr: string, totalRemaining: number) => {
     if (!eventDateStr || totalRemaining <= 0) return [];
-    const eventDate = new Date(eventDateStr);
-    if (isNaN(eventDate.getTime())) return [];
-    const now = new Date();
+    // Parse YYYY-MM-DD cleanly via local calendar math (immune to UTC-negative day shift & DST)
+    const finalDeadline = addCalendarDays(eventDateStr, -15);
+    if (!finalDeadline) return [];
+    const manilaToday = getManilaTodayParts();
 
-    // Final balance deadline is strictly 15 days before event date
-    const finalDeadline = new Date(eventDate.getTime() - 15 * 24 * 60 * 60 * 1000);
-    const diffMonths = (finalDeadline.getFullYear() - now.getFullYear()) * 12 + (finalDeadline.getMonth() - now.getMonth());
+    const diffMonths =
+      (finalDeadline.getFullYear() - manilaToday.year) * 12 +
+      (finalDeadline.getMonth() - (manilaToday.month - 1));
 
     if (diffMonths <= 1) {
       return [
@@ -769,8 +738,14 @@ export default function BookingPage() {
       if (isLast) {
         dueDateText = `${finalDeadline.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })} (Strictly 15 days before event)`;
       } else {
-        const mDate = new Date(now.getFullYear(), now.getMonth() + i, 15);
-        dueDateText = mDate.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+        const rawMidDate = new Date(manilaToday.year, manilaToday.month - 1 + i, 15, 12, 0, 0);
+        const clampedMidDate =
+          rawMidDate.getTime() > finalDeadline.getTime() ? finalDeadline : rawMidDate;
+        dueDateText = clampedMidDate.toLocaleDateString("en-US", {
+          month: "short",
+          day: "numeric",
+          year: "numeric",
+        });
       }
 
       milestones.push({
@@ -786,7 +761,7 @@ export default function BookingPage() {
   // Feature: Calculations for total budget, downpayment schemes (50% vs 20%), and remaining balance
   const selectedPkgForPayment = availablePackages.find((p) => p.id === formData.packageId);
   const basePriceCalc = selectedPkgForPayment && selectedPkgForPayment.price ? parseFloat(String(selectedPkgForPayment.price).replace(/[^0-9.-]+/g, "")) || 0 : 0;
-  const addPriceCalc = selectedPkgForPayment && selectedPkgForPayment.additional_pax_price ? parseFloat(String(selectedPkgForPayment.additional_pax_price).replace(/[^0-9.-]+/g, "")) || 0 : 0;
+  const addPriceCalc = selectedPkgForPayment ? parseAdditionalPaxPrice(selectedPkgForPayment.additional_pax_price, 500) : 0;
   const extraPaxCalc = Math.min(MAX_ADDITIONAL_PAX, Math.max(0, parseInt(formData.additionalPax, 10) || 0));
   // Feature: Taytay Coverage Detection & Venue Accessibility Hauling Fee Calculation
   const hasVenueInput = Boolean(formData.venueName.trim() || formData.venueAddress.trim());
@@ -1010,7 +985,32 @@ export default function BookingPage() {
 
     setIsProcessingPayment(true);
     setPaymentError("");
+    setIsSlotConflictError(false);
     setReferenceNumberError("");
+
+    // Re-check latest booked slots BEFORE uploading receipt/signature to avoid orphaned Storage files
+    const latestSlots = await refreshBookedSlots();
+    if (formData.date < minSelectableDate) {
+      setIsProcessingPayment(false);
+      setIsSlotConflictError(true);
+      setPaymentError(`Event Date must be at least 30 days in advance (${minSelectableDate} or later).`);
+      return;
+    }
+    const latestDayBookings = latestSlots.filter((b: any) => b.event_date === formData.date);
+    const chosenSlotVal = parseTime(formData.time);
+    const hasTimeGapConflict = latestDayBookings.some(
+      (b: any) => Math.abs(chosenSlotVal - parseTime(b.event_time)) < 5
+    );
+    if (latestDayBookings.length >= 2 || hasTimeGapConflict) {
+      setIsProcessingPayment(false);
+      setIsSlotConflictError(true);
+      setPaymentError(
+        latestDayBookings.length >= 2
+          ? `This date (${formData.date}) just reached the maximum of 2 active bookings. Please select another date.`
+          : "This event time now conflicts with another booking within the required 5-hour gap. Please select another time or date."
+      );
+      return;
+    }
 
     // Upload receipt image & e-signature strictly to private 'receipts' Storage (never store raw Base64 in DB)
     let finalReceiptUrl = "";
@@ -1139,68 +1139,16 @@ export default function BookingPage() {
       },
     };
 
-    let { error } = await supabase.from("bookings").insert([primaryPayload]);
-
-    // Fallback: If dedicated payment columns do not exist yet in Supabase, safely embed within structured note
-    if (error && error.message.toLowerCase().includes("column")) {
-      console.warn("Direct payment columns not yet added to database. Using resilient metadata embedding.", error.message);
-      const paymentMetadata = JSON.stringify({
-        method: paymentMethod,
-        scheme: paymentScheme,
-        downpayment: calculatedDownpayment,
-        balance: calculatedRemainingBalance,
-        status: "Pending Verification",
-        finalBalanceStatus: "Unpaid",
-        installments: paymentScheme === "Installment 20%" ? installmentMilestones : null,
-        ref: sanitizedRefNumber,
-        receipt: finalReceiptUrl,
-        termsAccepted: true,
-        logistics: {
-          isOutsideTaytay,
-          isSecondFloorOrHigher: effectiveIsSecondFloorOrHigher,
-          floorLevel: normalizedFloorLevel,
-          hasElevator: normalizedHasElevator,
-          requiresStairsIngress,
-          venueType: isOutdoorVenue ? "Outdoor" : "Indoor",
-          isOutdoor: isOutdoorVenue,
-          waiterCount: waiterCountCalc,
-          haulingFee: calculatedHaulingFee,
-          travelFee: 0,
-          coords: hasPinnedVenue ? venueCoords : null,
-          corkage: sanitizedCorkagePayload,
-          contract_signature: {
-            signer_user_id: sessionUser.id,
-            signer_name: (signerFullName || userProfile?.full_name || userProfile?.name || "Client").trim().slice(0, MAX_SIGNER_NAME_LENGTH),
-            signer_email: sessionUser.email || userProfile?.email || "",
-            signature_mode: signatureMode,
-            signature_data_url: finalSignatureUrl,
-            signed_at: signedAtIso || new Date().toISOString(),
-          },
-        },
-        corkage: sanitizedCorkagePayload,
-        submittedAt: new Date().toISOString(),
-      });
-
-      const fallbackPayload = {
-        user_id: sessionUser.id,
-        package_id: formData.packageId,
-        event_date: formData.date,
-        event_time: formData.time,
-        event_location: `${formData.venueName.trim().slice(0, 120)} - ${formData.venueAddress.trim().slice(0, 250)}`,
-        guest_count: parseInt(formData.guestCount) || 0,
-        additional_pax: sanitizedAdditionalPax,
-        food_allergies: `${sanitizedAllergies ? sanitizedAllergies + "\n" : ""}__PAYMENT_METADATA__:${paymentMetadata}`,
-        selected_menu_items: validSelections,
-        status: "Pending",
-      };
-
-      const fallbackResult = await supabase.from("bookings").insert([fallbackPayload]);
-      error = fallbackResult.error;
-    }
+    const { error } = await supabase.from("bookings").insert([primaryPayload]);
 
     setIsProcessingPayment(false);
 
     if (error) {
+      const msgLower = (error.message || "").toLowerCase();
+      if (msgLower.includes("maximum of 2") || msgLower.includes("conflicts with an existing") || msgLower.includes("5-hour gap")) {
+        await refreshBookedSlots();
+        setIsSlotConflictError(true);
+      }
       setPaymentError(`Submission failed: ${error.message}`);
     } else {
       setShowPaymentModal(false);
@@ -2824,7 +2772,7 @@ export default function BookingPage() {
                         {(() => {
                           const pkg = availablePackages.find((p) => p.id === formData.packageId);
                           const basePrice = pkg && pkg.price ? parseFloat(String(pkg.price).replace(/[^0-9.-]+/g, "")) || 0 : 0;
-                          const addPrice = pkg && pkg.additional_pax_price ? parseFloat(String(pkg.additional_pax_price).replace(/[^0-9.-]+/g, "")) || 0 : 0;
+                          const addPrice = pkg ? parseAdditionalPaxPrice(pkg.additional_pax_price, 500) : 0;
                           const extraPax = parseInt(formData.additionalPax) || 0;
                           const additionalPaxTotal = addPrice * extraPax;
                           const totalBudget = basePrice + additionalPaxTotal + calculatedHaulingFee + totalCorkageFeeCalc + totalPrebookedOvertimeFee;
@@ -3644,9 +3592,25 @@ export default function BookingPage() {
               {/* Scrollable Content */}
               <div className="p-4 sm:p-8 overflow-y-auto overscroll-contain space-y-6 scrollbar-none flex-1">
                 {paymentError && (
-                  <div className="p-4 bg-red-950/90 border border-red-500/50 rounded-lg text-red-200 text-xs font-bold flex items-center gap-2">
-                    <AlertTriangle size={16} className="text-red-400 shrink-0" />
-                    <span>{paymentError}</span>
+                  <div className="p-4 bg-red-950/90 border border-red-500/50 rounded-lg text-red-200 text-xs font-bold flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div className="flex items-center gap-2">
+                      <AlertTriangle size={16} className="text-red-400 shrink-0" />
+                      <span>{paymentError}</span>
+                    </div>
+                    {isSlotConflictError && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowPaymentModal(false);
+                          setPaymentError("");
+                          setIsSlotConflictError(false);
+                          setCurrentStep(2);
+                        }}
+                        className="px-3 py-1.5 rounded bg-red-500/20 hover:bg-red-500/30 border border-red-400/40 text-red-100 text-[11px] font-bold uppercase tracking-wider shrink-0 cursor-pointer transition-colors"
+                      >
+                        Choose Another Date / Time
+                      </button>
+                    )}
                   </div>
                 )}
 
@@ -3809,7 +3773,7 @@ export default function BookingPage() {
                       type="button"
                       onClick={() => {
                         setPaymentMethod("GCash");
-                        setReferenceNumber((prev) => prev.replace(/[^\d]/g, "").slice(0, MAX_GCASH_REF_LENGTH));
+                        setReferenceNumber((prev) => sanitizeTransactionReferenceInput(prev, "GCash"));
                         setReferenceNumberError("");
                         setPaymentError("");
                       }}
@@ -3831,7 +3795,7 @@ export default function BookingPage() {
                       type="button"
                       onClick={() => {
                         setPaymentMethod("Bank Transfer");
-                        setReferenceNumber((prev) => prev.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, MAX_BANK_REF_LENGTH));
+                        setReferenceNumber((prev) => sanitizeTransactionReferenceInput(prev, "Bank Transfer"));
                         setReferenceNumberError("");
                         setPaymentError("");
                       }}
