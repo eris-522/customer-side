@@ -3789,6 +3789,11 @@ export default function BookingPage() {
                     <button
                       type="button"
                       onClick={() => {
+                        if (paymentMethod !== "GCash") {
+                          setReceiptImage("");
+                          setReceiptBlob(null);
+                          setReceiptFileName("");
+                        }
                         setPaymentMethod("GCash");
                         setReferenceNumber((prev) => sanitizeTransactionReferenceInput(prev, "GCash"));
                         setReferenceNumberError("");
@@ -3811,6 +3816,11 @@ export default function BookingPage() {
                     <button
                       type="button"
                       onClick={() => {
+                        if (paymentMethod !== "Bank Transfer") {
+                          setReceiptImage("");
+                          setReceiptBlob(null);
+                          setReceiptFileName("");
+                        }
                         setPaymentMethod("Bank Transfer");
                         setReferenceNumber((prev) => sanitizeTransactionReferenceInput(prev, "Bank Transfer"));
                         setReferenceNumberError("");

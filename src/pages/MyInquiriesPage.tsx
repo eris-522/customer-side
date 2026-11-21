@@ -4833,6 +4833,11 @@ export default function MyInquiriesPage() {
                     <button
                       type="button"
                       onClick={() => {
+                        if (balancePaymentMethod !== "GCash") {
+                          setBalanceReceiptImage("");
+                          setBalanceReceiptBlob(null);
+                          setBalanceReceiptName("");
+                        }
                         setBalancePaymentMethod("GCash");
                         setBalanceRef((prev) => sanitizeTransactionReferenceInput(prev, "GCash"));
                         setBalanceError("");
@@ -4855,6 +4860,11 @@ export default function MyInquiriesPage() {
                     <button
                       type="button"
                       onClick={() => {
+                        if (balancePaymentMethod !== "Bank Transfer") {
+                          setBalanceReceiptImage("");
+                          setBalanceReceiptBlob(null);
+                          setBalanceReceiptName("");
+                        }
                         setBalancePaymentMethod("Bank Transfer");
                         setBalanceRef((prev) => sanitizeTransactionReferenceInput(prev, "Bank Transfer"));
                         setBalanceError("");
