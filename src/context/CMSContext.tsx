@@ -1,5 +1,10 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from "react";
 import { supabase } from "../utils/supabase";
+import {
+  subscribeCmsSync,
+  subscribeWakeSync,
+  isLiveSyncConnected,
+} from "../utils/liveSync";
 
 export interface HeroCMS {
   tagline: string;
@@ -488,7 +493,9 @@ export const DEFAULT_CMS_DATA: FullCMSData = {
 };
 
 const LOCAL_STORAGE_CMS_KEY = "rp_cms_content_cache";
+const LOCAL_STORAGE_CMS_VERSIONS_KEY = "rp_cms_content_versions_v1";
 const LOCAL_STORAGE_CMS_TIME_KEY = "rp_cms_content_timestamp";
+const FALLBACK_FOCUS_COOLDOWN_MS = 15_000;
 
 /**
  * Deeply merges a section's incoming data with DEFAULT_CMS_DATA[sectionKey],
@@ -622,83 +629,210 @@ export function CMSProvider({ children }: { children: ReactNode }) {
     return DEFAULT_CMS_DATA;
   });
   const [isLoading] = useState(false);
-  const inFlightFetchRef = React.useRef<Promise<void> | null>(null);
+  const cmsRef = React.useRef<FullCMSData>(cms);
+  cmsRef.current = cms;
 
-  const fetchContent = async (forceRefresh = false) => {
-    if (!forceRefresh) {
-      const lastFetch = Number(localStorage.getItem(LOCAL_STORAGE_CMS_TIME_KEY) || 0);
-      if (lastFetch > 0 && Date.now() - lastFetch < 300_000 && localStorage.getItem(LOCAL_STORAGE_CMS_KEY)) {
-        return;
+  const inFlightFetchRef = React.useRef<Promise<void> | null>(null);
+  const queuedFullRef = React.useRef(false);
+  const queuedDeltaRef = React.useRef(false);
+  const queuedSectionsRef = React.useRef<Set<string>>(new Set());
+
+  const readStoredVersions = (): Record<string, string> => {
+    try {
+      const raw = localStorage.getItem(LOCAL_STORAGE_CMS_VERSIONS_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+          return parsed as Record<string, string>;
+        }
       }
+    } catch {}
+    return {};
+  };
+
+  const mergeAndPersistRows = (
+    rows: any[],
+    baseCms: FullCMSData,
+    baseVersions: Record<string, string>
+  ): boolean => {
+    const nextCms: FullCMSData = { ...baseCms };
+    const nextVersions: Record<string, string> = { ...baseVersions };
+    let applied = false;
+
+    rows.forEach((row: any) => {
+      const sectionKey = (row.id || row.section) as keyof FullCMSData;
+      if (sectionKey && row.data && (nextCms as any)[sectionKey] !== undefined) {
+        (nextCms as any)[sectionKey] = mergeSectionWithDefaults(
+          sectionKey,
+          row.data
+        );
+        if (row.updated_at !== undefined && row.updated_at !== null) {
+          nextVersions[String(sectionKey)] = String(row.updated_at);
+        }
+        applied = true;
+      }
+    });
+
+    if (applied) {
+      cmsRef.current = nextCms;
+      setCms(nextCms);
+      try {
+        localStorage.setItem(LOCAL_STORAGE_CMS_KEY, JSON.stringify(nextCms));
+        localStorage.setItem(
+          LOCAL_STORAGE_CMS_VERSIONS_KEY,
+          JSON.stringify(nextVersions)
+        );
+        localStorage.setItem(LOCAL_STORAGE_CMS_TIME_KEY, String(Date.now()));
+      } catch {}
     }
 
+    return applied;
+  };
+
+  const revalidateCMS = async (options?: {
+    forceFull?: boolean;
+    sections?: string[];
+  }): Promise<void> => {
     if (inFlightFetchRef.current) {
+      if (options?.forceFull) {
+        queuedFullRef.current = true;
+      } else if (options?.sections && options.sections.length > 0) {
+        options.sections.forEach((s) => queuedSectionsRef.current.add(s));
+      } else {
+        queuedDeltaRef.current = true;
+      }
       return inFlightFetchRef.current;
     }
 
+    const validSections = (options?.sections || []).filter(
+      (s): s is keyof FullCMSData => (DEFAULT_CMS_DATA as any)[s] !== undefined
+    );
+
     const run = (async () => {
-    try {
-      const merged: FullCMSData = JSON.parse(JSON.stringify(DEFAULT_CMS_DATA));
-      let hasData = false;
-
-      // 1. Always query primary table `cms_content` so remote/port-forwarded/Vercel deployments stay in sync
       try {
-        const { data, error } = await supabase
-          .from("cms_content")
-          .select("id, section, data, updated_at");
-        if (!error && data && data.length > 0) {
-          data.forEach((row: any) => {
-            const sectionKey = (row.id || row.section) as keyof FullCMSData;
-            if (sectionKey && row.data && (merged as any)[sectionKey] !== undefined) {
-              (merged as any)[sectionKey] = mergeSectionWithDefaults(
-                sectionKey,
-                row.data
-              );
-              hasData = true;
-            }
-          });
-        }
-      } catch (e) {}
-
-      // 2. Dual-layer fallback: Only check `inclusions` table if primary table returned no rows
-      if (!hasData) {
-        try {
+        // Path 1: Partial re-fetch of only the changed section(s) from broadcast hint
+        if (!options?.forceFull && validSections.length > 0) {
           const { data, error } = await supabase
-            .from("inclusions")
-            .select("category, items")
-            .like("category", "__CMS_%");
+            .from("cms_content")
+            .select("id, section, data, updated_at")
+            .in("id", validSections);
 
           if (!error && data && data.length > 0) {
-            data.forEach((row: any) => {
-              const sectionKey = row.category.replace(
-                "__CMS_",
-                ""
-              ) as keyof FullCMSData;
-              if (sectionKey && (merged as any)[sectionKey] !== undefined) {
-                try {
-                  const parsed = JSON.parse(row.items);
-                  (merged as any)[sectionKey] = mergeSectionWithDefaults(
-                    sectionKey,
-                    parsed
-                  );
-                  hasData = true;
-                } catch (err) {}
-              }
-            });
+            mergeAndPersistRows(data, cmsRef.current, readStoredVersions());
           }
-        } catch (e) {}
-      }
+          return;
+        }
 
-      if (hasData) {
-        setCms(merged);
+        // Path 2: Lightweight ~400-byte timestamp delta check on reload / wake
+        const storedVersions = readStoredVersions();
+        const hasCachedData = Boolean(localStorage.getItem(LOCAL_STORAGE_CMS_KEY));
+        if (
+          !options?.forceFull &&
+          hasCachedData &&
+          Object.keys(storedVersions).length > 0
+        ) {
+          try {
+            const { data: metaRows, error: metaErr } = await supabase
+              .from("cms_content")
+              .select("id, section, updated_at");
+
+            if (!metaErr && metaRows && metaRows.length > 0) {
+              const changedIds = metaRows
+                .map((row: any) => {
+                  const key = String(row.id || row.section || "");
+                  if (!key || (DEFAULT_CMS_DATA as any)[key] === undefined) {
+                    return null;
+                  }
+                  const serverTs = String(row.updated_at || "");
+                  return storedVersions[key] !== serverTs ? key : null;
+                })
+                .filter((id): id is string => Boolean(id));
+
+              if (changedIds.length === 0) {
+                try {
+                  localStorage.setItem(LOCAL_STORAGE_CMS_TIME_KEY, String(Date.now()));
+                } catch {}
+                return;
+              }
+
+              const { data: changedRows, error: changedErr } = await supabase
+                .from("cms_content")
+                .select("id, section, data, updated_at")
+                .in("id", changedIds);
+
+              if (!changedErr && changedRows && changedRows.length > 0) {
+                mergeAndPersistRows(changedRows, cmsRef.current, storedVersions);
+              }
+              return;
+            }
+          } catch {}
+        }
+
+        // Path 3: Full fetch (first visit, missing version map, or manual forceFull)
+        const baseDefaults: FullCMSData = JSON.parse(
+          JSON.stringify(DEFAULT_CMS_DATA)
+        );
+        let loadedPrimary = false;
+
         try {
-          localStorage.setItem(LOCAL_STORAGE_CMS_KEY, JSON.stringify(merged));
-          localStorage.setItem(LOCAL_STORAGE_CMS_TIME_KEY, String(Date.now()));
-        } catch (e) {}
+          const { data, error } = await supabase
+            .from("cms_content")
+            .select("id, section, data, updated_at");
+          if (!error && data && data.length > 0) {
+            loadedPrimary = mergeAndPersistRows(data, baseDefaults, {});
+          }
+        } catch {}
+
+        // Dual-layer fallback: Only check `inclusions` table if primary table returned no rows
+        if (!loadedPrimary) {
+          try {
+            const { data, error } = await supabase
+              .from("inclusions")
+              .select("category, items")
+              .like("category", "__CMS_%");
+
+            if (!error && data && data.length > 0) {
+              const mergedFallback: FullCMSData = JSON.parse(
+                JSON.stringify(DEFAULT_CMS_DATA)
+              );
+              let hasFallback = false;
+              data.forEach((row: any) => {
+                const sectionKey = row.category.replace(
+                  "__CMS_",
+                  ""
+                ) as keyof FullCMSData;
+                if (sectionKey && (mergedFallback as any)[sectionKey] !== undefined) {
+                  try {
+                    const parsed = JSON.parse(row.items);
+                    (mergedFallback as any)[sectionKey] = mergeSectionWithDefaults(
+                      sectionKey,
+                      parsed
+                    );
+                    hasFallback = true;
+                  } catch {}
+                }
+              });
+
+              if (hasFallback) {
+                cmsRef.current = mergedFallback;
+                setCms(mergedFallback);
+                try {
+                  localStorage.setItem(
+                    LOCAL_STORAGE_CMS_KEY,
+                    JSON.stringify(mergedFallback)
+                  );
+                  localStorage.setItem(
+                    LOCAL_STORAGE_CMS_TIME_KEY,
+                    String(Date.now())
+                  );
+                } catch {}
+              }
+            }
+          } catch {}
+        }
+      } catch (err) {
+        console.warn("CMSProvider revalidateCMS exception:", err);
       }
-    } catch (err) {
-      console.warn("CMSProvider fetchContent exception:", err);
-    }
     })();
 
     inFlightFetchRef.current = run;
@@ -706,11 +840,26 @@ export function CMSProvider({ children }: { children: ReactNode }) {
       await run;
     } finally {
       inFlightFetchRef.current = null;
+      const runFull = queuedFullRef.current;
+      const runDelta = queuedDeltaRef.current;
+      const runSections = Array.from(queuedSectionsRef.current);
+      queuedFullRef.current = false;
+      queuedDeltaRef.current = false;
+      queuedSectionsRef.current.clear();
+
+      if (runFull) {
+        void revalidateCMS({ forceFull: true });
+      } else if (runDelta) {
+        void revalidateCMS();
+      } else if (runSections.length > 0) {
+        void revalidateCMS({ sections: runSections });
+      }
     }
   };
 
   useEffect(() => {
-    fetchContent(false);
+    // Immediate ~400-byte delta validation on mount / F5 reload
+    revalidateCMS();
 
     // Cross-tab custom event listener (when on same origin)
     const handleLocalUpdate = (e: any) => {
@@ -722,21 +871,34 @@ export function CMSProvider({ children }: { children: ReactNode }) {
         );
         setCms((prev) => {
           const updated = { ...prev, [section]: normalized };
+          cmsRef.current = updated;
           try {
             localStorage.setItem(LOCAL_STORAGE_CMS_KEY, JSON.stringify(updated));
-          } catch (err) {}
+          } catch {}
           return updated;
         });
       }
     };
     window.addEventListener("cms_section_updated", handleLocalUpdate);
 
-    // Refresh when user switches back to the customer portal tab/window
+    // Live instant signal from Admin CMS saves
+    const unsubscribeCms = subscribeCmsSync((sections) => {
+      revalidateCMS(sections.length > 0 ? { sections } : {});
+    });
+
+    // Automatic wake re-check when returning after hidden-tab WebSocket disconnect
+    const unsubscribeWake = subscribeWakeSync(() => {
+      revalidateCMS();
+    });
+
+    // Disconnected fallback: delta check on focus/visibility only if live broadcast socket is down
     const handleVisibilityOrFocus = () => {
-      if (document.visibilityState === "visible") {
-        const lastFetch = Number(localStorage.getItem(LOCAL_STORAGE_CMS_TIME_KEY) || 0);
-        if (Date.now() - lastFetch > 300000) {
-          fetchContent(true);
+      if (document.visibilityState === "visible" && !isLiveSyncConnected()) {
+        const lastFetch = Number(
+          localStorage.getItem(LOCAL_STORAGE_CMS_TIME_KEY) || 0
+        );
+        if (Date.now() - lastFetch > FALLBACK_FOCUS_COOLDOWN_MS) {
+          revalidateCMS();
         }
       }
     };
@@ -744,6 +906,8 @@ export function CMSProvider({ children }: { children: ReactNode }) {
     document.addEventListener("visibilitychange", handleVisibilityOrFocus);
 
     return () => {
+      unsubscribeCms();
+      unsubscribeWake();
       window.removeEventListener("cms_section_updated", handleLocalUpdate);
       window.removeEventListener("focus", handleVisibilityOrFocus);
       document.removeEventListener("visibilitychange", handleVisibilityOrFocus);
@@ -752,7 +916,11 @@ export function CMSProvider({ children }: { children: ReactNode }) {
 
   return (
     <CMSContext.Provider
-      value={{ cms, isLoading, refreshCMS: () => fetchContent(true) }}
+      value={{
+        cms,
+        isLoading,
+        refreshCMS: () => revalidateCMS({ forceFull: true }),
+      }}
     >
       {children}
     </CMSContext.Provider>

@@ -50,6 +50,7 @@ import {
   ALLOWED_UPLOAD_MIME_TYPES,
 } from "../utils/receiptUploader";
 import { catalogCache } from "../utils/catalogCache";
+import { subscribeSlotsSync, broadcastSlotsChange } from "../utils/liveSync";
 import {
   getSessionUser,
   fetchUserProfile,
@@ -505,26 +506,33 @@ export default function BookingPage() {
 
     fetchBookingData();
 
-    // Reuse the single multiplexed catalog Realtime channel instead of opening 3 per-page listeners
+    // Reuse the single multiplexed catalog Broadcast/SWR cache instead of opening 3 per-page listeners
     const unsubscribeCatalog = catalogCache.subscribe((changedKey) => {
       if (changedKey === "packages") {
-        catalogCache.fetchPackages(true).then((pkgs) => {
+        catalogCache.fetchPackages(false).then((pkgs) => {
           if (isMounted) setAvailablePackages(pkgs);
         });
       } else if (changedKey === "menu") {
-        catalogCache.fetchMenuItems(true).then((items) => {
+        catalogCache.fetchMenuItems(false).then((items) => {
           if (isMounted) setMenuOptions(items);
         });
       } else if (changedKey === "inclusions") {
-        catalogCache.fetchInclusions(true).then((inc) => {
+        catalogCache.fetchInclusions(false).then((inc) => {
           if (isMounted) setInclusionCategories(inc);
         });
+      }
+    });
+
+    const unsubscribeSlots = subscribeSlotsSync(() => {
+      if (isMounted) {
+        refreshBookedSlots();
       }
     });
 
     return () => {
       isMounted = false;
       unsubscribeCatalog();
+      unsubscribeSlots();
     };
   }, [navigate]);
 
@@ -1151,6 +1159,8 @@ export default function BookingPage() {
       }
       setPaymentError(`Submission failed: ${error.message}`);
     } else {
+      void broadcastSlotsChange();
+      window.dispatchEvent(new CustomEvent("customerBookingsUpdated"));
       setShowPaymentModal(false);
       setShowSuccessModal(true);
     }

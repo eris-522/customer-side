@@ -15,6 +15,7 @@ export interface CateringPackage {
   tag?: string;
   inclusions: string[];
   status: string;
+  image_url?: string;
 }
 
 const formatPrice = (price?: string | number) => {
@@ -70,14 +71,14 @@ export default function HomePage() {
 
     loadCatalog(false);
 
-    // Subscribe to the single multiplexed catalog Realtime channel
+    // Subscribe to the single multiplexed catalog Broadcast/SWR cache
     const unsubscribe = catalogCache.subscribe((changedKey) => {
       if (changedKey === "packages") {
-        catalogCache.fetchPackages(true).then((pkgs) => {
+        catalogCache.fetchPackages(false).then((pkgs) => {
           if (isMounted) setPackages((pkgs as CateringPackage[]).slice(0, 3));
         });
       } else if (changedKey === "inclusions") {
-        catalogCache.fetchInclusions(true).then((inc) => {
+        catalogCache.fetchInclusions(false).then((inc) => {
           if (isMounted) setInclusionCategories(inc);
         });
       }
@@ -182,6 +183,7 @@ export default function HomePage() {
                     )}
                     <img
                       src={
+                        pkg.image_url ||
                         packagesCms?.packageImages?.[pkg.id] ||
                         packagesCms?.packageImages?.[pkg.name] ||
                         packagesCms?.items?.find(
@@ -189,7 +191,6 @@ export default function HomePage() {
                             item.name?.toLowerCase() === pkg.name?.toLowerCase() ||
                             item.id === pkg.id
                         )?.image ||
-                        (pkg as any).image_url ||
                         fallbackImages[i % fallbackImages.length]
                       }
                       alt={pkg.name}

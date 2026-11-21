@@ -87,7 +87,7 @@ export default function MenuPage() {
 
     const unsubscribe = catalogCache.subscribe((changedKey) => {
       if (changedKey === "menu") {
-        loadMenu(true);
+        loadMenu(false);
       }
     });
 
@@ -121,6 +121,7 @@ export default function MenuPage() {
       }
 
       const image =
+        item.image_url ||
         menuCms?.menuImages?.[item.id] ||
         menuCms?.menuImages?.[item.name] ||
         menuCms?.items?.find(
@@ -128,7 +129,6 @@ export default function MenuPage() {
             m.id === item.id ||
             m.name?.toLowerCase() === item.name?.toLowerCase()
         )?.image ||
-        item.image_url ||
         fallbackImages[index % fallbackImages.length];
 
       grouped[category].push({

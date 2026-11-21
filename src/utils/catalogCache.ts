@@ -1,17 +1,24 @@
 /**
- * Client cache & TTL revalidation for public catalog data
+ * Client cache & instant Broadcast-invalidated SWR revalidation for public catalog data
  * (packages, menu items, inclusions).
  *
- * - Persists to `sessionStorage` + in-memory with a 10-minute TTL so route
- *   navigation and page reloads do not re-query PostgreSQL unnecessarily.
- * - Deduplicates concurrent in-flight fetches.
- * - Uses visibility/focus cooldown checks instead of opening public Realtime WebSockets.
+ * - Persists to `sessionStorage` + in-memory with a 10-minute TTL so SPA navigation
+ *   does not re-query PostgreSQL unnecessarily.
+ * - On fresh page load / F5, serves warm cache immediately (0ms) and performs 1 background
+ *   SWR check per key, notifying active views only if data actually changed.
+ * - Subscribes via the single multiplexed `liveSync` channel (`rpc-live-broadcast-v1`) so
+ *   Admin catalog edits immediately invalidate caches (and re-fetch only for mounted views).
  */
 
 import { supabase } from "./supabase";
+import {
+  subscribeCatalogSync,
+  subscribeWakeSync,
+  isLiveSyncConnected,
+} from "./liveSync";
 
 const DEFAULT_TTL = 10 * 60 * 1000; // 10 minutes
-const FOCUS_REVALIDATE_COOLDOWN_MS = 5 * 60 * 1000; // 5 minutes
+const FOCUS_REVALIDATE_COOLDOWN_MS = 15 * 1000; // 15 seconds (disconnected fallback only)
 
 export type CatalogKey = "packages" | "menu" | "inclusions";
 type CatalogListener = (changedKey: CatalogKey) => void;
@@ -33,7 +40,11 @@ function readStorage<T>(key: CatalogKey): CacheEntry<T> | null {
     const raw = sessionStorage.getItem(STORAGE_KEYS[key]);
     if (!raw) return null;
     const parsed = JSON.parse(raw) as CacheEntry<T>;
-    if (parsed && typeof parsed.timestamp === "number" && Date.now() - parsed.timestamp < DEFAULT_TTL) {
+    if (
+      parsed &&
+      typeof parsed.timestamp === "number" &&
+      Date.now() - parsed.timestamp < DEFAULT_TTL
+    ) {
       return parsed;
     }
   } catch {}
@@ -60,12 +71,89 @@ let inFlightPackages: Promise<any[]> | null = null;
 let inFlightMenu: Promise<any[]> | null = null;
 let inFlightInclusions: Promise<Record<string, string[]>> | null = null;
 
+const validatedThisPageLoad: Record<CatalogKey, boolean> = {
+  packages: false,
+  menu: false,
+  inclusions: false,
+};
+
+const inFlightSWR: Partial<Record<CatalogKey, Promise<void>>> = {};
+
 const listeners = new Set<CatalogListener>();
 let lastFocusCheckAt = 0;
+let lastWakeRevalidateAt = 0;
 let visibilityHandlersAttached = false;
+let syncAttached = false;
+
+function notifyListeners(key: CatalogKey) {
+  listeners.forEach((fn) => {
+    try {
+      fn(key);
+    } catch (err) {
+      console.error("Catalog listener error:", err);
+    }
+  });
+}
+
+function revalidateInBackground(key: CatalogKey): Promise<void> {
+  if (inFlightSWR[key]) return inFlightSWR[key]!;
+
+  const task = (async () => {
+    try {
+      if (key === "packages") {
+        const prevJson = JSON.stringify(packagesCache?.data || []);
+        const fresh = await catalogCache.fetchPackages(true);
+        if (JSON.stringify(fresh) !== prevJson) {
+          notifyListeners("packages");
+        }
+      } else if (key === "menu") {
+        const prevJson = JSON.stringify(menuCache?.data || []);
+        const fresh = await catalogCache.fetchMenuItems(true);
+        if (JSON.stringify(fresh) !== prevJson) {
+          notifyListeners("menu");
+        }
+      } else if (key === "inclusions") {
+        const prevJson = JSON.stringify(inclusionsCache?.data || {});
+        const fresh = await catalogCache.fetchInclusions(true);
+        if (JSON.stringify(fresh) !== prevJson) {
+          notifyListeners("inclusions");
+        }
+      }
+    } finally {
+      delete inFlightSWR[key];
+    }
+  })();
+
+  inFlightSWR[key] = task;
+  return task;
+}
+
+function ensureSyncAttached() {
+  if (syncAttached || typeof window === "undefined") return;
+  syncAttached = true;
+
+  subscribeCatalogSync((key) => {
+    catalogCache.invalidate(key);
+    notifyListeners(key);
+  });
+
+  subscribeWakeSync(() => {
+    const now = Date.now();
+    if (now - lastWakeRevalidateAt < FOCUS_REVALIDATE_COOLDOWN_MS) return;
+    lastWakeRevalidateAt = now;
+
+    catalogCache.invalidate();
+    if (listeners.size === 0) return;
+    (["packages", "menu", "inclusions"] as CatalogKey[]).forEach(notifyListeners);
+  });
+}
 
 function handleFocusOrVisibility() {
   if (typeof document !== "undefined" && document.visibilityState !== "visible") {
+    return;
+  }
+  // When WebSocket broadcast channel is live, focus switches need 0 DB queries
+  if (isLiveSyncConnected()) {
     return;
   }
   const now = Date.now();
@@ -74,27 +162,10 @@ function handleFocusOrVisibility() {
   }
   lastFocusCheckAt = now;
 
-  const expiredKeys: CatalogKey[] = [];
-  if (!packagesCache || now - packagesCache.timestamp >= DEFAULT_TTL) {
-    expiredKeys.push("packages");
-  }
-  if (!menuCache || now - menuCache.timestamp >= DEFAULT_TTL) {
-    expiredKeys.push("menu");
-  }
-  if (!inclusionsCache || now - inclusionsCache.timestamp >= DEFAULT_TTL) {
-    expiredKeys.push("inclusions");
-  }
-
-  for (const key of expiredKeys) {
+  (["packages", "menu", "inclusions"] as CatalogKey[]).forEach((key) => {
     catalogCache.invalidate(key);
-    listeners.forEach((fn) => {
-      try {
-        fn(key);
-      } catch (err) {
-        console.error("Catalog listener error:", err);
-      }
-    });
-  }
+    notifyListeners(key);
+  });
 }
 
 function attachVisibilityHandlers() {
@@ -169,22 +240,31 @@ export const catalogCache = {
   invalidate(key?: CatalogKey) {
     if (!key || key === "packages") {
       packagesCache = null;
+      validatedThisPageLoad.packages = false;
       writeStorage("packages", null);
     }
     if (!key || key === "menu") {
       menuCache = null;
+      validatedThisPageLoad.menu = false;
       writeStorage("menu", null);
     }
     if (!key || key === "inclusions") {
       inclusionsCache = null;
+      validatedThisPageLoad.inclusions = false;
       writeStorage("inclusions", null);
     }
   },
 
   async fetchPackages(forceRefresh = false): Promise<any[]> {
+    ensureSyncAttached();
     if (!forceRefresh) {
       const cached = this.getPackages();
-      if (cached) return cached;
+      if (cached) {
+        if (!validatedThisPageLoad.packages) {
+          void revalidateInBackground("packages");
+        }
+        return cached;
+      }
     }
     if (inFlightPackages) return inFlightPackages;
 
@@ -210,6 +290,7 @@ export const catalogCache = {
           return priceA - priceB;
         });
 
+        validatedThisPageLoad.packages = true;
         this.setPackages(sortedPackages);
         return sortedPackages;
       } finally {
@@ -221,9 +302,15 @@ export const catalogCache = {
   },
 
   async fetchMenuItems(forceRefresh = false): Promise<any[]> {
+    ensureSyncAttached();
     if (!forceRefresh) {
       const cached = this.getMenuItems();
-      if (cached) return cached;
+      if (cached) {
+        if (!validatedThisPageLoad.menu) {
+          void revalidateInBackground("menu");
+        }
+        return cached;
+      }
     }
     if (inFlightMenu) return inFlightMenu;
 
@@ -240,6 +327,7 @@ export const catalogCache = {
         }
 
         const items = data || [];
+        validatedThisPageLoad.menu = true;
         this.setMenuItems(items);
         return items;
       } finally {
@@ -251,9 +339,15 @@ export const catalogCache = {
   },
 
   async fetchInclusions(forceRefresh = false): Promise<Record<string, string[]>> {
+    ensureSyncAttached();
     if (!forceRefresh) {
       const cached = this.getInclusions();
-      if (cached) return cached;
+      if (cached) {
+        if (!validatedThisPageLoad.inclusions) {
+          void revalidateInBackground("inclusions");
+        }
+        return cached;
+      }
     }
     if (inFlightInclusions) return inFlightInclusions;
 
@@ -281,6 +375,7 @@ export const catalogCache = {
           }
         });
 
+        validatedThisPageLoad.inclusions = true;
         this.setInclusions(grouped);
         return grouped;
       } finally {
@@ -292,11 +387,12 @@ export const catalogCache = {
   },
 
   /**
-   * Subscribes to TTL expiration checks on tab focus/visibility (`packages`, `menu`, `inclusions`)
-   * without opening anonymous Realtime WebSocket connections.
+   * Subscribes to live Broadcast invalidations, SWR updates, and disconnected
+   * focus fallback checks (`packages`, `menu`, `inclusions`).
    */
   subscribe(listener: CatalogListener): () => void {
     listeners.add(listener);
+    ensureSyncAttached();
     attachVisibilityHandlers();
     return () => {
       listeners.delete(listener);

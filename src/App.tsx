@@ -117,6 +117,7 @@ function AuthRoutingHandler() {
             },
             async (payload: any) => {
               const newStatus = (payload.new?.status || "").toLowerCase().trim();
+              clearSessionGuardCache(user.id);
               setCachedAccountStatus(user.id, newStatus);
               if (newStatus === "inactive") {
                 clearSessionGuardCache(user.id);

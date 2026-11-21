@@ -45,6 +45,7 @@ import {
 import { SignedStorageImage } from "../components/SignedStorageImage";
 import { calculateServiceWindow, OVERTIME_SERVICE_RATES } from "../utils/overtimeBilling";
 import { catalogCache } from "../utils/catalogCache";
+import { broadcastSlotsChange } from "../utils/liveSync";
 import {
   getSessionUser,
   fetchUserProfile,
@@ -460,11 +461,34 @@ export default function MyInquiriesPage() {
     window.addEventListener("focus", handleFocusOrVisibility);
     document.addEventListener("visibilitychange", handleFocusOrVisibility);
 
-    // Subscribe to shared catalog cache for TTL revalidation on menu items
+    // Subscribe to shared catalog cache for live Broadcast/SWR updates on menu & packages
     const unsubscribeCatalog = catalogCache.subscribe((changedKey) => {
       if (changedKey === "menu") {
-        catalogCache.fetchMenuItems(true).then((items) => {
+        catalogCache.fetchMenuItems(false).then((items) => {
           if (isMounted) setMenuItems(items);
+        });
+      } else if (changedKey === "packages") {
+        catalogCache.fetchPackages(false).then((pkgs) => {
+          if (!isMounted) return;
+          const byId = new Map(pkgs.map((p: any) => [String(p.id), p]));
+          const mergePkg = (b: any) => {
+            const fresh = byId.get(String(b.package_id));
+            return fresh
+              ? {
+                  ...b,
+                  packages: {
+                    ...(b.packages || {}),
+                    name: fresh.name,
+                    price: fresh.price,
+                    additional_pax_price: fresh.additional_pax_price,
+                    category_limits: fresh.category_limits,
+                    inclusions: fresh.inclusions,
+                  },
+                }
+              : b;
+          };
+          setBookings((prev) => prev.map(mergePkg));
+          setModifyingBooking((prev: any) => (prev ? mergePkg(prev) : prev));
         });
       }
     });
@@ -546,6 +570,7 @@ export default function MyInquiriesPage() {
         ),
       );
       window.dispatchEvent(new CustomEvent("customerBookingsUpdated"));
+      void broadcastSlotsChange();
     } catch (err: any) {
       console.error("Error cancelling booking:", err);
       setErrorMsg(err.message || "Failed to cancel booking. Please try again.");

@@ -64,11 +64,11 @@ export default function PackagesPage() {
 
     const unsubscribe = catalogCache.subscribe((changedKey) => {
       if (changedKey === "packages") {
-        catalogCache.fetchPackages(true).then((pkgs) => {
+        catalogCache.fetchPackages(false).then((pkgs) => {
           if (isMounted) setPackages(pkgs as CateringPackage[]);
         });
       } else if (changedKey === "inclusions") {
-        catalogCache.fetchInclusions(true).then((inc) => {
+        catalogCache.fetchInclusions(false).then((inc) => {
           if (isMounted) setInclusionCategories(inc);
         });
       }
@@ -134,6 +134,7 @@ export default function PackagesPage() {
               ) : (
                 packages.map((pkg, i) => {
                   const packageImage =
+                    pkg.image_url ||
                     packagesCms?.packageImages?.[pkg.id] ||
                     packagesCms?.packageImages?.[pkg.name] ||
                     packagesCms?.items?.find(
@@ -141,7 +142,6 @@ export default function PackagesPage() {
                         item.name?.toLowerCase() === pkg.name?.toLowerCase() ||
                         item.id === pkg.id
                     )?.image ||
-                    pkg.image_url ||
                     fallbackImages[i % fallbackImages.length];
 
                   return (
