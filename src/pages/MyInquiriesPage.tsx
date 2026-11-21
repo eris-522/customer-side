@@ -45,7 +45,7 @@ import {
 import { SignedStorageImage } from "../components/SignedStorageImage";
 import { calculateServiceWindow, OVERTIME_SERVICE_RATES } from "../utils/overtimeBilling";
 import { catalogCache } from "../utils/catalogCache";
-import { broadcastSlotsChange } from "../utils/liveSync";
+import { broadcastSlotsChange, broadcastInventoryChange } from "../utils/liveSync";
 import {
   getSessionUser,
   fetchUserProfile,
@@ -571,6 +571,9 @@ export default function MyInquiriesPage() {
       );
       window.dispatchEvent(new CustomEvent("customerBookingsUpdated"));
       void broadcastSlotsChange();
+      if ((cancelRes as any)?.was_confirmed) {
+        void broadcastInventoryChange("all");
+      }
     } catch (err: any) {
       console.error("Error cancelling booking:", err);
       setErrorMsg(err.message || "Failed to cancel booking. Please try again.");
@@ -988,6 +991,9 @@ export default function MyInquiriesPage() {
         )
       );
 
+      if (modifyingBooking.status === "Confirmed" && extraPax !== prevAdditionalPax) {
+        void broadcastInventoryChange("pax_sync");
+      }
       window.dispatchEvent(new CustomEvent("customerBookingsUpdated"));
       setModifyingBooking(null);
       triggerModSuccessToast(

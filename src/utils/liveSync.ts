@@ -311,3 +311,29 @@ export async function broadcastSlotsChange(): Promise<void> {
     console.warn("[liveSync] slots broadcast warning:", err);
   }
 }
+
+export async function broadcastInventoryChange(
+  scope: "items" | "deductions" | "movements" | "rules" | "pax_sync" | "all" = "all",
+): Promise<void> {
+  try {
+    const payload = { scope, ts: Date.now() };
+    if (channel && isConnected) {
+      await channel.send({
+        type: "broadcast",
+        event: "inventory_change",
+        payload,
+      });
+    } else {
+      const tempCh = channel || supabase.channel(LIVE_SYNC_CHANNEL_NAME);
+      const res = await tempCh.httpSend("inventory_change", payload);
+      if ("error" in res) {
+        console.warn("[liveSync] inventory httpSend warning:", res.error);
+      }
+      if (!channel) {
+        supabase.removeChannel(tempCh);
+      }
+    }
+  } catch (err) {
+    console.warn("[liveSync] inventory broadcast warning:", err);
+  }
+}
