@@ -1024,17 +1024,18 @@ export default function BookingPage() {
     let finalReceiptUrl = "";
     let finalSignatureUrl = capturedSignatureDataUrl || "";
     try {
-      if (receiptBlob) {
-        finalReceiptUrl = await uploadReceiptImage(receiptBlob, sessionUser.id, "receipts");
-      } else if (receiptImage && !receiptImage.toLowerCase().startsWith("data:")) {
-        finalReceiptUrl = receiptImage;
-      } else {
-        throw new Error("Please re-upload your payment receipt image.");
-      }
-
-      if (finalSignatureUrl.startsWith("data:image/")) {
-        finalSignatureUrl = await uploadSignatureDataUrl(finalSignatureUrl, sessionUser.id);
-      }
+      const [uploadedReceiptUrl, uploadedSignatureUrl] = await Promise.all([
+        receiptBlob
+          ? uploadReceiptImage(receiptBlob, sessionUser.id, "receipts")
+          : receiptImage && !receiptImage.toLowerCase().startsWith("data:")
+            ? Promise.resolve(receiptImage)
+            : Promise.reject(new Error("Please re-upload your payment receipt image.")),
+        finalSignatureUrl.startsWith("data:image/")
+          ? uploadSignatureDataUrl(finalSignatureUrl, sessionUser.id)
+          : Promise.resolve(finalSignatureUrl),
+      ]);
+      finalReceiptUrl = uploadedReceiptUrl;
+      finalSignatureUrl = uploadedSignatureUrl;
     } catch (uploadErr: any) {
       setIsProcessingPayment(false);
       setPaymentError(uploadErr?.message || "Failed to upload payment proof to secure storage. Please try again.");

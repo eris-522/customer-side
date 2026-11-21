@@ -119,6 +119,29 @@ export async function uploadReceiptImage(
 }
 
 /**
+ * Decodes a base64 PNG Data URL directly into a Blob without using `fetch(dataUrl)`,
+ * which would be blocked by strict Content-Security-Policy `connect-src` directives.
+ */
+function pngDataUrlToBlob(dataUrl: string): Blob {
+  const commaIdx = dataUrl.indexOf(",");
+  if (commaIdx === -1) {
+    throw new Error("Invalid contract signature format.");
+  }
+  const base64 = dataUrl.slice(commaIdx + 1);
+  let binary: string;
+  try {
+    binary = atob(base64);
+  } catch {
+    throw new Error("Invalid contract signature encoding.");
+  }
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return new Blob([bytes], { type: "image/png" });
+}
+
+/**
  * Uploads a client e-signature PNG Data URL strictly to the private 'receipts' bucket.
  * Returns a canonical `receipts://signatures/...` reference on success, or throws on failure.
  */
@@ -134,9 +157,8 @@ export async function uploadSignatureDataUrl(
     throw new Error("Authenticated user session required to store contract signature.");
   }
 
-  const res = await fetch(dataUrl);
-  const blob = await res.blob();
-  if (!blob || blob.size > MAX_UPLOAD_FILE_BYTES) {
+  const blob = pngDataUrlToBlob(dataUrl);
+  if (!blob || blob.size === 0 || blob.size > MAX_UPLOAD_FILE_BYTES) {
     throw new Error("Signature image exceeds maximum allowed size.");
   }
 
