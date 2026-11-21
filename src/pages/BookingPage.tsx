@@ -41,6 +41,7 @@ import {
   Footprints,
 } from "lucide-react";
 import { supabase } from "../utils/supabase";
+import bpiInstaPayQr from "../assets/bpi-instapay-qr.jpg";
 import { CATERING_CONTRACT_TERMS } from "../data/cateringContractTerms";
 import {
   compressReceiptImage,
@@ -3911,68 +3912,66 @@ export default function BookingPage() {
                   </div>
                 ) : (
                   <div className="p-5 bg-gradient-to-b from-gold-400/10 to-transparent border border-gold-400/30 rounded-xl space-y-4">
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-left">
-                      <div className="p-4 bg-white/5 border border-white/10 rounded-lg space-y-2">
-                        <div className="flex justify-between items-center">
-                          <span className="text-xs font-bold text-gold-400 uppercase tracking-wider">
-                            BDO Unibank
-                          </span>
-                        </div>
-                        <div>
-                          <p className="text-[10px] text-white/50 uppercase font-semibold">Account Name</p>
-                          <p className="text-xs font-bold text-white">Roxan Policarpio Events & Catering</p>
-                        </div>
-                        <div>
-                          <p className="text-[10px] text-white/50 uppercase font-semibold">Account Number</p>
-                          <div className="flex items-center justify-between mt-0.5">
-                            <span className="text-sm font-mono font-bold text-white">0012 3456 7890</span>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                navigator.clipboard.writeText("001234567890");
-                                setCopiedAccount("bdo");
-                                setTimeout(() => setCopiedAccount(""), 2500);
-                              }}
-                              className="text-[10px] text-gold-400 hover:text-white font-bold flex items-center gap-1"
-                            >
-                              {copiedAccount === "bdo" ? "Copied!" : "Copy"}
-                            </button>
-                          </div>
-                        </div>
+                    <div className="flex flex-col sm:flex-row items-center gap-6">
+                      {/* BPI InstaPay QR Code */}
+                      <div className="bg-white p-3 rounded-lg shadow-xl shrink-0 flex flex-col items-center">
+                        <img
+                          src={bpiInstaPayQr}
+                          alt="BPI InstaPay QR Code"
+                          className="w-40 h-40 object-contain rounded"
+                        />
+                        <span className="text-xs text-gray-700 font-bold uppercase tracking-wider mt-2">
+                          Scan to Pay ₱{calculatedDownpayment.toLocaleString()}
+                        </span>
                       </div>
 
-                      <div className="p-4 bg-white/5 border border-white/10 rounded-lg space-y-2">
-                        <div className="flex justify-between items-center">
-                          <span className="text-xs font-bold text-gold-400 uppercase tracking-wider">
-                            BPI
+                      {/* Bank Account Details */}
+                      <div className="space-y-3 flex-1 text-left">
+                        <div>
+                          <span className="text-[10px] font-bold uppercase tracking-widest text-[#7A4510] dark:text-gold-400 block">
+                            Bank / Channel
+                          </span>
+                          <span className="text-base font-bold text-white">
+                            BPI (InstaPay QR &amp; Bank Transfer)
                           </span>
                         </div>
                         <div>
-                          <p className="text-[10px] text-white/50 uppercase font-semibold">Account Name</p>
-                          <p className="text-xs font-bold text-white">Roxan Policarpio Events & Catering</p>
+                          <span className="text-[10px] font-bold uppercase tracking-widest text-[#7A4510] dark:text-gold-400 block">
+                            Account Name
+                          </span>
+                          <span className="text-base font-bold text-white">
+                            Roxan Policarpio Catering Services / RPEvents
+                          </span>
                         </div>
                         <div>
-                          <p className="text-[10px] text-white/50 uppercase font-semibold">Account Number</p>
-                          <div className="flex items-center justify-between mt-0.5">
-                            <span className="text-sm font-mono font-bold text-white">4598 1234 56</span>
+                          <span className="text-[10px] font-bold uppercase tracking-widest text-[#7A4510] dark:text-gold-400 block">
+                            Account Number
+                          </span>
+                          <div className="flex flex-wrap items-center gap-2 mt-1">
+                            <span className="text-lg font-mono font-bold text-white bg-white/10 px-3 py-1 rounded">
+                              4189342204
+                            </span>
                             <button
                               type="button"
                               onClick={() => {
-                                navigator.clipboard.writeText("4598123456");
+                                navigator.clipboard.writeText("4189342204");
                                 setCopiedAccount("bpi");
                                 setTimeout(() => setCopiedAccount(""), 2500);
                               }}
-                              className="text-[10px] text-gold-400 hover:text-white font-bold flex items-center gap-1"
+                              className="px-3 py-1.5 bg-gold-400/20 text-[#7A4510] dark:text-gold-300 hover:bg-gold-400/30 text-xs font-bold rounded transition-colors flex items-center gap-1.5 cursor-pointer"
                             >
+                              {copiedAccount === "bpi" ? <CheckCircle size={14} /> : <Copy size={14} />}
                               {copiedAccount === "bpi" ? "Copied!" : "Copy"}
                             </button>
                           </div>
                         </div>
+                        <p className="text-xs text-white/70 leading-relaxed pt-1">
+                          1. Scan the <strong>InstaPay QR</strong> or transfer via your banking app.<br />
+                          2. Send the exact downpayment: <strong>₱{calculatedDownpayment.toLocaleString()}</strong>.<br />
+                          3. Save your transaction confirmation slip and upload it below.
+                        </p>
                       </div>
                     </div>
-                    <p className="text-xs text-white/70">
-                      Transfer <strong>₱{calculatedDownpayment.toLocaleString()}</strong> via InstaPay or PESONet and save your transaction confirmation slip.
-                    </p>
                   </div>
                 )}
 

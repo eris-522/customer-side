@@ -1,6 +1,7 @@
 import { motion, AnimatePresence } from "motion/react";
 import { useState, useEffect, useRef } from "react";
 import { supabase } from "../utils/supabase";
+import bpiInstaPayQr from "../assets/bpi-instapay-qr.jpg";
 import {
   CloudRain,
   Calendar,
@@ -4880,7 +4881,7 @@ export default function MyInquiriesPage() {
                       </div>
                       <div>
                         <p className="font-bold text-sm text-white">Bank Transfer</p>
-                        <p className="text-[10px] text-white/50">BDO / BPI Online Banking</p>
+                        <p className="text-[10px] text-white/50">BPI Online Banking / InstaPay QR</p>
                       </div>
                     </button>
                   </div>
@@ -4937,45 +4938,56 @@ export default function MyInquiriesPage() {
                   </div>
                 ) : (
                   <div className="p-5 bg-gradient-to-b from-gold-400/10 to-transparent border border-gold-400/30 rounded-xl space-y-4">
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-left">
-                      <div className="p-3 bg-white/5 border border-white/10 rounded-lg space-y-1.5">
-                        <div className="flex justify-between items-center">
-                          <span className="text-xs font-bold text-gold-400 uppercase tracking-wider">BDO Unibank</span>
-                          <span className="text-[9px] bg-gold-400/20 text-gold-300 px-1.5 py-0.5 rounded font-bold">Current</span>
-                        </div>
-                        <p className="text-[10px] text-white/50 uppercase font-semibold">0012 3456 7890</p>
-                        <p className="text-xs font-bold text-white">Roxan Policarpio Events & Catering</p>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            navigator.clipboard.writeText("001234567890");
-                            setCopiedBalanceAccount("bdo");
-                            setTimeout(() => setCopiedBalanceAccount(""), 2500);
-                          }}
-                          className="text-[10px] text-gold-400 hover:text-white font-bold flex items-center gap-1"
-                        >
-                          {copiedBalanceAccount === "bdo" ? "Copied Account!" : "Copy BDO Number"}
-                        </button>
+                    <div className="flex flex-col sm:flex-row items-center gap-6">
+                      <div className="bg-white p-3 rounded-lg shadow-xl shrink-0 flex flex-col items-center">
+                        <img
+                          src={bpiInstaPayQr}
+                          alt="BPI InstaPay QR Code"
+                          className="w-36 h-36 object-contain rounded"
+                        />
+                        <span className="text-xs text-gray-700 font-bold uppercase tracking-wider mt-2">
+                          Scan to Pay
+                        </span>
                       </div>
-
-                      <div className="p-3 bg-white/5 border border-white/10 rounded-lg space-y-1.5">
-                        <div className="flex justify-between items-center">
-                          <span className="text-xs font-bold text-gold-400 uppercase tracking-wider">BPI Banking</span>
-                          <span className="text-[9px] bg-gold-400/20 text-gold-300 px-1.5 py-0.5 rounded font-bold">Savings</span>
+                      <div className="space-y-3 flex-1 text-left">
+                        <div>
+                          <span className="text-[10px] font-bold uppercase tracking-widest text-[#7A4510] dark:text-gold-400 block">
+                            Bank / Channel
+                          </span>
+                          <span className="text-sm font-bold text-white">
+                            BPI (InstaPay QR &amp; Bank Transfer)
+                          </span>
                         </div>
-                        <p className="text-[10px] text-white/50 uppercase font-semibold">4598 1234 56</p>
-                        <p className="text-xs font-bold text-white">Roxan Policarpio Events & Catering</p>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            navigator.clipboard.writeText("4598123456");
-                            setCopiedBalanceAccount("bpi");
-                            setTimeout(() => setCopiedBalanceAccount(""), 2500);
-                          }}
-                          className="text-[10px] text-gold-400 hover:text-white font-bold flex items-center gap-1"
-                        >
-                          {copiedBalanceAccount === "bpi" ? "Copied Account!" : "Copy BPI Number"}
-                        </button>
+                        <div>
+                          <span className="text-[10px] font-bold uppercase tracking-widest text-[#7A4510] dark:text-gold-400 block">
+                            Account Name
+                          </span>
+                          <span className="text-sm font-bold text-white">
+                            Roxan Policarpio Catering Services / RPEvents
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-[10px] font-bold uppercase tracking-widest text-[#7A4510] dark:text-gold-400 block">
+                            Account Number
+                          </span>
+                          <div className="flex flex-wrap items-center gap-2 mt-1">
+                            <span className="text-base font-mono font-bold text-white bg-white/10 px-3 py-1 rounded">
+                              4189342204
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                navigator.clipboard.writeText("4189342204");
+                                setCopiedBalanceAccount("bpi");
+                                setTimeout(() => setCopiedBalanceAccount(""), 2500);
+                              }}
+                              className="px-2.5 py-1 bg-gold-400/20 text-[#7A4510] dark:text-gold-300 hover:bg-gold-400/30 text-xs font-bold rounded transition-colors flex items-center gap-1 cursor-pointer"
+                            >
+                              {copiedBalanceAccount === "bpi" ? <CheckCircle size={13} /> : <Copy size={13} />}
+                              {copiedBalanceAccount === "bpi" ? "Copied" : "Copy"}
+                            </button>
+                          </div>
+                        </div>
                       </div>
                     </div>
                   </div>
