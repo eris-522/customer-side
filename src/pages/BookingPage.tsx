@@ -3562,8 +3562,8 @@ export default function BookingPage() {
 
                     <div aria-live="polite" className="min-h-0">
                       {termsFormError && (
-                        <div role="alert" className="p-2.5 rounded-lg bg-red-500/15 border border-red-500/40 text-red-200 text-xs font-semibold flex items-center gap-2">
-                          <AlertTriangle size={14} className="text-red-400 shrink-0" />
+                        <div role="alert" className="p-2.5 rounded-lg bg-red-500/10 border border-red-500/40 text-red-700 dark:text-red-200 text-xs font-semibold flex items-center gap-2">
+                          <AlertTriangle size={14} className="text-red-600 dark:text-red-400 shrink-0" />
                           <span>{termsFormError}</span>
                         </div>
                       )}
@@ -3572,10 +3572,10 @@ export default function BookingPage() {
                 </div>
 
                 {/* Slim Bottom Action Bar */}
-                <div className="px-4 sm:px-6 pt-3 pb-safe sm:py-3.5 border-t border-white/10 bg-black/85 shrink-0 flex flex-col sm:flex-row items-center justify-between gap-2.5 sm:gap-3">
-                  <div className="text-[10px] text-white/50">
+                <div className="px-4 sm:px-6 pt-3 pb-safe sm:py-3.5 border-t border-white/10 bg-black/80 shrink-0 flex flex-col sm:flex-row items-center justify-between gap-2.5 sm:gap-3">
+                  <div className="text-[11px] text-white/70">
                     <span>
-                      Executing Contract as: <span className="text-gold-300 font-semibold">{signerFullName.trim() || userProfile?.full_name || userProfile?.name || "Client"}</span>
+                      Executing Contract as: <span className="text-gold-700 dark:text-gold-300 font-semibold">{signerFullName.trim() || userProfile?.full_name || userProfile?.name || "Client"}</span>
                     </span>
                   </div>
 
