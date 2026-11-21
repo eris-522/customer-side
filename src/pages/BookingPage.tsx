@@ -79,7 +79,7 @@ import {
   getManilaTodayYMD,
   addDaysToYMD,
 } from "../utils/validation";
-import VenueMapPicker from "../components/VenueMapPicker";
+import VenueMapPicker, { validateLuzonVenue } from "../components/VenueMapPicker";
 
 interface FormData {
   packageId: string;
@@ -597,6 +597,17 @@ export default function BookingPage() {
         return;
       }
 
+      const step2LuzonErr = validateLuzonVenue(
+        venueCoords,
+        hasPinnedVenue,
+        formData.venueName,
+        formData.venueAddress
+      );
+      if (step2LuzonErr) {
+        setStepError(step2LuzonErr);
+        return;
+      }
+
       // Validate that guest count is within limits and auto-allocate excess to additional pax
       let guestCountNum = parseInt(formData.guestCount, 10);
       if (!isNaN(guestCountNum) && guestCountNum > maxGuests) {
@@ -783,6 +794,10 @@ export default function BookingPage() {
   const hasVenueInput = Boolean(formData.venueName.trim() || formData.venueAddress.trim());
   const combinedVenueText = `${formData.venueName} ${formData.venueAddress}`.toLowerCase();
   const isOutsideTaytay = hasVenueInput && !combinedVenueText.includes("taytay");
+  const luzonVenueError =
+    hasVenueInput || hasPinnedVenue
+      ? validateLuzonVenue(venueCoords, hasPinnedVenue, formData.venueName, formData.venueAddress)
+      : "";
   const totalGuestPaxCalc = (parseInt(formData.guestCount, 10) || 0) + extraPaxCalc;
   const waiterCountCalc = Math.max(2, Math.ceil((totalGuestPaxCalc || maxGuests || 50) / 25));
   const effectiveIsSecondFloorOrHigher = isOutdoorVenue ? false : isSecondFloorOrHigher;
@@ -805,6 +820,17 @@ export default function BookingPage() {
 
   // Feature: Opens Terms of Service modal before payment
   const handleInitiateBooking = () => {
+    const luzonErr = validateLuzonVenue(
+      venueCoords,
+      hasPinnedVenue,
+      formData.venueName,
+      formData.venueAddress
+    );
+    if (luzonErr) {
+      setSubmitError(luzonErr);
+      setCurrentStep(2);
+      return;
+    }
     setSubmitError("");
     setStepError("");
     setTermsFormError("");
@@ -996,6 +1022,17 @@ export default function BookingPage() {
     if (refErr) {
       setReferenceNumberError(refErr);
       setPaymentError(refErr);
+      return;
+    }
+
+    const submitLuzonErr = validateLuzonVenue(
+      venueCoords,
+      hasPinnedVenue,
+      formData.venueName,
+      formData.venueAddress
+    );
+    if (submitLuzonErr) {
+      setPaymentError(submitLuzonErr);
       return;
     }
 
@@ -1742,7 +1779,7 @@ export default function BookingPage() {
                 />
                 {/* Taytay Coverage Detector & Venue Accessibility Questionnaire */}
                 <div className="col-span-full space-y-5 pt-2">
-                  {hasVenueInput && (
+                  {hasVenueInput && !luzonVenueError && (
                     <div
                       className={`p-4 border transition-all flex items-start gap-3.5 ${
                         isOutsideTaytay

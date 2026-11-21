@@ -11,7 +11,77 @@ import {
   CheckCircle2,
   Sparkles,
   RotateCcw,
+  AlertTriangle,
 } from "lucide-react";
+
+// Luzon bounding box for Leaflet map panning/zooming
+export const LUZON_MAP_BOUNDS: L.LatLngBoundsExpression = [
+  [11.8, 118.8],
+  [19.2, 124.8],
+];
+
+// Non-Luzon Philippine provinces, islands, regions, and major cities (Visayas, Mindanao, Palawan, Mindoro, Romblon, Masbate)
+const OUTSIDE_LUZON_KEYWORDS_REGEX =
+  /\b(visayas|mindanao|barmm|palawan|el\s+nido|coron|puerto\s+princesa|mindoro|puerto\s+galera|calapan|romblon|masbate|boracay|aklan|kalibo|antique|capiz|roxas\s+city|iloilo|guimaras|negros|bacolod|dumaguete|cebu|mactan|lapu-lapu|mandaue|bohol|tagbilaran|panglao|siquijor|leyte|tacloban|ormoc|biliran|samar|catbalogan|calbayog|borongan|zamboanga|dipolog|dapitan|pagadian|basilan|sulu|jolo|tawi-tawi|camiguin|misamis|cagayan\s+de\s+oro|iligan|ozamiz|oroquieta|bukidnon|malaybalay|lanao|marawi|davao|tagum|digos|panabo|cotabato|kidapawan|koronadal|tacurong|sultan\s+kudarat|sarangani|general\s+santos|gensan|maguindanao|surigao|siargao|butuan|agusan|bayugan|cabadbaran)\b/i;
+
+/**
+ * Checks if geographic coordinates fall within Luzon coverage area.
+ */
+export function isCoordWithinLuzon(lat: number, lng: number): boolean {
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return false;
+  // Overall Luzon latitude/longitude envelope
+  if (lat < 12.48 || lat > 18.75 || lng < 119.65 || lng > 124.55) {
+    return false;
+  }
+  // Exclude Mindoro, Palawan & Western Visayas (southwest of Batangas coast)
+  if (lng < 121.65 && lat < 13.56) {
+    return false;
+  }
+  // Exclude Romblon, Sibuyan & Boracay/Panay (south of Marinduque & Bondoc Peninsula)
+  if (lng >= 121.65 && lng < 122.85 && lat < 13.12) {
+    return false;
+  }
+  // Exclude Masbate main island (southwest of Bicol peninsula)
+  if (lng >= 122.85 && lng < 123.5 && lat < 12.9) {
+    return false;
+  }
+  // Exclude Northern Samar (southeast of San Bernardino Strait / Matnog, Sorsogon)
+  if (lat < 12.75 && lng > 124.16) {
+    return false;
+  }
+  if (lat < 12.53 && lng < 123.85) {
+    return false;
+  }
+  return true;
+}
+
+/**
+ * Validates that the selected venue coordinates and address are strictly within Luzon.
+ * Returns an empty string if valid, or a user-facing error message if outside Luzon.
+ */
+export function validateLuzonVenue(
+  coords: { lat: number; lng: number },
+  hasPinnedVenue: boolean,
+  venueName: string,
+  venueAddress: string
+): string {
+  const combinedText = `${venueName || ""} ${venueAddress || ""}`.trim();
+  const keywordMatch = combinedText.match(OUTSIDE_LUZON_KEYWORDS_REGEX);
+
+  if (keywordMatch) {
+    return `Out of Coverage Area: "${keywordMatch[0]}" is outside Luzon. Our catering services are strictly limited to Luzon only.`;
+  }
+
+  if (!isCoordWithinLuzon(coords.lat, coords.lng)) {
+    return "Out of Coverage Area: The selected map pin location is outside Luzon. Please select a venue within Luzon to proceed with your booking.";
+  }
+
+  if (hasPinnedVenue && !isCoordWithinLuzon(coords.lat, coords.lng)) {
+    return "Out of Coverage Area: The pinned venue location is outside Luzon. Please move the pin to a valid location inside Luzon.";
+  }
+
+  return "";
+}
 
 export interface VenueSuggestion {
   id: string;
@@ -274,6 +344,9 @@ export default function VenueMapPicker({
     const map = L.map(mapContainerRef.current, {
       center: [coords.lat, coords.lng],
       zoom: 16,
+      minZoom: 6,
+      maxBounds: LUZON_MAP_BOUNDS,
+      maxBoundsViscosity: 0.85,
       zoomControl: false,
       attributionControl: false,
     });
@@ -579,6 +652,11 @@ export default function VenueMapPicker({
   };
 
   const googleMapsExternalUrl = `https://www.google.com/maps/search/?api=1&query=${coords.lat},${coords.lng}`;
+  const hasVenueText = Boolean(venueName.trim() || venueAddress.trim());
+  const luzonError =
+    hasVenueText || hasPinnedVenue
+      ? validateLuzonVenue(coords, hasPinnedVenue, venueName, venueAddress)
+      : "";
 
   return (
     <div className="col-span-full space-y-6">
@@ -848,8 +926,24 @@ export default function VenueMapPicker({
           </div>
         </div>
 
+        {/* Outside Luzon Error Banner */}
+        {luzonError && (
+          <div
+            role="alert"
+            className="flex items-start gap-2.5 text-xs text-red-200 bg-red-500/15 border border-red-500/50 px-3.5 py-3 rounded-xs"
+          >
+            <AlertTriangle size={16} className="shrink-0 text-red-400 mt-0.5" />
+            <div>
+              <p className="font-bold uppercase tracking-wider text-red-300">
+                Luzon Coverage Only — Booking Not Allowed
+              </p>
+              <p className="mt-0.5 text-red-100/90 leading-relaxed">{luzonError}</p>
+            </div>
+          </div>
+        )}
+
         {/* Status Feedback Bar */}
-        {statusMessage && (
+        {statusMessage && !luzonError && (
           <div className="flex items-center gap-2 text-xs text-gold-400/90 bg-gold-400/5 border border-gold-400/20 px-3.5 py-2 rounded-xs">
             <MapPin size={13} className="shrink-0 text-gold-400" />
             <span>{statusMessage}</span>
