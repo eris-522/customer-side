@@ -2,6 +2,7 @@ import { motion, AnimatePresence } from "motion/react";
 import { useState, useEffect, useRef } from "react";
 import { supabase } from "../utils/supabase";
 import bpiInstaPayQr from "../assets/bpi-instapay-qr.jpg";
+import gcashQr from "../assets/gcash-qr.jpg";
 import {
   CloudRain,
   Calendar,
@@ -4892,12 +4893,11 @@ export default function MyInquiriesPage() {
                   <div className="p-5 bg-gradient-to-b from-gold-400/10 to-transparent border border-gold-400/30 rounded-xl space-y-4">
                     <div className="flex flex-col sm:flex-row items-center gap-6">
                       <div className="bg-white p-3 rounded-lg shadow-xl shrink-0 flex flex-col items-center">
-                        <div className="w-32 h-32 bg-stone-50 border-2 border-dashed border-gold-400/50 rounded flex flex-col items-center justify-center p-2 relative overflow-hidden">
-                          <QrCode className="text-gold-500 opacity-80" size={44} />
-                          <span className="text-xs font-bold text-[#7A4510] dark:text-gold-400 mt-1 uppercase tracking-wider">
-                            GCash QR
-                          </span>
-                        </div>
+                        <img
+                          src={gcashQr}
+                          alt="GCash QR Code"
+                          className="w-36 h-36 object-contain rounded"
+                        />
                         <span className="text-xs text-gray-700 font-bold uppercase tracking-wider mt-2">
                           Scan to Pay
                         </span>
@@ -4908,7 +4908,7 @@ export default function MyInquiriesPage() {
                             GCash Account Name
                           </span>
                           <span className="text-sm font-bold text-white">
-                            ROXAN POLICARPIO (ROXAN POLICARPIO CATERING)
+                            Mark Xavier Policarpio
                           </span>
                         </div>
                         <div>
@@ -4917,12 +4917,12 @@ export default function MyInquiriesPage() {
                           </span>
                           <div className="flex flex-wrap items-center gap-2 mt-1">
                             <span className="text-base font-mono font-bold text-white bg-white/10 px-3 py-1 rounded">
-                              0946 715 8519
+                              09993026275
                             </span>
                             <button
                               type="button"
                               onClick={() => {
-                                navigator.clipboard.writeText("09467158519");
+                                navigator.clipboard.writeText("09993026275");
                                 setCopiedBalanceAccount("gcash");
                                 setTimeout(() => setCopiedBalanceAccount(""), 2500);
                               }}
