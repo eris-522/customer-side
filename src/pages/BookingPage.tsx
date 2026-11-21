@@ -1,5 +1,5 @@
 import { motion, AnimatePresence } from "motion/react";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import {
   CloudRain,
@@ -50,6 +50,7 @@ import {
   ALLOWED_UPLOAD_MIME_TYPES,
 } from "../utils/receiptUploader";
 import { catalogCache } from "../utils/catalogCache";
+import { useCMS, sortPackagesByOrder } from "../context/CMSContext";
 import { subscribeSlotsSync, broadcastSlotsChange } from "../utils/liveSync";
 import {
   getSessionUser,
@@ -323,7 +324,12 @@ export default function BookingPage() {
   }, [currentStep]);
 
   // Database States
-  const [availablePackages, setAvailablePackages] = useState<any[]>([]);
+  const { cms } = useCMS();
+  const [rawAvailablePackages, setAvailablePackages] = useState<any[]>([]);
+  const availablePackages = useMemo(
+    () => sortPackagesByOrder(rawAvailablePackages, cms?.packages?.packageOrder),
+    [rawAvailablePackages, cms?.packages?.packageOrder]
+  );
   const [menuOptions, setMenuOptions] = useState<any[]>([]);
   const [userProfile, setUserProfile] = useState<any>(null);
   const [bookedDates, setBookedDates] = useState<string[]>([]);

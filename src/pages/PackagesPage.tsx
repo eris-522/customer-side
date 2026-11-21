@@ -1,8 +1,8 @@
 import { motion } from "motion/react";
 import { ChevronRight, Check } from "lucide-react";
 import { Link } from "react-router-dom";
-import React, { useState, useEffect } from "react";
-import { useCMS } from "../context/CMSContext";
+import React, { useState, useEffect, useMemo } from "react";
+import { useCMS, sortPackagesByOrder } from "../context/CMSContext";
 import { catalogCache } from "../utils/catalogCache";
 
 // Feature: Defines the TypeScript interfaces mapping to your Supabase tables
@@ -44,6 +44,11 @@ export default function PackagesPage() {
   const [inclusionCategories, setInclusionCategories] = useState<
     Record<string, string[]>
   >({});
+
+  const orderedPackages = useMemo(
+    () => sortPackagesByOrder(packages, packagesCms?.packageOrder),
+    [packages, packagesCms?.packageOrder]
+  );
 
   // Feature: Executes the database query as soon as the user navigates to this page
   useEffect(() => {
@@ -125,14 +130,14 @@ export default function PackagesPage() {
           {/* Packages Grid Section */}
           <section className="py-12 sm:py-20 px-4 sm:px-6 md:px-10">
             <div className="max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-              {packages.length === 0 ? (
+              {orderedPackages.length === 0 ? (
                 <div className="col-span-full text-center py-10">
                   <p className="text-white/40 tracking-[0.2em] uppercase text-sm">
                     No active packages available at the moment.
                   </p>
                 </div>
               ) : (
-                packages.map((pkg, i) => {
+                orderedPackages.map((pkg, i) => {
                   const packageImage =
                     pkg.image_url ||
                     packagesCms?.packageImages?.[pkg.id] ||

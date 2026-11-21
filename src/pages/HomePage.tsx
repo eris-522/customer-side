@@ -1,8 +1,8 @@
 import { motion } from "motion/react";
 import { ChevronRight, Quote, ChevronDown, FileText } from "lucide-react";
 import { Link } from "react-router-dom";
-import { useState, useEffect } from "react";
-import { useCMS } from "../context/CMSContext";
+import { useState, useEffect, useMemo } from "react";
+import { useCMS, sortPackagesByOrder } from "../context/CMSContext";
 import { catalogCache } from "../utils/catalogCache";
 import { sanitizeSafeHref } from "../utils/urlSafety";
 
@@ -36,11 +36,16 @@ const fallbackImages = [
 export default function HomePage() {
   const { cms } = useCMS();
   const { hero, process: processData, testimonials, contact, packages: packagesCms, faqs } = cms;
-  const [packages, setPackages] = useState<CateringPackage[]>([]);
+  const [allPackages, setAllPackages] = useState<CateringPackage[]>([]);
   const [inclusionCategories, setInclusionCategories] = useState<
     Record<string, string[]>
   >({});
   const [openFaqId, setOpenFaqId] = useState<string | null>(null);
+
+  const packages = useMemo(
+    () => sortPackagesByOrder(allPackages, packagesCms?.packageOrder).slice(0, 3),
+    [allPackages, packagesCms?.packageOrder]
+  );
 
   const featuredReview =
     testimonials?.items?.find((t) => t.featured && t.active) ||
@@ -65,7 +70,7 @@ export default function HomePage() {
         catalogCache.fetchInclusions(forceRefresh),
       ]);
       if (!isMounted) return;
-      setPackages((pkgs as CateringPackage[]).slice(0, 3));
+      setAllPackages(pkgs as CateringPackage[]);
       setInclusionCategories(inc);
     };
 
@@ -75,7 +80,7 @@ export default function HomePage() {
     const unsubscribe = catalogCache.subscribe((changedKey) => {
       if (changedKey === "packages") {
         catalogCache.fetchPackages(false).then((pkgs) => {
-          if (isMounted) setPackages((pkgs as CateringPackage[]).slice(0, 3));
+          if (isMounted) setAllPackages(pkgs as CateringPackage[]);
         });
       } else if (changedKey === "inclusions") {
         catalogCache.fetchInclusions(false).then((inc) => {

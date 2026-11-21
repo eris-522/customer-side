@@ -141,6 +141,7 @@ export interface PackagesCMS {
   description: string;
   packageImages: Record<string, string>;
   items: PackageCMSItem[];
+  packageOrder?: string[];
 }
 
 export interface MenuCMSItem {
@@ -275,6 +276,7 @@ export const DEFAULT_CMS_DATA: FullCMSData = {
         pax: "150",
       },
     ],
+    packageOrder: [],
   },
   hero: {
     tagline: "Exquisite Culinary Experiences",
@@ -498,6 +500,50 @@ const LOCAL_STORAGE_CMS_TIME_KEY = "rp_cms_content_timestamp";
 const FALLBACK_FOCUS_COOLDOWN_MS = 15_000;
 
 /**
+ * Sorts packages according to the CMS-configured `packageOrder` array (matching by
+ * package `id` first, then case-insensitive `name`). Any packages not present in
+ * `packageOrder` (or all packages when `packageOrder` is empty) fall back to
+ * ascending price order, then alphabetical name order.
+ */
+export function sortPackagesByOrder<
+  T extends { id?: string; name?: string; price?: string | number }
+>(packages: T[], packageOrder?: string[]): T[] {
+  const orderIndex = new Map<string, number>();
+  if (Array.isArray(packageOrder)) {
+    packageOrder.forEach((rawKey, idx) => {
+      const trimmed = typeof rawKey === "string" ? rawKey.trim() : "";
+      if (!trimmed) return;
+      if (!orderIndex.has(trimmed)) orderIndex.set(trimmed, idx);
+      const lower = trimmed.toLowerCase();
+      if (!orderIndex.has(lower)) orderIndex.set(lower, idx);
+    });
+  }
+
+  const getRank = (pkg: T): number => {
+    if (orderIndex.size === 0) return Number.MAX_SAFE_INTEGER;
+    const idKey = typeof pkg.id === "string" ? pkg.id.trim() : "";
+    if (idKey && orderIndex.has(idKey)) return orderIndex.get(idKey)!;
+    const nameKey = typeof pkg.name === "string" ? pkg.name.trim().toLowerCase() : "";
+    if (nameKey && orderIndex.has(nameKey)) return orderIndex.get(nameKey)!;
+    return Number.MAX_SAFE_INTEGER;
+  };
+
+  const getPrice = (pkg: T): number => {
+    const parsed = parseFloat(String(pkg.price ?? "0").replace(/[^0-9.-]+/g, ""));
+    return Number.isFinite(parsed) ? parsed : 0;
+  };
+
+  return [...packages].sort((a, b) => {
+    const rankA = getRank(a);
+    const rankB = getRank(b);
+    if (rankA !== rankB) return rankA - rankB;
+    const priceDiff = getPrice(a) - getPrice(b);
+    if (priceDiff !== 0) return priceDiff;
+    return String(a.name || "").localeCompare(String(b.name || ""));
+  });
+}
+
+/**
  * Deeply merges a section's incoming data with DEFAULT_CMS_DATA[sectionKey],
  * ensuring that cleared/empty strings ("") or emptied arrays revert to default values.
  */
@@ -528,7 +574,18 @@ export function mergeSectionWithDefaults<K extends keyof FullCMSData>(
         result[key] = defVal;
       }
     } else if (Array.isArray(defVal)) {
-      if (Array.isArray(incVal) && incVal.length > 0) {
+      if (sectionKey === "packages" && key === "packageOrder") {
+        result[key] = Array.isArray(incVal)
+          ? Array.from(
+              new Set(
+                incVal
+                  .filter((v): v is string => typeof v === "string")
+                  .map((v) => v.trim())
+                  .filter((v) => v.length > 0)
+              )
+            )
+          : [];
+      } else if (Array.isArray(incVal) && incVal.length > 0) {
         if (
           (sectionKey === "packages" || sectionKey === "menu") &&
           key === "items"
