@@ -722,6 +722,11 @@ export default function MyInquiriesPage() {
 
   const handleSubmitModification = async () => {
     if (!modifyingBooking) return;
+    const modStatus = String(modifyingBooking.status || "Pending").trim().toLowerCase();
+    if (["cancelled", "declined", "rejected", "archived"].includes(modStatus)) {
+      triggerModErrorToast(`Modifications locked: Booking is ${modStatus}.`);
+      return;
+    }
 
     const diffDays = diffCalendarDaysFromManilaToday(modifyingBooking.event_date);
 
@@ -1010,6 +1015,8 @@ export default function MyInquiriesPage() {
   };
 
   const handleOpenBalanceModal = (booking: any, milestoneIndex?: number, milestone?: any) => {
+    const bStatus = String(booking?.status || "Pending").trim().toLowerCase();
+    if (["cancelled", "declined", "rejected", "archived"].includes(bStatus)) return;
     // If attempting to pay full balance, check if client already started paying in installments
     if (milestoneIndex === undefined && !milestone) {
       const schedule = booking.installment_schedule || booking.paymentData?.installments || [];
@@ -1051,6 +1058,8 @@ export default function MyInquiriesPage() {
 
   const handleOpenExcessPaymentModal = (booking: any, postEventBilling: any) => {
     if (!postEventBilling) return;
+    const bStatus = String(booking?.status || "Pending").trim().toLowerCase();
+    if (["cancelled", "declined", "rejected", "archived"].includes(bStatus)) return;
     setPayingBalanceBooking(booking);
     setPayingMilestone(null);
     setPayingDamageInvoice(null);
@@ -1078,6 +1087,8 @@ export default function MyInquiriesPage() {
 
   const handleOpenDamagePaymentModal = (booking: any, damageAppraisal: any) => {
     if (!damageAppraisal) return;
+    const bStatus = String(booking?.status || "Pending").trim().toLowerCase();
+    if (["cancelled", "declined", "rejected", "archived"].includes(bStatus)) return;
     setPayingBalanceBooking(booking);
     setPayingMilestone(null);
     setPayingExcessSurcharge(null);
@@ -1424,6 +1435,11 @@ export default function MyInquiriesPage() {
 
   const handleSubmitBalancePayment = async () => {
     if (!payingBalanceBooking) return;
+    const bStatus = String(payingBalanceBooking.status || "Pending").trim().toLowerCase();
+    if (["cancelled", "declined", "rejected", "archived"].includes(bStatus)) {
+      setBalanceError(`Payment locked: Booking is ${bStatus}.`);
+      return;
+    }
     if (!balanceReceiptImage) {
       setBalanceError("Please upload your payment receipt or transfer slip.");
       return;
@@ -1979,6 +1995,7 @@ export default function MyInquiriesPage() {
                 "cancelled",
                 "declined",
                 "rejected",
+                "archived",
               ].includes(statusLower);
               const isApproved = ["accepted", "approved", "confirmed"].includes(
                 statusLower,
@@ -3458,7 +3475,7 @@ export default function MyInquiriesPage() {
                                   </button>
                                 )}
 
-                                {!isDamageSettled && (
+                                {!isCancelled && !isDamageSettled && (
                                   <button
                                     type="button"
                                     aria-describedby={cardHeadingId}
