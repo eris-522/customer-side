@@ -83,7 +83,6 @@ import VenueMapPicker, { validateLuzonVenue } from "../components/VenueMapPicker
 
 interface FormData {
   packageId: string;
-  eventType: string;
   date: string;
   time: string;
   guestCount: string;
@@ -93,27 +92,6 @@ interface FormData {
   foodAllergies: string;
   menuSelections: string[];
 }
-
-const EVENT_TYPE_OPTIONS = [
-  "Wedding",
-  "Debut",
-  "Birthday",
-  "Corporate",
-  "Anniversary",
-  "Baptism / Christening",
-  "Graduation",
-  "Family Reunion",
-  "All Occasions / Social",
-] as const;
-
-const inferEventTypeFromPackage = (pkgName?: string): string => {
-  const lower = (pkgName || "").toLowerCase();
-  if (/\b(wedding|bridal|civil|garden)\b/.test(lower)) return "Wedding";
-  if (/\b(debut|18th)\b/.test(lower)) return "Debut";
-  if (/\b(birthday|bday|kiddie)\b/.test(lower)) return "Birthday";
-  if (/\b(corporate|conference|seminar|gala)\b/.test(lower)) return "Corporate";
-  return "";
-};
 
 type Limit = { min: number; max: number };
 type PackageRules = Record<string, Limit>;
@@ -363,7 +341,6 @@ export default function BookingPage() {
   // Feature: Main form data object holding all user selections
   const [formData, setFormData] = useState<FormData>({
     packageId: "",
-    eventType: "",
     date: "",
     time: "",
     guestCount: "",
@@ -610,7 +587,6 @@ export default function BookingPage() {
 
       // Enforce that all text inputs, dates, and numbers are filled out
       if (
-        !formData.eventType ||
         !formData.date ||
         !formData.time ||
         !formData.guestCount ||
@@ -717,18 +693,9 @@ export default function BookingPage() {
   // Feature: Auto-advances to step 2 when a package is clicked (since it fulfills step 1 validation)
   const handlePackageSelect = (id: string) => {
     setStepError("");
-    const pickedPkg = availablePackages.find((p) => p.id === id);
-    const inferredEventType = inferEventTypeFromPackage(pickedPkg?.name);
     // Reset menu selections if they change packages so old limits don't break validation
     if (formData.packageId !== id) {
-      setFormData({
-        ...formData,
-        packageId: id,
-        eventType: inferredEventType || formData.eventType,
-        menuSelections: [],
-      });
-    } else if (!formData.eventType && inferredEventType) {
-      setFormData({ ...formData, eventType: inferredEventType });
+      setFormData({ ...formData, packageId: id, menuSelections: [] });
     }
     setCurrentStep(2);
   };
@@ -1147,10 +1114,6 @@ export default function BookingPage() {
     const primaryPayload: Record<string, any> = {
       user_id: sessionUser.id,
       package_id: formData.packageId,
-      event_type:
-        formData.eventType ||
-        inferEventTypeFromPackage(selectedPkgForPayment?.name) ||
-        "All Occasions / Social",
       event_date: formData.date,
       event_time: formData.time,
       event_location: `${formData.venueName.trim().slice(0, 120)} - ${formData.venueAddress.trim().slice(0, 250)}`,
@@ -1569,38 +1532,6 @@ export default function BookingPage() {
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6 sm:gap-10">
-                <div className="space-y-2 md:col-span-2 text-white">
-                  <label className="text-base text-white/80 font-bold">
-                    Event / Celebration Type <span className="text-red-400">*</span>
-                  </label>
-                  <div className="relative">
-                    <select
-                      className="w-full appearance-none bg-white/5 border border-white/10 px-4 sm:px-6 pr-10 sm:pr-12 py-3.5 sm:py-4 text-base sm:text-lg focus:outline-none focus:border-gold-400/50 transition-all font-medium [color-scheme:light] dark:[color-scheme:dark]"
-                      value={formData.eventType}
-                      onChange={(e) => {
-                        setStepError("");
-                        setFormData({ ...formData, eventType: e.target.value });
-                      }}
-                    >
-                      <option value="" disabled className="bg-[#F4EFE6] dark:bg-[#0f0f0f] text-[#5A4E43] dark:text-white/50">
-                        Select celebration type (e.g., Wedding, Debut, Birthday, Corporate)
-                      </option>
-                      {EVENT_TYPE_OPTIONS.map((typeOption) => (
-                        <option
-                          key={typeOption}
-                          value={typeOption}
-                          className="bg-[#F4EFE6] dark:bg-[#0f0f0f] text-[#231D18] dark:text-white"
-                        >
-                          {typeOption}
-                        </option>
-                      ))}
-                    </select>
-                    <ChevronDown
-                      size={18}
-                      className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-gold-400"
-                    />
-                  </div>
-                </div>
                 <div className="space-y-2 text-white">
                   <div className="flex justify-between items-center">
                     <label className="text-base text-white/80 font-bold">
