@@ -34,20 +34,51 @@ function FooterTextLink({ link, className }: { link: FooterLinkItem; className: 
   );
 }
 
+const DEFAULT_FACEBOOK_URL = "https://www.facebook.com/roxanpolicarpiocateringservices";
+const DEFAULT_INSTAGRAM_URL = "https://www.instagram.com/rp.cateringservices/";
+const DEFAULT_CONTACT_EMAIL = "roxanpolicarpio.events@gmail.com";
+
+const normalizeSocialUrl = (link: FooterLinkItem, contact?: { facebookUrl?: string; instagramUrl?: string }): string => {
+  const key = `${link.name} ${link.url}`.toLowerCase();
+  const trimmedUrl = (link.url || "").trim().replace(/\/+$/, "");
+  if (key.includes("facebook") || key.includes("fb.com")) {
+    if (!trimmedUrl || /^https?:\/\/(www\.)?facebook\.com$/i.test(trimmedUrl)) {
+      const contactFb = (contact?.facebookUrl || "").trim().replace(/\/+$/, "");
+      return contactFb && !/^https?:\/\/(www\.)?facebook\.com$/i.test(contactFb)
+        ? contact!.facebookUrl!
+        : DEFAULT_FACEBOOK_URL;
+    }
+  }
+  if (key.includes("instagram")) {
+    if (!trimmedUrl || /^https?:\/\/(www\.)?instagram\.com$/i.test(trimmedUrl)) {
+      const contactIg = (contact?.instagramUrl || "").trim().replace(/\/+$/, "");
+      return contactIg && !/^https?:\/\/(www\.)?instagram\.com$/i.test(contactIg)
+        ? contact!.instagramUrl!
+        : DEFAULT_INSTAGRAM_URL;
+    }
+  }
+  return link.url;
+};
+
 export default function Footer() {
   const { cms } = useCMS();
   const { footer, contact } = cms;
 
-  const links: FooterLinkItem[] =
+  const rawLinks: FooterLinkItem[] =
     footer?.quickLinks && footer.quickLinks.length > 0
       ? footer.quickLinks
       : [
-          { name: "Facebook", url: contact.facebookUrl || "https://facebook.com" },
-          { name: "Instagram", url: contact.instagramUrl || "https://instagram.com" },
+          { name: "Facebook", url: contact.facebookUrl || DEFAULT_FACEBOOK_URL },
+          { name: "Instagram", url: contact.instagramUrl || DEFAULT_INSTAGRAM_URL },
           { name: "Terms & Conditions", url: "/terms" },
           { name: "FAQs", url: "/faqs" },
           { name: "Inquire Now", url: "/booking" },
         ];
+
+  const links: FooterLinkItem[] = rawLinks.map((l) => ({
+    ...l,
+    url: normalizeSocialUrl(l, contact),
+  }));
 
   const socialLinks = links.filter((l) => socialIconFor(l));
   const bookingLink = links.find((l) => !socialIconFor(l) && isBookingLink(l));
@@ -55,6 +86,10 @@ export default function Footer() {
 
   const brandName = footer?.brandName || "Roxan Policarpio Events & Catering";
   const phoneHref = contact?.phone ? `tel:${contact.phone.replace(/[^\d+]/g, "")}` : "";
+  const footerEmail =
+    !contact?.email || contact.email.trim().toLowerCase() === "rpcatering@gmail.com"
+      ? DEFAULT_CONTACT_EMAIL
+      : contact.email.trim();
 
   return (
     <footer className="bg-[#D6C9B3] dark:bg-black border-t border-[#C4B59B] dark:border-white/10 px-4 sm:px-6 md:px-10 pt-10 sm:pt-12 pb-safe sm:pb-8 transition-colors">
@@ -71,7 +106,7 @@ export default function Footer() {
               </span>
             </Link>
 
-            {(contact?.phone || contact?.email) && (
+            {(contact?.phone || footerEmail) && (
               <div className="flex flex-col items-center md:items-start gap-1">
                 {contact?.phone && (
                   <a
@@ -82,13 +117,13 @@ export default function Footer() {
                     {contact.phone}
                   </a>
                 )}
-                {contact?.email && (
+                {footerEmail && (
                   <a
-                    href={sanitizeSafeHref(`mailto:${contact.email}`, "#")}
+                    href={sanitizeSafeHref(`mailto:${footerEmail}`, "#")}
                     className="inline-flex items-center gap-2 min-h-10 text-sm font-medium text-[#3D3227] dark:text-white/70 hover:text-gold-500 dark:hover:text-gold-400 transition-colors"
                   >
                     <Mail size={15} className="text-gold-500 dark:text-gold-400" aria-hidden="true" />
-                    {contact.email}
+                    {footerEmail}
                   </a>
                 )}
               </div>
@@ -146,7 +181,7 @@ export default function Footer() {
 
         <div className="mt-8 pt-5 border-t border-[#C4B59B] dark:border-white/10 text-center md:text-left">
           <p className="text-xs text-[#3D3227]/80 dark:text-white/40 font-medium leading-relaxed">
-            &copy; {new Date().getFullYear()} {brandName}. {footer?.copyrightText || "All Rights Reserved."}
+            &copy; 2019 {brandName}. {footer?.copyrightText || "All Rights Reserved."}
           </p>
         </div>
       </div>

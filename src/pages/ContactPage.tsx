@@ -20,9 +20,9 @@ export default function ContactPage() {
     },
     {
       title: "Email Us",
-      detail: contact.email || "rpcatering@gmail.com",
+      detail: contact.email || "roxanpolicarpio.events@gmail.com",
       icon: Mail,
-      action: `mailto:${contact.email || "rpcatering@gmail.com"}`
+      action: `mailto:${contact.email || "roxanpolicarpio.events@gmail.com"}`
     },
     {
       title: "Our Location",
@@ -47,8 +47,8 @@ export default function ContactPage() {
       ];
 
   const socials = [
-    { name: "Facebook", icon: Facebook, href: sanitizeSafeHref(contact.facebookUrl, "https://facebook.com") },
-    { name: "Instagram", icon: Instagram, href: sanitizeSafeHref(contact.instagramUrl, "https://instagram.com") },
+    { name: "Facebook", icon: Facebook, href: sanitizeSafeHref(contact.facebookUrl, "https://www.facebook.com/roxanpolicarpiocateringservices") },
+    { name: "Instagram", icon: Instagram, href: sanitizeSafeHref(contact.instagramUrl, "https://www.instagram.com/rp.cateringservices/") },
     { name: "Messenger", icon: MessageCircle, href: sanitizeSafeHref(contact.messengerUrl, "https://messenger.com") }
   ];
 

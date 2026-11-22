@@ -499,10 +499,10 @@ export default function HomePage() {
           </div>
           <div className="flex flex-col gap-4 sm:gap-6 items-start md:items-end w-full md:w-auto">
             <a
-              href={sanitizeSafeHref(`mailto:${contact.email || "rpcatering@gmail.com"}`, "mailto:rpcatering@gmail.com")}
+              href={sanitizeSafeHref(`mailto:${contact.email || "roxanpolicarpio.events@gmail.com"}`, "mailto:roxanpolicarpio.events@gmail.com")}
               className="text-lg sm:text-2xl md:text-4xl font-serif text-gold-400 hover:text-white transition-colors italic break-all"
             >
-              {contact.email || "rpcatering@gmail.com"}
+              {contact.email || "roxanpolicarpio.events@gmail.com"}
             </a>
             <p className="text-[10px] text-white/30 uppercase tracking-[0.3em] font-bold">
               {contact.phone || "+63 921 469 7142"}
